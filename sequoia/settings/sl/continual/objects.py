@@ -11,6 +11,10 @@ class Observations(SLSetting.Observations, ContinualAssumption.Observations):
     x: Tensor
 
 
+# TODO: Figure out how to change this perhaps?
+# from sequoia.settings.assumptions.task_type import ClassificationActions
+
+
 @dataclass(frozen=True)
 class Actions(SLSetting.Actions):
     """ Actions to be sent to a Continual Supervised Learning environment. """

@@ -38,8 +38,9 @@ class TestDiscreteTaskAgnosticRLSetting(ContinualRLSettingTests):
     @pytest.mark.parametrize(
         "dataset, expected_resulting_name",
         [
-            ("monsterkong", "MetaMonsterKong-v1"),
-            ("meta_monsterkong", "MetaMonsterKong-v1"),
+            ("monsterkong", "MetaMonsterKong-v0"),
+            ("monsterkong-v0", "MetaMonsterKong-v0"),
+            ("meta_monsterkong", "MetaMonsterKong-v0"),
             ("cartpole", "CartPole-v1"),
         ],
     )

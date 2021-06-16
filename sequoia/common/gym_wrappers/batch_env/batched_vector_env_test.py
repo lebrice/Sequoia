@@ -30,7 +30,7 @@ def test_space_with_tuple_observations(batch_size: int, n_workers: Optional[int]
 
     env_fn = make_env
     env_fns = [env_fn for _ in range(batch_size)]
-    
+
     # from gym.vector.utils import batch_space
     # env = BatchedVectorEnv(env_fns, n_workers=n_workers)
     from gym.vector import SyncVectorEnv

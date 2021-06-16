@@ -14,6 +14,18 @@ from sequoia.settings.sl import (
     DiscreteTaskAgnosticSLSetting,
 )
 from sequoia.settings.sl.continual.setting import random_subset, subset
+from pathlib import Path
+import os
+
+
+# FIXME: Overwriting the 'config' fixture from before so it's 'session' scoped instead.
+@pytest.fixture(scope="session")
+def config(tmp_path_factory: Path):
+    test_log_dir = tmp_path_factory.mktemp("test_log_dir")
+    # TODO: Set the results dir somehow with the value of this `tmp_path` fixture.
+    data_dir = Path(os.environ.get("SLURM_TMPDIR", os.environ.get("DATA_DIR", "data")))
+    return Config(debug=True, data_dir=data_dir, seed=123, log_dir=test_log_dir)
+
 
 
 @pytest.fixture(scope="session")

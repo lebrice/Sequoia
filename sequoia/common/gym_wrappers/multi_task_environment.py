@@ -98,10 +98,10 @@ from sequoia.common.spaces import TypedDictSpace
 @add_task_labels.register(spaces.Space)
 def _add_task_labels_to_space(observation: spaces.Space, task_labels: T) -> spaces.Dict:
     # TODO: Return a dict or NamedTuple at some point:
-    return TypedDictSpace({
-        "x": observation,
-        "task_labels": task_labels,
-    })
+    return TypedDictSpace(
+        x=observation,
+        task_labels=task_labels,
+    )
     # return NamedTupleSpace(
     #     x=observation, task_labels=task_labels, dtype=ObservationsAndTaskLabels,
     # )

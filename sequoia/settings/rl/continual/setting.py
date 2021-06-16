@@ -683,6 +683,7 @@ class ContinualRLSetting(RLSetting, ContinualAssumption):
 
         if self.prefer_tensors:
             observation_space = add_tensor_support(observation_space)
+        assert isinstance(observation_space, TypedDictSpace)
         return observation_space
 
     @property
@@ -1108,7 +1109,7 @@ class ContinualRLSetting(RLSetting, ContinualAssumption):
             actions_type=self.Actions,
         )
         # Create an IterableDataset from the env using the EnvDataset wrapper.
-        dataset = EnvDataset(env, max_steps=max_steps, max_episodes=max_episodes,)
+        dataset = EnvDataset(env)
 
         # Create a GymDataLoader for the EnvDataset.
         env_dataloader = GymDataLoader(dataset)
@@ -1433,5 +1434,5 @@ def find_matching_dataset(
     raise gym.error.UnregisteredEnv(
         f"Can't find any matching entries for chosen dataset {dataset}."
     )
-        # assert False, (dataset, closest_matches)
+    # assert False, (dataset, closest_matches)
 

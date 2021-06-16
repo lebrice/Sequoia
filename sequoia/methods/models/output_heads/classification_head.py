@@ -15,6 +15,13 @@ from .output_head import OutputHead
 from ..forward_pass import ForwardPass
 from ..fcnet import FCNet
 
+# TODO: This is based on 'Actions' which is currently basically the same for all settings
+# However, there should probably have a different `Action` class on a
+# IncrementalSLSetting("mnist") vs IncrementalSLSetting("some_regression_dataset")!
+# IDEA: What if Settings were actually meta-classes, where the 'instances' were for a
+# particular choice of dataset? (e.g. `IncrementalSLSetting("mnist")` -> <type SplitMnistSetting>)
+# This would maybe look a bit like the 'fully compositional' approach as well?
+
 
 @dataclass(frozen=True)
 class ClassificationOutput(Actions):

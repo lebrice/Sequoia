@@ -58,8 +58,8 @@ from sequoia.common.gym_wrappers.convert_tensors import (
 from sequoia.settings.rl.environment import ActiveEnvironment
 from sequoia.utils.logging_utils import get_logger
 from sequoia.common.gym_wrappers import EnvDataset
+from sequoia.common.gym_wrappers import IterableWrapper
 from sequoia.settings.base.environment import Observations, Actions, Rewards
-
 from .make_env import make_batched_env
 
 logger = get_logger(__file__)
@@ -77,7 +77,7 @@ RewardType = TypeVar("RewardType")
 
 
 class GymDataLoader(
-    ActiveEnvironment[ObservationType, ActionType, RewardType], gym.Wrapper, Iterable
+    ActiveEnvironment[ObservationType, ActionType, RewardType], IterableWrapper, Iterable
 ):
     """Environment for RL settings.
 
@@ -219,39 +219,72 @@ class GymDataLoader(
     #         return self.env.max_steps
     #     raise NotImplementedError(f"TODO: Can't tell the length of the env {self.env}.")
 
-    def __iter__(self) -> Iterable[ObservationType]:
-        # This would give back a single-process dataloader iterator over the
-        # 'dataset' which in this case is the environment:
-        # return super().__iter__()
+    def __iter__(self) -> Iterator:
+        # TODO: Pretty sure this could be greatly simplified by just always using the loop from EnvDataset.
 
-        # This, on the other hand, completely bypasses the dataloader iterator,
-        # and instead just yields the samples from the dataset directly, which
-        # is actually what we want!
-        # BUG: Somehow this doesn't batch the samples correctly..
-        return self.env.__iter__()
+        self.observation_ = self.reset()
+        self.done_ = False
+        self.action_ = None
+        self.reward_ = None
 
-        # TODO: BUG: Wrappers applied on top of the GymDataLoader won't have an
-        # effect on the values yielded by this iterator. Currently trying to fix
-        # this inside the IterableWrapper base class, but it's not that simple.
+        # Yield the first observation_.
+        # TODO: Maybe add something like 't' on the observations to make sure they
+        # line up with the rewards we get?
+        yield self.observation_
 
-        # return type(self.env).__iter__(self)
-        # if has_wrapper(self.env, EnvDataset):
-        #     return EnvDataset.__iter__(self)
-        # elif has_wrapper(self.env, PolicyEnv):
-        #     return PolicyEnv.__iter__(self)
-        # return type(self.env).__iter__(self)
-        # return  iter(self.env)
-        # yield from self._iterator
+        if self.action_ is None:
+            raise RuntimeError(
+                f"You have to send an action using send() between every "
+                f"observation. (env = {self})"
+            )
 
-        # Could increment the number of epochs here also, if we wanted to keep
-        # count.
+        while not any([self.done_, self.is_closed()]):
+            # logger.debug(f"step {self.n_steps_}/{self.max_steps},  (episode {self.n_episodes_})")
+
+            # Set those to None to force the user to call .send()
+            self.action_ = None
+            self.reward_ = None
+            yield self.observation_
+
+            if self.action_ is None:
+                raise RuntimeError(
+                    f"You have to send an action using send() between every "
+                    f"observation. (env = {self})"
+                )
+
+    # def __iter__(self) -> Iterable[ObservationType]:
+    #     # This would give back a single-process dataloader iterator over the
+    #     # 'dataset' which in this case is the environment:
+    #     # return super().__iter__()
+
+    #     # This, on the other hand, completely bypasses the dataloader iterator,
+    #     # and instead just yields the samples from the dataset directly, which
+    #     # is actually what we want!
+    #     # BUG: Somehow this doesn't batch the samples correctly..
+    #     return self.env.__iter__()
+
+    #     # TODO: BUG: Wrappers applied on top of the GymDataLoader won't have an
+    #     # effect on the values yielded by this iterator. Currently trying to fix
+    #     # this inside the IterableWrapper base class, but it's not that simple.
+
+    #     # return type(self.env).__iter__(self)
+    #     # if has_wrapper(self.env, EnvDataset):
+    #     #     return EnvDataset.__iter__(self)
+    #     # elif has_wrapper(self.env, PolicyEnv):
+    #     #     return PolicyEnv.__iter__(self)
+    #     # return type(self.env).__iter__(self)
+    #     # return  iter(self.env)
+    #     # yield from self._iterator
+
+    #     # Could increment the number of epochs here also, if we wanted to keep
+    #     # count.
 
     # def random_actions(self):
     #     return self.env.random_actions()
 
     def step(self, action: Union[ActionType, Any]) -> StepResult:
         # logger.debug(f"Calling step on self.env")
-        return self.env.step(action)
+        return super().step(action)
 
     def send(self, action: Union[ActionType, Any]) -> RewardType:
         # if self.actions_type and not isinstance(action, self.actions_type):
@@ -268,4 +301,7 @@ class GymDataLoader(
         ):
             action = action.tolist()
         assert action in self.env.action_space, (action, self.env.action_space)
-        return self.env.send(action)
+        self.action_ = action
+        self.observation_, self.reward_, self.done_, self.info_ = self.step(action)
+        return self.reward_
+        # return self.env.send(action)

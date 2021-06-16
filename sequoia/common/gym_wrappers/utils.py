@@ -179,9 +179,9 @@ def is_atari_env(env: Union[str, gym.Env]) -> bool:
     return False
 
 
-
-
-def get_env_class(env: Union[str, gym.Env, Type[gym.Env], Callable[[], gym.Env]]) -> Type[gym.Env]:
+def get_env_class(
+    env: Union[str, gym.Env, Type[gym.Env], Callable[[], gym.Env]]
+) -> Type[gym.Env]:
     if isinstance(env, partial):
         if env.func is gym.make and isinstance(env.args[0], str):
             return get_env_class(env.args[0])
@@ -252,6 +252,8 @@ def has_wrapper(
 class MayCloseEarly(gym.Wrapper, ABC):
     """ ABC for Wrappers that may close an environment early depending on some
     conditions.
+    
+    WIP: Also prevents calling `step` and `reset` on a closed env.
     """
 
     def __init__(self, env: gym.Env):
@@ -266,7 +268,34 @@ class MayCloseEarly(gym.Wrapper, ABC):
             self._is_closed = self.env.is_closed()
         return self._is_closed
 
+    def closed_error_message(self) -> str:
+        """ Return the error message to use when attempting to use the closed env.
+        
+        This can be useful for wrappers that close when a given condition is reached,
+        e.g. a number of episodes has been performed, which could return a more relevant
+        message here.
+        """
+        return "Env is closed"
+
+    def reset(self, **kwargs):
+        if self.is_closed():
+            raise gym.error.ClosedEnvironmentError(
+                f"Can't call `reset()`: {self.closed_error_message()}"
+            )
+        return super().reset(**kwargs)
+
+    def step(self, action):
+        if self.is_closed():
+            raise gym.error.ClosedEnvironmentError(
+                f"Can't call `step()`: {self.closed_error_message()}"
+            )
+        return super().step(action)
+
     def close(self) -> None:
+        if self.is_closed():
+            # TODO: Prevent closing an environment twice?
+            return
+            # raise gym.error.ClosedEnvironmentError(self.closed_error_message())
         self.env.close()
         self._is_closed = True
 
@@ -281,7 +310,13 @@ class IterableWrapper(MayCloseEarly, IterableDataset, Generic[EnvType], ABC):
     This allows us to wrap dataloader-based Environments and still use the gym
     wrapper conventions, as well as iterate over a gym environment as in the
     Active-dataloader case.
+    
+    NOTE: We have IterableDataset as a base class here so that we can pass a wrapped env
+    to the DataLoader function. This wrapper however doesn't perform the actual
+    iteration, and instead depends on the wrapped environment already supporting
+    iteration. 
     """
+
     def __init__(self, env: gym.Env):
         super().__init__(env)
 
@@ -293,7 +328,8 @@ class IterableWrapper(MayCloseEarly, IterableDataset, Generic[EnvType], ABC):
         # logger.debug(f"Wrapped env {self.env} isnt a PolicyEnv or an EnvDataset")
         # return type(self.env).__next__(self)
         from sequoia.settings.rl.environment import ActiveDataLoader
-        from sequoia.settings.sl.environment import PassiveEnvironment
+        # from sequoia.settings.sl.environment import PassiveEnvironment
+
         if has_wrapper(self.env, EnvDataset) or is_proxy_to(
             self.env, (EnvDataset, ActiveDataLoader)
         ):
@@ -307,7 +343,7 @@ class IterableWrapper(MayCloseEarly, IterableDataset, Generic[EnvType], ABC):
         # return self.observation(obs)
 
     def observation(self, observation):
-        logger.debug(f"Observation won't be transformed.")
+        # logger.debug(f"Observation won't be transformed.")
         return observation
 
     def action(self, action):
@@ -316,22 +352,21 @@ class IterableWrapper(MayCloseEarly, IterableDataset, Generic[EnvType], ABC):
     def reward(self, reward):
         return reward
 
-    def __len__(self):
-        return self.env.__len__()
+    # def __len__(self):
+    #     return self.env.__len__()
 
     def send(self, action):
         # TODO: Make `send` use `self.step`, that way wrappers can apply the same way to
         # RL and SL environments.
-        if hasattr(self.unwrapped, "send"):
-            action = self.action(action)
-            reward = self.env.send(action)
-            reward = self.reward(reward)
-            return reward
-        else:
-                
-            self.action_ = action
-            self.observation_, self.reward_, self.done_, self.info_ = self.step(action)
-            return self.reward_
+        # if hasattr(self.unwrapped, "send"):
+        #     action = self.action(action)
+        #     reward = self.env.send(action)
+        #     reward = self.reward(reward)
+        #     return reward
+
+        self.action_ = action
+        self.observation_, self.reward_, self.done_, self.info_ = self.step(action)
+        return self.reward_
 
         # (Option 1 below)
         # return self.env.send(action)
@@ -342,17 +377,49 @@ class IterableWrapper(MayCloseEarly, IterableDataset, Generic[EnvType], ABC):
         # return type(self.env).send(self, action)
 
         # (Following option 4 below)
-        if has_wrapper(self.env, EnvDataset):
-            # logger.debug(f"Wrapped env is an EnvDataset, using EnvDataset.send.")
-            return EnvDataset.send(self, action)
+        # if has_wrapper(self.env, EnvDataset):
+        #     # logger.debug(f"Wrapped env is an EnvDataset, using EnvDataset.send.")
+        #     return EnvDataset.send(self, action)
 
-        if hasattr(self.env, "send"):
-            action = self.action(action)
-            reward = self.env.send(action)
-            reward = self.reward(reward)
-            return reward
+        # if hasattr(self.env, "send"):
+        #     action = self.action(action)
+        #     reward = self.env.send(action)
+        #     reward = self.reward(reward)
+        #     return reward
 
     def __iter__(self) -> Iterator:
+        # TODO: Pretty sure this could be greatly simplified by just always using the loop from EnvDataset.
+
+        self.observation_ = self.reset()
+        self.done_ = False
+        self.action_ = None
+        self.reward_ = None
+
+        # Yield the first observation_.
+        yield self.observation_
+
+        if self.action_ is None:
+            raise RuntimeError(
+                f"You have to send an action using send() between every "
+                f"observation. (env = {self})"
+            )
+
+        while not any([self.done_, self.is_closed()]):
+            # logger.debug(f"step {self.n_steps_}/{self.max_steps},  (episode {self.n_episodes_})")
+
+            # Set those to None to force the user to call .send()
+            self.action_ = None
+            self.reward_ = None
+            yield self.observation_
+
+            if self.action_ is None:
+                raise RuntimeError(
+                    f"You have to send an action using send() between every "
+                    f"observation. (env = {self})"
+                )
+
+        # assert False, "WIP"
+
         # Option 1: Return the iterator from the wrapped env. This ignores
         # everything in the wrapper.
         # return self.env.__iter__()
@@ -369,32 +436,35 @@ class IterableWrapper(MayCloseEarly, IterableDataset, Generic[EnvType], ABC):
         # Option 4: Slight variation on option 3: We cut straight to the
         # EnvDataset iterator.
 
-        from sequoia.settings.rl.environment import ActiveDataLoader
-        from sequoia.settings.sl.environment import PassiveEnvironment
+        # from sequoia.settings.rl.environment import ActiveDataLoader
+        # from sequoia.settings.sl.environment import PassiveEnvironment
 
-        if has_wrapper(self.env, EnvDataset) or is_proxy_to(
-            self.env, (EnvDataset, ActiveDataLoader)
-        ):
-            # logger.debug(f"Wrapped env is an EnvDataset, using EnvDataset.__iter__ with the wrapper as `self`.")
-            return EnvDataset.__iter__(self)
+        # if has_wrapper(self.env, EnvDataset) or is_proxy_to(
+        #     self.env, (EnvDataset, ActiveDataLoader)
+        # ):
+        #     # logger.debug(f"Wrapped env is an EnvDataset, using EnvDataset.__iter__ with the wrapper as `self`.")
+        #     return EnvDataset.__iter__(self)
 
-        if has_wrapper(self.env, PolicyEnv) or is_proxy_to(self.env, PolicyEnv):
-            # logger.debug(f"Wrapped env is a PolicyEnv, will use PolicyEnv.__iter__ with the wrapper as `self`.")
-            return PolicyEnv.__iter__(self)
+        # # TODO: Should probably remove this since we don't actually use this 'PolicyEnv'.
+        # if has_wrapper(self.env, PolicyEnv) or is_proxy_to(self.env, PolicyEnv):
+        #     # logger.debug(f"Wrapped env is a PolicyEnv, will use PolicyEnv.__iter__ with the wrapper as `self`.")
+        #     return PolicyEnv.__iter__(self)
 
-        # NOTE: This works even though IterableDataset isn't a gym.Wrapper.
-        if not has_wrapper(self.env, IterableDataset) and not isinstance(
-            self.env, DataLoader
-        ):
-            logger.warning(
-                UserWarning(
-                    f"Will try to iterate on a wrapper for env {self.env} which "
-                    f"doesn't have the EnvDataset or PolicyEnv wrappers and isn't "
-                    f"an IterableDataset."
-                )
-            )
-
-        return self.env.__iter__()
+        # # NOTE: This works even though IterableDataset isn't a gym.Wrapper.
+        # if not has_wrapper(self.env, IterableDataset) and not isinstance(
+        #     self.env, DataLoader
+        # ):
+        #     logger.warning(
+        #         UserWarning(
+        #             f"Will try to iterate on a wrapper for env {self.env} which "
+        #             f"doesn't have the EnvDataset or PolicyEnv wrappers and isn't "
+        #             f"an IterableDataset."
+        #         )
+        #     )
+        # # if isinstance(self.env, DataLoader):
+        # #     return self.env.__iter__()
+        # # raise NotImplementedError(f"Wrapper {self} doesn't know how to iterate on {self.env}.")
+        # return self.env.__iter__()
 
     @property
     def wrapping_passive_env(self) -> bool:
@@ -407,37 +477,40 @@ class IterableWrapper(MayCloseEarly, IterableDataset, Generic[EnvType], ABC):
             self, PassiveEnvironment
         )
 
-    def __setattr__(self, attr, value):
-        """ Redirect the __setattr__ of attributes 'owned' by the EnvDataset to
-        the EnvDataset.
+    # def __setattr__(self, attr, value):
+    #     """
+    #     TODO: Remove/replace this:
 
-        We need to do this because we change the value of `self` and call
-        EnvDataset.__iter__(self), which might get and set attributes to/from
-        `self`, which is what you'd expect normally. However when `self` is a
-        wrapper over the env, rather than the env itself, then when attributes
-        are set on `self` inside __iter__ or __next__ or send, etc, they are
-        actually set on the wrapper, rather than on the env.
+    #     Redirect the __setattr__ of attributes 'owned' by the EnvDataset to
+    #     the EnvDataset.
 
-        We solve this by detecting when an attribute with a name ending with "_"
-        and part of a given list of attributes is set.
-        """
-        if attr.endswith("_") and has_wrapper(self.env, EnvDataset):
-            if attr in {
-                "observation_",
-                "action_",
-                "reward_",
-                "done_",
-                "info_",
-                "n_sends_",
-            }:
-                # logger.debug(f"Attribute {attr} will be set on the wrapped env rather than on the wrapper itself.")
-                env = self.env
-                while not isinstance(env, EnvDataset) and env.env is not env:
-                    env = env.env
-                assert isinstance(env, EnvDataset)
-                setattr(env, attr, value)
-        else:
-            object.__setattr__(self, attr, value)
+    #     We need to do this because we change the value of `self` and call
+    #     EnvDataset.__iter__(self), which might get and set attributes to/from
+    #     `self`, which is what you'd expect normally. However when `self` is a
+    #     wrapper over the env, rather than the env itself, then when attributes
+    #     are set on `self` inside __iter__ or __next__ or send, etc, they are
+    #     actually set on the wrapper, rather than on the env.
+
+    #     We solve this by detecting when an attribute with a name ending with "_"
+    #     and part of a given list of attributes is set.
+    #     """
+    #     if attr.endswith("_") and has_wrapper(self.env, EnvDataset):
+    #         if attr in {
+    #             "observation_",
+    #             "action_",
+    #             "reward_",
+    #             "done_",
+    #             "info_",
+    #             "n_sends_",
+    #         }:
+    #             # logger.debug(f"Attribute {attr} will be set on the wrapped env rather than on the wrapper itself.")
+    #             env = self.env
+    #             while not isinstance(env, EnvDataset) and env.env is not env:
+    #                 env = env.env
+    #             assert isinstance(env, EnvDataset)
+    #             setattr(env, attr, value)
+    #     else:
+    #         object.__setattr__(self, attr, value)
 
 
 class RenderEnvWrapper(IterableWrapper):

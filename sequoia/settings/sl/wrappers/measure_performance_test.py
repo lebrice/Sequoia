@@ -25,6 +25,25 @@ from .measure_performance import MeasureSLPerformanceWrapper
 from sequoia.settings.sl.incremental.objects import Actions, Observations, Rewards
 
 
+T = TypeVar("T")
+
+
+def with_is_last(iterable: Iterable[T]) -> Iterable[Tuple[T, bool]]:
+    """ Function that mimics what's happening in pytorch-lightning, where the iterator
+    is one-offset. This can cause a bit of headache in Sequoia's wrappers when iterating
+    over an env, because they expect an action for each observation.
+    """
+    iterator = iter(iterable)
+    sentinel = object()
+    previous_value = next(iterator)
+    current_value = next(iterator, sentinel)
+    while current_value is not sentinel:
+        yield previous_value, False
+        previous_value = current_value
+        current_value = next(iterator, sentinel)
+    yield previous_value, True
+
+
 def test_measure_performance_wrapper():
     dataset = TensorDataset(
         torch.arange(100).reshape([100, 1, 1, 1]) * torch.ones([100, 3, 32, 32]),
@@ -300,18 +319,6 @@ def test_delayed_actions():
     env = make_dummy_env(n_samples=110, batch_size=20)
     env = MeasureSLPerformanceWrapper(env, first_epoch_only=True)
 
-    T = TypeVar("T")
-
-    def with_is_last(iterable: Iterable[T]) -> Iterable[Tuple[T, bool]]:
-        iterator = iter(iterable)
-        sentinel = object()
-        previous_value = next(iterator)
-        current_value = next(iterator, sentinel)
-        while current_value is not sentinel:
-            yield previous_value, False
-            previous_value = current_value
-            current_value = next(iterator, sentinel)
-        yield previous_value, True
 
     for i, ((obs, rew), is_last) in enumerate(with_is_last(env)):
         print(i)

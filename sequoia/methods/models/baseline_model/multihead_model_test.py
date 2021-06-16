@@ -23,7 +23,7 @@ from sequoia.common.config import Config
 from sequoia.common.gym_wrappers import MultiTaskEnvironment
 from sequoia.methods.models.forward_pass import ForwardPass
 from sequoia.methods.models.output_heads.rl.episodic_a2c import EpisodicA2C
-from sequoia.settings import ClassIncrementalSetting, RLSetting
+from sequoia.settings import ClassIncrementalSetting, TraditionalRLSetting, RLSetting
 from sequoia.settings.base import Environment
 from sequoia.utils import take
 
@@ -67,8 +67,9 @@ class MockOutputHead(OutputHead):
         from sequoia.methods.models.output_heads.classification_head import (
             ClassificationOutput,
         )
-
-        assert issubclass(ClassificationOutput, self.Actions)
+        # assert issubclass(ClassificationOutput, self.Actions)
+        # TODO: Ideally self.Actions would already be a subclass of ClassificationActions!
+        # return self.Actions(y_pred=actions, logits=fake_logits)
         return ClassificationOutput(y_pred=actions, logits=fake_logits)
 
     def get_loss(self, forward_pass, actions, rewards):
@@ -145,10 +146,11 @@ def test_multitask_rl_bug_without_PL(monkeypatch):
     # NOTE: Tasks don't have anything to do with the task schedule. They are sampled at
     # each episode.
     max_episode_steps = 5
-    setting = RLSetting(
+    setting = TraditionalRLSetting(
         dataset="cartpole",
         batch_size=1,
         nb_tasks=2,
+        train_max_steps = 100,
         max_episode_steps=max_episode_steps,
         add_done_to_observations=True,
     )
@@ -244,10 +246,11 @@ def test_multitask_rl_bug_with_PL(monkeypatch):
     # NOTE: Tasks don't have anything to do with the task schedule. They are sampled at
     # each episode.
     max_episode_steps = 5
-    setting = RLSetting(
+    setting = TraditionalRLSetting(
         dataset="cartpole",
         batch_size=1,
         nb_tasks=2,
+        train_max_steps=100,
         max_episode_steps=max_episode_steps,
         add_done_to_observations=True,
     )
@@ -271,6 +274,8 @@ def test_multitask_rl_bug_with_PL(monkeypatch):
 
     from pytorch_lightning import Trainer
 
+    # TODO: This test is misbehaving.
+    # NOTE: We only do this so that the Model has a self.trainer attribute?
     trainer = Trainer(fast_dev_run=True)
     trainer.fit(model, train_dataloader=setting.train_dataloader())
 
@@ -288,6 +293,7 @@ def test_multitask_rl_bug_with_PL(monkeypatch):
 
         # env = TimeLimit(env, max_episode_steps=max_episode_steps)
         # Iterate over the environment, which yields one observation at a time:
+        assert not env.is_closed()
         for step, obs in enumerate(env):
             assert isinstance(obs, RLSetting.Observations)
 
@@ -406,8 +412,10 @@ def test_task_inference_rl_easy(config: Config):
     setting = IncrementalRLSetting(
         dataset="cartpole",
         nb_tasks=2,
-        steps_per_task=1000,
-        test_steps_per_task=1000,
+        max_episode_steps=20,
+        steps_per_task=100,
+        test_steps_per_task=100,
+        config=config,
     )
     results = setting.apply(method)
     assert results
@@ -426,6 +434,7 @@ def test_task_inference_rl_hard(config: Config):
         nb_tasks=2,
         max_steps=1000,
         test_steps_per_task=1000,
+        conig=config,
     )
     results = setting.apply(method)
     assert results
@@ -440,6 +449,6 @@ def test_task_inference_multi_task_sl(config: Config):
     method = BaselineMethod(config=config, max_epochs=1)
     from sequoia.settings.sl import MultiTaskSLSetting
 
-    setting = MultiTaskSLSetting(dataset="mnist", nb_tasks=2,)
+    setting = MultiTaskSLSetting(dataset="mnist", nb_tasks=2, config=config)
     results = setting.apply(method)
     assert 0.95 <= results.average_final_performance.objective

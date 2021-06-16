@@ -11,20 +11,25 @@ from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     from sequoia.methods import Method
     from sequoia.settings import Setting
+from sequoia.settings import Setting
 
+# NOTE: Update this if we move this `readme.py` somewhere else.
+SEQUOIA_ROOT_DIR = Path(os.path.abspath(os.path.dirname(__file__))).parent.parent
 
 def get_relative_path_to(something: Type) -> Path:
     """ Attempts to give the relative path from the current working directory to the
     file where somethign is defined. If that's not possible, returns an absolute path
     instead.
     """
-    source_dir = Path.cwd().parent
-    source_file = Path(getsourcefile(something)).relative_to(source_dir)
+    # This isn't quite right: Should be a relative path to the source file:
+    import sequoia
+    current_dir = Path.cwd()
+    source_file = Path(getsourcefile(something)).relative_to(current_dir)
     return source_file
 
 
 def get_tree_string(
-    root_setting: Type["Setting"] = "Setting",
+    root_setting: Type["Setting"] = Setting,
     with_methods: bool = False,
     with_assumptions: bool = False,
     with_docstrings: bool = False,
@@ -104,7 +109,7 @@ def get_tree_string(
 
 
 def get_tree_string_markdown(
-    root_setting: Type["Setting"] = "Setting",
+    root_setting: Type["Setting"] = Setting,
     with_methods: bool = False,
     with_docstring: bool = False,
 ):

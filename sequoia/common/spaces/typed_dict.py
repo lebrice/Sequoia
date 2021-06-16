@@ -29,7 +29,7 @@ import numpy as np
 from gym import Space, spaces
 from gym.vector.utils import batch_space, concatenate
 from collections import OrderedDict
-
+from .sparse import batch_space, concatenate
 M = TypeVar("M", bound=Mapping[str, Any])
 S = TypeVar("S")
 Dataclass = TypeVar("Dataclass")
@@ -78,8 +78,7 @@ class TypedDictSpace(spaces.Dict, Mapping[str, Space], Generic[M]):
 
     def sample(self) -> M:
         dict_sample: dict = super().sample()
-        if self.dtype is dict:
-            return dict(dict_sample)  # Get rid of OrderedDict.
+        # Gets rid of OrderedDict.
         return self.dtype(**dict_sample)
 
     def __getattr__(self, attr: str) -> Space:
@@ -139,15 +138,48 @@ class TypedDictSpace(spaces.Dict, Mapping[str, Space], Generic[M]):
         return super().__eq__(other)
 
 
+from functools import singledispatch
+def _is_singledispatch(module_function):
+    return hasattr(module_function, "registry")
+
+
+def register_variant(module, module_fn_name: str):
+    """ Converts a function from the given module to a singledispatch callable,
+    and registers the wrapped function as the callable to use for Sparse spaces.
+    
+    The module function must have the space as the first argument for this to
+    work.
+    """
+    module_function = getattr(module, module_fn_name)
+    
+    # Convert the function to a singledispatch callable.
+    if not _is_singledispatch(module_function):
+        module_function = singledispatch(module_function)
+        setattr(module, module_fn_name, module_function)
+    # Register the function as the callable to use when the first arg is a
+    # Sparse object.
+    def wrapper(function):
+        module_function.register(TypedDictSpace, function)
+        return function
+    return wrapper
+
+
+from gym.vector.utils.shared_memory import \
+    read_from_shared_memory as read_from_shared_memory_
+
+import gym.vector.utils
+
+
 @batch_space.register(TypedDictSpace)
+# @register_variant(gym.vector.utils, "batch_space")
 def _batch_typed_dict_space(space: TypedDictSpace, n: int = 1) -> spaces.Dict:
     return type(space)(
         {key: batch_space(subspace, n=n) for (key, subspace) in space.spaces.items()},
         dtype=space.dtype,
     )
 
-
 @concatenate.register(TypedDictSpace)
+# @register_variant(gym.vector.utils, "concatenate")
 def _concatenate_typed_dicts(
     space: TypedDictSpace,
     items: Union[list, tuple],

@@ -75,7 +75,7 @@ class EpisodeCounter(IterableWrapper):
         return obs, reward, done, info
 
 
-class EpisodeLimit(EpisodeCounter, MayCloseEarly):
+class EpisodeLimit(EpisodeCounter):
     """ Closes the environment when a given number of episodes is performed.
     
     NOTE: This also applies to vectorized environments, i.e. the episode counter
@@ -91,15 +91,22 @@ class EpisodeLimit(EpisodeCounter, MayCloseEarly):
     def max_episodes(self) -> int:
         return self._max_episodes
 
+    def closed_error_message(self) -> str:
+        """ Return the error message to use when attempting to use the closed env.
+        
+        This can be useful for wrappers that close when a given condition is reached,
+        e.g. a number of episodes has been performed, which could return a more relevant
+        message here.
+        """
+        return f"Env reached max number of episodes ({self.max_episodes})"
+
     def reset(self):
+        # NOTE: MayCloseEarly.reset() will raise a ClosedEnvironmentError if
+        # self.is_closed() is True, which will always be the case if we exceed the
+        # limit.
         obs = super().reset()
-
-        if self._episode_counter > self._max_episodes:
-            assert self.is_closed()
-            raise ClosedEnvironmentError(
-                f"Env reached max number of episodes ({self.max_episodes})"
-            )
-
+        assert not self.is_closed()
+        
         if self.is_vectorized:
             n_unfinished_envs: int = (~self._done).sum()
             if self._episode_counter != 0 and n_unfinished_envs:
@@ -118,13 +125,10 @@ class EpisodeLimit(EpisodeCounter, MayCloseEarly):
             logger.warning("Beware, entering last episode")
         return obs
 
-    # def __iter__(self):
-    #     yield from super().__iter__()
+    def __iter__(self):
+        return super().__iter__()
 
     def step(self, action):
-        logger.debug(
-            f"closed? {self.is_closed()} episode {self._episode_counter} / {self._max_episodes}"
-        )
         if self.is_closed():
             if self._episode_counter >= self._max_episodes:
                 raise ClosedEnvironmentError(

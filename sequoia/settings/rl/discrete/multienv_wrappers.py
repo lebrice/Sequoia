@@ -16,7 +16,6 @@ from sequoia.utils.logging_utils import get_logger
 from sequoia.utils.generic_functions import concatenate
 
 logger = get_logger(__file__)
-from torch.utils.data import ChainDataset
 
 
 class MultiEnvWrapper(IterableWrapper, ABC):

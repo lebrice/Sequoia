@@ -26,6 +26,13 @@ class TaskResults(Results, Generic[MetricType]):
                 Metrics.from_dict(metrics, drop_extra_fields=False) for metrics in self.metrics
             ]
 
+    def __str__(self) -> str:
+        return f"{type(self).__name__}(average(metrics)={self.average_metrics})"
+
+    def __repr__(self) -> str:
+        return f"{type(self).__name__}(average(metrics)={self.average_metrics})"
+
+    
     @property
     def average_metrics(self) -> MetricType:
         """ Returns the average 'Metrics' object for this task. """

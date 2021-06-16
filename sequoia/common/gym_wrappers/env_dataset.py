@@ -208,7 +208,8 @@ class EnvDataset(
         """
         assert action is not None, "Don't send a None action!"
         self.action_ = action
-        self.observation_ = self.__next__()
+        self.observation_, self.reward_, self.done_, self.info_ = self.step(action) 
+        # self.observation_ = self.__next__()
         self.n_sends_ += 1
         return self.reward_
 
@@ -365,7 +366,11 @@ class EnvDataset(
     # TODO: calling `len` on an RL environment probably shouldn't work! (it should
     # behave the same exact way as an IterableDataset)
 
-    def __len__(self) -> Optional[int]:
-        if self.max_steps is None:
-            raise RuntimeError(f"The dataset has no length when max_steps is None.")
-        return self.max_steps
+    # def __len__(self) -> Optional[int]:
+    #     if self.max_steps is None:
+    #         raise RuntimeError(f"The dataset has no length when max_steps is None.")
+    #     return self.max_steps
+
+    def __add__(self, other):
+        from sequoia.utils.generic_functions import concatenate
+        return concatenate(self, other) 

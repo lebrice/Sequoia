@@ -20,6 +20,9 @@ class ActionCounter(IterableWrapper):
         self.is_vectorized = isinstance(env.unwrapped, VectorEnv)
         self._action_counter: int = 0
 
+    def step_count(self) -> int:
+        return self._action_counter
+
     def action_count(self) -> int:
         return self._action_counter
 
@@ -48,6 +51,9 @@ class ActionLimit(ActionCounter):
     @property
     def max_steps(self) -> int:
         return self._max_steps
+
+    def __len__(self):
+        return self.max_steps
 
     def step(self, action):
         if self._action_counter >= self._max_steps:

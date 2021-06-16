@@ -15,7 +15,6 @@ from sequoia.utils.logging_utils import get_logger, log_calls
 
 logger = get_logger(__file__)
 
-from numpy.typing import ArrayLike
 from typing_extensions import Final
 from sequoia.settings.base import Rewards
 

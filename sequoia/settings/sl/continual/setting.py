@@ -71,9 +71,16 @@ EnvironmentType = TypeVar("EnvironmentType", bound=ContinualSLEnvironment)
 
 @dataclass
 class ContinualSLSetting(SLSetting, ContinualAssumption):
-    """ WIP: Continuous, Task-Agnostic Supervised Learning.
-    """
+    """ Continuous, Task-Agnostic, Continual Supervised Learning.
+    
+    This is *currently* the most "general" Supervised Continual Learning setting in
+    Sequoia.
 
+    - Data distribution changes smoothly over time.
+    - Smooth transitions between "tasks"
+    - No information about task boundaries or task identity (no task IDs)
+    - Maximum of one 'epoch' through the environment.
+    """
     # Class variables that hold the 'base' observation/action/reward spaces for the
     # available datasets.
     base_observation_spaces: ClassVar[Dict[str, gym.Space]] = base_observation_spaces

@@ -192,11 +192,16 @@ class SettingABC:
         return remove_suffix(name, "_setting")
 
     @classmethod
-    def immediate_children(cls) -> List[Type["SettingABC"]]:
+    def immediate_children(cls) -> Iterable[Type["SettingABC"]]:
         """ Returns the immediate children of this Setting in the hierarchy.
         In most cases, this will be a list with only one value.
         """
-        return cls._children
+        yield from cls._children
+
+    @classmethod
+    def get_immediate_children(cls) -> List[Type["SettingABC"]]:
+        """ Returns a list of the immediate children of this Setting. """
+        return list(cls.immediate_children())
 
     @classmethod
     def children(cls) -> Iterable[Type["SettingABC"]]:

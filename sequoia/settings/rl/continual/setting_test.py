@@ -12,7 +12,7 @@ from gym import spaces
 from gym.vector.utils import batch_space
 from sequoia.common.config import Config
 from sequoia.common.gym_wrappers import IterableWrapper, TransformObservation
-from sequoia.common.spaces import Image
+from sequoia.common.spaces import Image, TypedDictSpace
 from sequoia.common.transforms import Transforms
 from sequoia.conftest import (
     ATARI_PY_INSTALLED,
@@ -379,7 +379,7 @@ class TestContinualRLSetting:
                 # single_observation_space, AFAIR.
                 assert env.single_observation_space.x == expected_x_space
                 assert env.single_action_space == expected_action_space
-
+                assert isinstance(env.observation_space, TypedDictSpace), (env, env.observation_space)
                 assert env.observation_space.x == expected_batched_x_space
                 assert env.action_space == expected_batched_action_space
             else:

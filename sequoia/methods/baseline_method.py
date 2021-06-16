@@ -42,7 +42,47 @@ from .models import BaselineModel, ForwardPass
 
 logger = get_logger(__file__)
 
+from pytorch_lightning import Trainer
+from pytorch_lightning.trainer.connectors.data_connector import DataConnector
+from sequoia.common.gym_wrappers.utils import IterableWrapper
 
+class PatchedDataConnector(DataConnector):
+    def _with_is_last(self, iterable):
+        """ Patch for this 'with_is_last' which messes up iterating over an RL env.
+        """
+        if isinstance(iterable, gym.Env):
+            env = iterable
+            assert isinstance(env, IterableWrapper), env
+            while not env.is_closed():
+                for step, obs in enumerate(env):
+                    if env.is_closed():
+                        yield obs, True
+                        break
+                    else:
+                        yield obs, False
+        else:
+            yield from super()._with_is_last(iterable)
+            # it = iter(iterable)
+            # last = next(it)
+            # if hasattr(last, "done"):
+            #     end_of_episode = last["done"]
+            #     yield last, end_of_episode
+            # for val in it:
+            #     # yield last and has next
+            #     if hasattr(last, "done"):
+            #         end_of_episode = last["done"]
+            #         yield last, end_of_episode
+            #     else:
+            #         yield last, False
+            #     last = val
+            # yield last, no longer has next
+            # yield last, True
+
+import pytorch_lightning.trainer.connectors.data_connector
+setattr(pytorch_lightning.trainer.connectors.data_connector, "DataConnector", PatchedDataConnector)
+pytorch_lightning.trainer.connectors.data_connector.DataConnector = PatchedDataConnector
+
+    
 @register_method
 @dataclass
 class BaselineMethod(Method, Serializable, Parseable, target_setting=Setting):
@@ -500,7 +540,7 @@ class BaselineMethod(Method, Serializable, Parseable, target_setting=Setting):
         # once PL adds it.
         # from sequoia.common.callbacks.vae_callback import SaveVaeSamplesCallback
         return [
-            EarlyStopping(monitor="val Loss")
+            EarlyStopping(monitor="loss")
             # self.hparams.knn_callback,
             # SaveVaeSamplesCallback(),
         ]
