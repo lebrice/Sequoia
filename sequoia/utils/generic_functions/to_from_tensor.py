@@ -97,27 +97,17 @@ def _(
     return torch.as_tensor(sample, device=device, dtype=torch.bool)
 
 
-@to_tensor.register
-def _(
-    space: spaces.Dict,
-    sample: Dict[str, Union[np.ndarray, Any]],
-    device: torch.device = None,
-) -> Dict[str, Union[Tensor, Any]]:
-    return {key: to_tensor(space[key], value, device) for key, value in sample.items()}
-
-
 @to_tensor.register(TypedDictSpace)
 def _(
     space: TypedDictSpace[T],
     sample: Dict[str, Union[np.ndarray, Any]],
     device: torch.device = None,
-) -> TypedDictSpace[T]:
-    return type(space)(
-        {
+) -> T:
+    return space.dtype(
+        **{
             key: to_tensor(subspace, sample=sample[key], device=device)
             for key, subspace in space.items()
-        },
-        dtype=space.dtype,
+        }
     )
 
 

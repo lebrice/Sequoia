@@ -324,6 +324,11 @@ class IterableWrapper(MayCloseEarly, IterableDataset, Generic[EnvType], ABC):
         from sequoia.settings.sl import PassiveEnvironment
         self.wrapping_passive_env = isinstance(self.unwrapped, PassiveEnvironment)
 
+    @property
+    def is_vectorized(self) -> bool:
+        """ Returns wether this wrapper is wrapping a vectorized environment. """
+        return isinstance(self.unwrapped, VectorEnv)
+
     def __next__(self):
         # TODO: This is tricky. We want the wrapped env to use *our* step,
         # reset(), action(), observation(), reward() methods, instead of its own!

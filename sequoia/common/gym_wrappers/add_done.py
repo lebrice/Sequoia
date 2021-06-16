@@ -15,6 +15,7 @@ from sequoia.common.spaces import TypedDictSpace
 
 from .utils import IterableWrapper, has_wrapper
 
+T = TypeVar("T")
 Bool = TypeVar("Bool", bound=Union[bool, Sequence[bool]])
 K = TypeVar("K")
 V = TypeVar("V")
@@ -32,9 +33,11 @@ def add_done(observation: Any, done: Any) -> Any:
         f"{type(observation)}."
     )
 
+@add_done.register(int)
+@add_done.register(float)
 @add_done.register(Tensor)
 @add_done.register(np.ndarray)
-def _add_done_to_array_obs(observation: np.ndarray, done: bool) -> Dict[str, Union[np.ndarray, bool]]:
+def _add_done_to_array_obs(observation: T, done: bool) -> Dict[str, Union[T, bool]]:
     # TODO: use 'x' or 'observation'?
     return {"x": observation, "done": done}
 
@@ -118,8 +121,6 @@ class AddDoneToObservation(IterableWrapper):
     """
     def __init__(self, env: gym.Env, done_space: Space = None):
         super().__init__(env)
-        # happens in the VectorEnv, done is always False!
-        self.is_vectorized = isinstance(env.unwrapped, VectorEnv)
         # boolean value. (0 or 1)
         if done_space is None:
             done_space = spaces.Box(0, 1, (), dtype=np.bool)
@@ -127,8 +128,7 @@ class AddDoneToObservation(IterableWrapper):
                 self.single_observation_space = add_done(self.single_observation_space, done_space)
                 done_space = batch_space(done_space, self.env.num_envs)
         self.done_space = done_space
-        self.observation_space = add_done(self.env.observation_space,
-                                                   self.done_space)
+        self.observation_space = add_done(self.env.observation_space, self.done_space)
 
 
     def reset(self, **kwargs):
