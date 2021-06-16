@@ -21,10 +21,12 @@ from torch.utils.data import DataLoader, Dataset
 from sequoia.common import Loss
 from sequoia.common.config import Config
 from sequoia.common.gym_wrappers import MultiTaskEnvironment
+from sequoia.methods.baseline_method import BaselineMethod
 from sequoia.methods.models.forward_pass import ForwardPass
 from sequoia.methods.models.output_heads.rl.episodic_a2c import EpisodicA2C
 from sequoia.settings import ClassIncrementalSetting, TraditionalRLSetting, RLSetting
 from sequoia.settings.base import Environment
+from sequoia.settings.rl import IncrementalRLSetting
 from sequoia.utils import take
 
 from .baseline_model import BaselineModel
@@ -413,8 +415,8 @@ def test_task_inference_rl_easy(config: Config):
         dataset="cartpole",
         nb_tasks=2,
         max_episode_steps=20,
-        steps_per_task=100,
-        test_steps_per_task=100,
+        train_max_steps=200,
+        test_max_steps=200,
         config=config,
     )
     results = setting.apply(method)
@@ -424,17 +426,15 @@ def test_task_inference_rl_easy(config: Config):
 
 @pytest.mark.timeout(120)
 def test_task_inference_rl_hard(config: Config):
-    from sequoia.methods.baseline_method import BaselineMethod
 
     method = BaselineMethod(config=config)
-    from sequoia.settings.rl import RLSetting
 
-    setting = RLSetting(
+    setting = IncrementalRLSetting(
         dataset="cartpole",
         nb_tasks=2,
-        max_steps=1000,
-        test_steps_per_task=1000,
-        conig=config,
+        train_max_steps=1000,
+        test_max_steps=1000,
+        config=config,
     )
     results = setting.apply(method)
     assert results

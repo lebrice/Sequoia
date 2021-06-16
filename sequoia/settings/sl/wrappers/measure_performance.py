@@ -78,7 +78,22 @@ class MeasureSLPerformanceWrapper(
         observation, reward, done, info = self.env.step(action)
         # TODO: Make this wrapper task-aware, using the task ids in this `observation`?
         if self.in_evaluation_period:
+            # TODO: Edge case, but we also need the prediction for the last batch to be
+            # counted.
             self._metrics[self._steps] += self.get_metrics(action, reward)
+        elif self.first_epoch_only:
+            # If we are at the last batch in the first epoch, we still keep the metrics
+            # for that batch, even though we're technically not in the first epoch
+            # anymore.
+            # TODO: CHeck the length through the dataset? or through a more 'clean' way
+            # e.g. through the `max_steps` property of a TimeLimit wrapper or something?
+            num_batches = len(self.unwrapped.dataset) // self.batch_size
+            if not self.unwrapped.drop_last:
+                num_batches += 1 if len(self.unwrapped.dataset) % self.batch_size else 0
+            # currently_at_last_batch = self._steps == num_batches - 1
+            currently_at_last_batch = self._steps == num_batches - 1
+            if self.__epochs == 1 and currently_at_last_batch:
+                self._metrics[self._steps] += self.get_metrics(action, reward)
         self._steps += 1
         return observation, reward, done, info
 
@@ -97,16 +112,15 @@ class MeasureSLPerformanceWrapper(
             # If we are at the last batch in the first epoch, we still keep the metrics
             # for that batch, even though we're technically not in the first epoch
             # anymore.
-            there_is_last_batch = self.env.__len__() % self.batch_size != 0
-            last_batch_isnt_dropped = not self.env.unwrapped.drop_last
-            currently_at_last_batch = self._steps == self.env.__len__() - 1
-            if (
-                there_is_last_batch
-                and last_batch_isnt_dropped
-                and currently_at_last_batch
-            ):
+            # TODO: CHeck the length through the dataset? or through a more 'clean' way
+            # e.g. through the `max_steps` property of a TimeLimit wrapper or something?
+            num_batches = len(self.unwrapped.dataset) // self.batch_size
+            if not self.unwrapped.drop_last:
+                num_batches += 1 if len(self.unwrapped.dataset) % self.batch_size else 0
+            # currently_at_last_batch = self._steps == num_batches - 1
+            currently_at_last_batch = self._steps == num_batches - 1
+            if self.__epochs == 1 and currently_at_last_batch:
                 self._metrics[self._steps] += self.get_metrics(action, reward)
-
         # This is ok since we don't increment in the iterator.
         self._steps += 1
         return reward

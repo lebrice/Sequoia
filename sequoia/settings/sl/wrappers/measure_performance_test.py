@@ -102,7 +102,7 @@ def test_measure_performance_wrapper():
     assert metrics.accuracy == 0.5
 
 
-def make_dummy_env(n_samples: int = 100, batch_size: int = 1):
+def make_dummy_env(n_samples: int = 100, batch_size: int = 1, drop_last: bool = False):
     dataset = TensorDataset(
         torch.arange(n_samples).reshape([n_samples, 1, 1, 1])
         * torch.ones([n_samples, 3, 32, 32]),
@@ -114,6 +114,7 @@ def make_dummy_env(n_samples: int = 100, batch_size: int = 1):
         batch_size=batch_size,
         n_classes=n_samples,
         pretend_to_be_active=pretend_to_be_active,
+        drop_last=drop_last,
     )
     env = TypedObjectsWrapper(
         env, observations_type=Observations, actions_type=Actions, rewards_type=Rewards
@@ -309,19 +310,20 @@ def test_last_batch_baseline_model():
     assert perf.n_samples == 110
 
 
-def test_delayed_actions():
+@pytest.mark.parametrize("drop_last", [False, True])
+def test_delayed_actions(drop_last: bool):
     """ Test that whenever some intermediate between the env and the Method is
     caching some of the observations, the actions and rewards still end up lining up.
     
     This is just to replicate what's happening in Pytorch Lightning, where they use some
     function to check if the batch is the last one or not, and was causing issue before.
     """
-    env = make_dummy_env(n_samples=110, batch_size=20)
+    env = make_dummy_env(n_samples=110, batch_size=20, drop_last=drop_last)
     env = MeasureSLPerformanceWrapper(env, first_epoch_only=True)
-
-
+    i = 0
+    
     for i, ((obs, rew), is_last) in enumerate(with_is_last(env)):
-        print(i)
+        print(i, obs.batch_size)
         assert rew is None
         if i != 5:
             assert obs.batch_size == 20, i
@@ -329,9 +331,30 @@ def test_delayed_actions():
             assert obs.batch_size == 10, i
         actions = Actions(y_pred=torch.arange(i * 20, (i + 1) * 20)[: obs.batch_size])
         rewards = env.send(actions)
-        assert (rewards.y == torch.arange(i * 20, (i + 1) * 20)[: obs.batch_size]).all()
+        assert (rewards.y == torch.arange(i * 20, (i + 1) * 20)[: obs.batch_size]).all()    
+    assert i == (4 if drop_last else 5)
+    assert is_last
+    
+    for i, ((obs, rew), is_last) in enumerate(with_is_last(env)):
+        print(i)
+        # We get rewards now that we're outside of the first epoch.
+        assert rew is not None
+        if i < 5:
+            assert obs.batch_size == 20, i
+        else:
+            assert obs.batch_size == 10, i
+
+        # actions = Actions(y_pred=torch.arange(i * 20, (i + 1) * 20)[: obs.batch_size])
+        # rewards = env.send(actions)
+        # assert (rewards.y == torch.arange(i * 20, (i + 1) * 20)[: obs.batch_size]).all()    
+    assert i == 4 if drop_last else 5
+    assert len(list(env)) == 5 if drop_last else 6
+    assert len(list(with_is_last(env))) == 5 if drop_last else 6
+    
 
     perf = env.get_average_online_performance()
     assert perf.accuracy == 1.0
-    assert perf.n_samples == 110
+    # BUG: The number of samples for the metrics isn't quite right, should include the
+    # last batch, even if it doesn't have a 'full' batch.
+    assert perf.n_samples == (100 if drop_last else 110)
 

@@ -319,6 +319,8 @@ class IterableWrapper(MayCloseEarly, IterableDataset, Generic[EnvType], ABC):
 
     def __init__(self, env: gym.Env):
         super().__init__(env)
+        from sequoia.settings.sl import PassiveEnvironment
+        self.wrapping_passive_env = isinstance(self.unwrapped, PassiveEnvironment)
 
     def __next__(self):
         # TODO: This is tricky. We want the wrapped env to use *our* step,
@@ -358,11 +360,12 @@ class IterableWrapper(MayCloseEarly, IterableDataset, Generic[EnvType], ABC):
     def send(self, action):
         # TODO: Make `send` use `self.step`, that way wrappers can apply the same way to
         # RL and SL environments.
-        # if hasattr(self.unwrapped, "send"):
-        #     action = self.action(action)
-        #     reward = self.env.send(action)
-        #     reward = self.reward(reward)
-        #     return reward
+        # FIXME: Detect if this is wrapping a supervised environment
+        if self.wrapping_passive_env:
+            action = self.action(action)
+            reward = self.env.send(action)
+            reward = self.reward(reward)
+            return reward
 
         self.action_ = action
         self.observation_, self.reward_, self.done_, self.info_ = self.step(action)
@@ -389,27 +392,15 @@ class IterableWrapper(MayCloseEarly, IterableDataset, Generic[EnvType], ABC):
 
     def __iter__(self) -> Iterator:
         # TODO: Pretty sure this could be greatly simplified by just always using the loop from EnvDataset.
-
-        self.observation_ = self.reset()
-        self.done_ = False
-        self.action_ = None
-        self.reward_ = None
-
-        # Yield the first observation_.
-        yield self.observation_
-
-        if self.action_ is None:
-            raise RuntimeError(
-                f"You have to send an action using send() between every "
-                f"observation. (env = {self})"
-            )
-
-        while not any([self.done_, self.is_closed()]):
-            # logger.debug(f"step {self.n_steps_}/{self.max_steps},  (episode {self.n_episodes_})")
-
-            # Set those to None to force the user to call .send()
+        if self.wrapping_passive_env:
+            yield from self.env
+        else:
+            self.observation_ = self.reset()
+            self.done_ = False
             self.action_ = None
             self.reward_ = None
+
+            # Yield the first observation_.
             yield self.observation_
 
             if self.action_ is None:
@@ -417,6 +408,20 @@ class IterableWrapper(MayCloseEarly, IterableDataset, Generic[EnvType], ABC):
                     f"You have to send an action using send() between every "
                     f"observation. (env = {self})"
                 )
+
+            while not any([self.done_, self.is_closed()]):
+                # logger.debug(f"step {self.n_steps_}/{self.max_steps},  (episode {self.n_episodes_})")
+
+                # Set those to None to force the user to call .send()
+                self.action_ = None
+                self.reward_ = None
+                yield self.observation_
+
+                if self.action_ is None:
+                    raise RuntimeError(
+                        f"You have to send an action using send() between every "
+                        f"observation. (env = {self})"
+                    )
 
         # assert False, "WIP"
 
@@ -466,16 +471,16 @@ class IterableWrapper(MayCloseEarly, IterableDataset, Generic[EnvType], ABC):
         # # raise NotImplementedError(f"Wrapper {self} doesn't know how to iterate on {self.env}.")
         # return self.env.__iter__()
 
-    @property
-    def wrapping_passive_env(self) -> bool:
-        """ Returns wether this wrapper is applied over a 'passive' env, in which case
-        iterating over the env will yield (up to) 2 items, rather than just 1.
-        """
-        from sequoia.settings.sl.environment import PassiveEnvironment
+    # @property
+    # def wrapping_passive_env(self) -> bool:
+    #     """ Returns wether this wrapper is applied over a 'passive' env, in which case
+    #     iterating over the env will yield (up to) 2 items, rather than just 1.
+    #     """
+    #     from sequoia.settings.sl.environment import PassiveEnvironment
 
-        return isinstance(self.unwrapped, PassiveEnvironment) or is_proxy_to(
-            self, PassiveEnvironment
-        )
+    #     return isinstance(self.unwrapped, PassiveEnvironment) or is_proxy_to(
+    #         self, PassiveEnvironment
+    #     )
 
     # def __setattr__(self, attr, value):
     #     """

@@ -19,3 +19,4 @@ from pytorch_lightning.core.datamodule import _DataModuleWrapper
 
 class AssumptionBase(SettingABC):
     pass
+
