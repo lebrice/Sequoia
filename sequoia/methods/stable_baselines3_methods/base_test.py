@@ -72,7 +72,8 @@ class BaseTests:
             config=config,
         )
         setting.setup()
-
+        assert setting.train_max_steps == 2_000
+        assert setting.test_max_steps == 2_000
         method = self.Method(
             hparams=self.Model.HParams(clear_buffers_between_tasks=clear_buffers)
         )

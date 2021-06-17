@@ -83,10 +83,10 @@ def test_with_controllable_episode_lengths(batch_size: int, monkeypatch):
     env = EnvDataset(env)
 
     obs_space = env.single_observation_space
-    x_dim = flatdim(obs_space[0])
+    x_dim = flatdim(obs_space["x"])
     # Create some dummy encoder.
     encoder = nn.Linear(x_dim, x_dim)
-    representation_space = obs_space[0]
+    representation_space = obs_space["x"]
 
     output_head = PolicyHead(
         input_space=representation_space,
@@ -121,7 +121,7 @@ def test_with_controllable_episode_lengths(batch_size: int, monkeypatch):
     step_done = np.zeros(batch_size, dtype=np.bool)
 
     for step in range(200):
-        x, obs_done = obs
+        x, obs_done = obs["x"], obs["done"]
 
         # The done from the obs should always be the same as the 'done' from the 'step' function.
         assert np.array_equal(obs_done, step_done)
@@ -225,7 +225,7 @@ def test_loss_is_nonzero_at_episode_end(batch_size: int):
     env = EnvDataset(env)
 
     head = PolicyHead(
-        input_space=obs_space[0],
+        input_space=obs_space.x,
         action_space=action_space,
         reward_space=reward_space,
         hparams=PolicyHead.HParams(accumulate_losses_before_backward=False),
@@ -300,7 +300,7 @@ def test_done_is_sometimes_True_when_iterating_through_env(batch_size: int):
     for i, obs in zip(range(100), env):
         print(i, obs)
         _ = env.send(env.action_space.sample())
-        if any(obs.done):
+        if any(obs["done"]):
             break
     else:
         assert False, "Never encountered done=True!"
@@ -327,7 +327,7 @@ def test_loss_is_nonzero_at_episode_end_iterate(batch_size: int):
 
     head = PolicyHead(
         # observation_space=obs_space,
-        input_space=obs_space[0],
+        input_space=obs_space["x"],
         action_space=action_space,
         reward_space=reward_space,
         hparams=PolicyHead.HParams(accumulate_losses_before_backward=False),

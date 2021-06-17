@@ -578,7 +578,7 @@ class ContinualRLSetting(RLSetting, ContinualAssumption):
         # change_steps = [0, 2_000, 4_000, 6_000, 8_000, 10_000]
         if self.train_steps_per_task is not None:
             # TODO: a bit ugly, essentially need to check if this is for the  for subclasses, only for this setting.
-            if not self.known_task_boundaries_at_train_time:
+            if self.smooth_task_boundaries:
                 train_max_steps = self.train_steps_per_task * (self.nb_tasks + 1)
             else:
                 train_max_steps = self.train_steps_per_task * self.nb_tasks

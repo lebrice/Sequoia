@@ -235,10 +235,10 @@ def test_loss_is_nonzero_at_episode_end(batch_size: int):
     encoder.train()
 
     for i in range(100):
-        representations = encoder(obs.x)
+        representations = encoder(obs["x"])
 
         observations = ContinualRLSetting.Observations(
-            x=obs.x,
+            x=obs["x"],
             done=done,
             # info=info,
         )
