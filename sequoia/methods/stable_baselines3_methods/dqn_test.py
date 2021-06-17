@@ -37,16 +37,20 @@ class TestDQN(DiscreteActionSpaceMethodTests, OffPolicyMethodTests):
             steps_per_task=1_000,
             test_steps_per_task=1_000,
         )
+        assert setting.train_max_steps == 2_000
         assert setting.max_steps == 2_000
         assert setting.test_steps == 2_000
         assert setting.nb_tasks == 2
-        assert setting.observation_space == TypedDictSpace(
-            spaces={
-                "x": Image(0, 255, shape=(64, 64, 3), dtype=np.uint8),
-                "task_labels": Sparse(spaces.Discrete(2)),
-            },
-            dtype=setting.Observations,
-        )
+        assert setting.observation_space.x == Image(0, 255, shape=(64, 64, 3), dtype=np.uint8)
+        assert setting.observation_space.task_labels.n == 2
+        # assert setting.observation_space == TypedDictSpace(
+        #     spaces={
+        #         "x": Image(0, 255, shape=(64, 64, 3), dtype=np.uint8),
+        #         "task_labels": Sparse(spaces.Discrete(2), sparsity=0.5),
+        #         "done": Sparse(spaces.Box(False, True, (), dtype=np.bool), sparsity=1),
+        #     },
+        #     dtype=setting.Observations,
+        # )
         assert setting.observation_space.dtype is setting.Observations
         assert setting.action_space == spaces.Discrete(6)  # monsterkong has 6 actions.
 

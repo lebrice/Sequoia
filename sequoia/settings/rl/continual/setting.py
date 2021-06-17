@@ -577,7 +577,11 @@ class ContinualRLSetting(RLSetting, ContinualAssumption):
         # Ex: nb_tasks == 5, train_max_steps = 10_000:
         # change_steps = [0, 2_000, 4_000, 6_000, 8_000, 10_000]
         if self.train_steps_per_task is not None:
-            train_max_steps = self.train_steps_per_task * (self.nb_tasks + 1)
+            # TODO: a bit ugly, essentially need to check if this is for the  for subclasses, only for this setting.
+            if not self.known_task_boundaries_at_train_time:
+                train_max_steps = self.train_steps_per_task * (self.nb_tasks + 1)
+            else:
+                train_max_steps = self.train_steps_per_task * self.nb_tasks
         else:
             train_max_steps = self.train_max_steps
         task_schedule_keys = np.linspace(
