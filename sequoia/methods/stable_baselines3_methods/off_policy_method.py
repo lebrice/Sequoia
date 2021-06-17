@@ -27,6 +27,7 @@ def decode_trainfreq(v: Any):
         return TrainFreq(v[0], v[1])
     return v
 
+
 register_decoding_fn(TrainFreq, decode_trainfreq)
 
 
@@ -98,7 +99,7 @@ class OffPolicyMethod(StableBaselines3Method, ABC):
     def __post_init__(self):
         super().__post_init__()
         self.model: OffPolicyAlgorithm
-    
+
     def configure(self, setting: ContinualRLSetting):
         super().configure(setting)
         # The default value for the buffer size in the DQN model is WAY too
@@ -166,7 +167,9 @@ class OffPolicyMethod(StableBaselines3Method, ABC):
                     f"{ten_percent_of_step_budget} steps."
                 )
                 self.hparams.learning_starts = ten_percent_of_step_budget
-                if self.hparams.train_freq != -1:
+                if self.hparams.train_freq != -1 and isinstance(
+                    self.hparams.train_freq, int
+                ):
                     # Update the model at least 2 times during each task, and at most
                     # once per step.
                     self.hparams.train_freq = min(

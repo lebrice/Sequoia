@@ -387,7 +387,7 @@ class TestContinualRLSetting:
                 # attribute in other tests (for the SettingProxy for example).
                 assert isinstance(obs, self.Setting.args[0].Observations)
             else:
-                assert isinstance(obs, self.Setting.Observations), obs[0].shape
+                assert isinstance(obs, self.Setting.Observations)
             assert obs.x in expected_batched_x_space
             # In this particular case here, the task labels should be None.
             # FIXME: For InrementalRL, this isn't correct! TestIncrementalRL should

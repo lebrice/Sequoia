@@ -33,7 +33,7 @@ class DDPGModel(DDPG, OffPolicyModel):
         # The verbosity level: 0 none, 1 training information, 2 debug
         verbose: int = 0
 
-        train_freq: TrainFreq = (1, "episode")
+        train_freq: TrainFreq = TrainFreq(frequency=1, unit="episode")
 
         # Minibatch size for each gradient update
         batch_size: int = 100

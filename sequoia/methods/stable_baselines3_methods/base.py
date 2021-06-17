@@ -197,15 +197,17 @@ class StableBaselines3Method(Method, ABC, target_setting=ContinualRLSetting):
         self.model: Optional[BaseAlgorithm] = None
         # Extra wrappers to add to the train_env and valid_env before passing
         # them to the `learn` method from stable-baselines3.
+        from sequoia.common.gym_wrappers import TransformObservation, TransformAction, TransformReward
+        import operator
+        from functools import partial
         self.extra_train_wrappers: List[Callable[[gym.Env], gym.Env]] = [
-            RemoveTaskLabelsWrapper,
-            NoTypedObjectsWrapper,
-            RemoveInfoWrapper,
+            partial(TransformObservation, f=operator.itemgetter("x")),
+            # partial(TransformAction, f=operator.itemgetter("y_pred"),
+            partial(TransformReward, f=operator.itemgetter("y")),
         ]
         self.extra_valid_wrappers: List[Callable[[gym.Env], gym.Env]] = [
-            RemoveTaskLabelsWrapper,
-            NoTypedObjectsWrapper,
-            RemoveInfoWrapper,
+            partial(TransformObservation, f=operator.itemgetter("x")),
+            partial(TransformReward, f=operator.itemgetter("y")),
         ]
         # Number of timesteps to train on for each task.
         self.total_timesteps_per_task: int = 0

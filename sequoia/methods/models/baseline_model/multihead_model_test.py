@@ -194,7 +194,7 @@ def test_multitask_rl_bug_without_PL(monkeypatch):
 
             if step == 0:
                 assert not any(obs.done)
-            start_task_label = obs[1][0]
+            start_task_label = obs["task_labels"][0]
 
             stored_steps_in_each_head_before = {
                 task_key: output_head.num_stored_steps(0)
@@ -233,7 +233,7 @@ def test_multitask_rl_bug_without_PL(monkeypatch):
                 assert loss.loss == 0.0
             # TODO:
             print(
-                f"Step {step}, episode {episodes}: x={obs[0]}, done={obs.done}, reward={rewards} task labels: {obs.task_labels}, loss: {loss.losses.keys()}: {loss.loss}"
+                f"Step {step}, episode {episodes}: x={obs.x}, done={obs.done}, reward={rewards} task labels: {obs.task_labels}, loss: {loss.losses.keys()}: {loss.loss}"
             )
 
             if episodes > max_episodes:
@@ -314,7 +314,7 @@ def test_multitask_rl_bug_with_PL(monkeypatch):
                 assert step_results is None
 
             print(
-                f"Step {step}, episode {episodes}: x={obs[0]}, done={obs.done}, task labels: {obs.task_labels}, loss_tensor: {loss_tensor}"
+                f"Step {step}, episode {episodes}: x={obs.x}, done={obs.done}, task labels: {obs.task_labels}, loss_tensor: {loss_tensor}"
             )
 
             if step > 100:

@@ -249,10 +249,10 @@ def test_loss_is_nonzero_at_episode_end(batch_size: int):
     encoder.train()
 
     for i in range(100):
-        representations = encoder(obs[0])
+        representations = encoder(obs["x"])
 
         observations = ContinualRLSetting.Observations(
-            x=obs[0],
+            x=obs["x"],
             done=done,
             # info=info,
         )
@@ -298,9 +298,9 @@ def test_done_is_sometimes_True_when_iterating_through_env(batch_size: int):
     env = ConvertToFromTensors(env)
     env = EnvDataset(env)
     for i, obs in zip(range(100), env):
-        print(i, obs[1])
+        print(i, obs)
         _ = env.send(env.action_space.sample())
-        if any(obs[1]):
+        if any(obs.done):
             break
     else:
         assert False, "Never encountered done=True!"
@@ -338,8 +338,8 @@ def test_loss_is_nonzero_at_episode_end_iterate(batch_size: int):
 
     for i, obs in zip(range(100), env):
         print(i, obs)
-        x = obs[0]
-        done = obs[1]
+        x = obs["x"]
+        done = obs["done"]
         representations = x
         assert isinstance(x, Tensor)
         assert isinstance(done, Tensor)
@@ -533,7 +533,7 @@ def test_sanity_check_cartpole_done_vector():
 
     for i in range(100):
         obs, rewards, done, info = env.step(env.action_space.sample())
-        assert all(obs[1] == done), i
+        assert all(obs["done"] == done), i
         if any(done):
             break
     else:
