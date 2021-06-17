@@ -306,7 +306,28 @@ def test_order_of_keys_is_same_in_samples():
 
 
 def test_debugging():
-    assert {'task_labels': 0, 'x': np.array([-0.25162117, -0.43992427,  0.42706016,  1.47862901])} in TypedDictSpace(x=spaces.Box(-3.4028234663852886e+38, 3.4028234663852886e+38, (4,), np.float32), task_labels=spaces.Discrete(5), dtype=dict)
+    assert {
+        "task_labels": 0,
+        "x": np.array([-0.25162117, -0.43992427, 0.42706016, 1.47862901]),
+    } in TypedDictSpace(
+        x=spaces.Box(-3.4028234663852886e38, 3.4028234663852886e38, (4,), np.float32),
+        task_labels=spaces.Discrete(5),
+        dtype=dict,
+    )
+
+
+def test_equality():
+    s1 = TypedDictSpace(
+        x=spaces.Box(-np.inf, np.inf, (39,), np.float32),
+        task_labels=spaces.Discrete(10),
+        dtype=dict,
+    )
+    s2 = TypedDictSpace(
+        x=spaces.Box(-np.inf, np.inf, (39,), np.float32),
+        task_labels=spaces.Discrete(10),
+        dtype=dict,
+    )
+    assert s1 == s2
 
 
 ## IDEA: Creating a space like this, using the same syntax as with TypedDict
