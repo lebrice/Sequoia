@@ -134,7 +134,7 @@ def get_tree_string_markdown(
     message_lines += [f"- ## [{setting.__name__}]({source_file})"]
 
     applicable_methods = setting.get_applicable_methods()
-    tab = "\t"
+    tab = "  "
 
     if with_docstring:
         message_lines += [""]
@@ -181,11 +181,17 @@ def get_tree_string_markdown(
 
 
 def print_methods():
+    from sequoia.methods import all_methods
     for method in all_methods:
         source_file = get_relative_path_to(method)
         target_setting: Type["Setting"] = method.target_setting
         setting_file = get_relative_path_to(target_setting)
-        print(f"- ## [{method.__name__}]({source_file}) ")
+        method_name = method.__name__
+
+        if method.get_family() != "methods":
+            method_name = method.get_family() + "." + method_name
+
+        print(f"- ## [{method_name}]({source_file}) ")
         print()
         print(f"\t - Target setting: [{target_setting.__name__}]({setting_file})")
         print()
@@ -200,9 +206,9 @@ def print_methods():
         print(textwrap.indent(docstring, "\t"))
 
 
-def add_stuff_to_readme(readme_path=Path("README.md")):
+def add_stuff_to_readme(readme_path=Path("README.md"), settings: bool=True, methods: bool=True):
     token = "<!-- MAKETREE -->\n"
-
+    assert settings or methods
     lines: List[str] = []
     with open(readme_path) as f:
         with StringIO(f.read()) as f:
@@ -222,18 +228,22 @@ def add_stuff_to_readme(readme_path=Path("README.md")):
             # reversed insert?
             # Print the existing lines back:
             print(*lines[: tree_index + 1], sep="")
-            print("\n\n## Available Settings:\n")
-            print()
-            print(get_tree_string_markdown(with_methods=False, with_docstring=True))
-            print()
+            if settings:
+                print("\n\n## Available Settings:\n")
+                print()
+                print(get_tree_string_markdown(with_methods=False, with_docstring=True))
+                print()
             # print("```")
             # print(get_tree_string())
             # print("```")
-            print("\n\n## Registered Methods (so far):\n")
-            print_methods()
-            print()
-
+            if methods:
+                print("\n\n## Registered Methods (so far):\n")
+                print_methods()
+                print()
 
 if __name__ == "__main__":
-    print(get_tree_string())
-    # add_stuff_to_readme()
+    # print(get_tree_string())
+    # print(get_tree_string_markdown(with_methods=False, with_docstring=True))
+    add_stuff_to_readme(readme_path=Path("sequoia/settings/README.md"), methods=False)
+    add_stuff_to_readme(readme_path=Path("sequoia/methods/README.md"), settings=False)
+    
