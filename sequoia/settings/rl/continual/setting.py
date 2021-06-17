@@ -2,6 +2,7 @@
 """
 import difflib
 import itertools
+import textwrap
 import json
 import math
 import warnings
@@ -329,7 +330,7 @@ class ContinualRLSetting(RLSetting, ContinualAssumption):
             except NotImplementedError as e:
                 warnings.warn(
                     RuntimeWarning(
-                        f"Will attempt to use unsupported dataset {self.dataset}!"
+                        f"Will attempt to use unsupported dataset {textwrap.shorten(str(self.dataset), 100)}!"
                     )
                 )
             except Exception as e:
@@ -341,7 +342,7 @@ class ContinualRLSetting(RLSetting, ContinualAssumption):
                     f"Supported envs:\n"
                     + ("\n".join(f"- {k}: {v}" for k, v in self.available_datasets.items()))
                 )
-        logger.info(f"Chosen dataset: {self.dataset}")
+        logger.info(f"Chosen dataset: {textwrap.shorten(str(self.dataset), 50)}")
 
         # The ids of the train/valid/test environments.
         self.train_dataset: str = self.train_dataset or self.dataset

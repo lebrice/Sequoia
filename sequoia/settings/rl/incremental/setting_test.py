@@ -81,8 +81,20 @@ class TestIncrementalRLSetting(DiscreteTaskAgnosticRLSettingTests):
             assert not method.received_task_ids
             assert not method.received_while_training
         else:
-            assert method.received_task_ids == sum([[t_i] + [t_j if setting.task_labels_at_test_time else None for t_j in range(t)] for t_i in range(t)], [])
-            assert method.received_while_training == sum([[True] + [False for _ in range(t)] for t_i in range(t)], [])
+            assert method.received_task_ids == sum(
+                [
+                    [t_i]
+                    + [
+                        t_j if setting.task_labels_at_test_time else None
+                        for t_j in range(t)
+                    ]
+                    for t_i in range(t)
+                ],
+                [],
+            )
+            assert method.received_while_training == sum(
+                [[True] + [False for _ in range(t)] for t_i in range(t)], []
+            )
 
     def test_number_of_tasks(self):
         setting = self.Setting(
@@ -133,7 +145,10 @@ class TestIncrementalRLSetting(DiscreteTaskAgnosticRLSettingTests):
 
     @monsterkong_required
     @pytest.mark.timeout(120)
-    @pytest.mark.parametrize("state", [False, xfail_param(True, reason="TODO: MonsterkongState doesn't work?")])
+    @pytest.mark.parametrize(
+        "state",
+        [False, xfail_param(True, reason="TODO: MonsterkongState doesn't work?")],
+    )
     def test_monsterkong(self, state: bool):
         """ Checks that the MonsterKong env works fine with pixel and state input.
         """
@@ -155,7 +170,9 @@ class TestIncrementalRLSetting(DiscreteTaskAgnosticRLSettingTests):
         if state:
             # State-based monsterkong: We observe a flattened version of the game state
             # (20 x 20 grid + player cell and goal cell, IIRC.)
-            assert setting.observation_space.x == spaces.Box(0, 292, (402,), np.int16), setting._temp_train_env.observation_space
+            assert setting.observation_space.x == spaces.Box(
+                0, 292, (402,), np.int16
+            ), setting._temp_train_env.observation_space
         else:
             assert setting.observation_space.x == Image(0, 255, (64, 64, 3), np.uint8)
 
@@ -177,6 +194,7 @@ class TestIncrementalRLSetting(DiscreteTaskAgnosticRLSettingTests):
         results = setting.apply(method)
 
         self.validate_results(setting, method, results)
+
 
 @pytest.mark.timeout(120)
 def test_action_space_always_matches_obs_batch_size_in_RL(config: Config):
@@ -268,11 +286,11 @@ def test_mtenv_meta_world_support():
 
 
 # @pytest.mark.no_xvfb
-@pytest.mark.xfail(reason="TODO: Rethink how we want to integrate MetaWorld envs.")
+# @pytest.mark.xfail(reason="TODO: Rethink how we want to integrate MetaWorld envs.")
 @metaworld_required
 @pytest.mark.timeout(60)
-def test_metaworld_support():
-    """ Test using metaworld environments as the dataset of a Setting.
+def test_metaworld_support(config: Config):
+    """ Test using metaworld benchmarks as the dataset of an RL Setting.
 
     NOTE: Uses either a MetaWorldEnv instance as the `dataset`, or the env id.
     TODO: Need to rethink this, we should instead use one env class per task (where each
@@ -281,56 +299,70 @@ def test_metaworld_support():
     import metaworld
     from metaworld import MetaWorldEnv
 
-    benchmark = metaworld.ML10()  # Construct the benchmark, sampling tasks
-
-    env_name = "reach-v2"
-    env_type: Type[MetaWorldEnv] = benchmark.train_classes[env_name]
-    env = env_type()
-
-    training_tasks = [
-        task for task in benchmark.train_tasks if task.env_name == env_name
-    ]
-    setting = TaskIncrementalRLSetting(
-        dataset=env,
-        train_task_schedule={
-            i* 1000: operator.methodcaller("set_task", task)
-            for i, task in enumerate(training_tasks)
-        },
-        transforms=[],
+    # TODO: Add option of passing a benchmark instance?
+    # TODO: Make tests better here:
+    # TODO: Add more tests for this?
+    setting = IncrementalRLSetting(
+        dataset="MT10",
+        config=config,
+        max_episode_steps=10,
+        train_max_steps=500,
+        test_max_steps=500,
     )
-    assert setting.nb_tasks == 50
-    assert setting.steps_per_task == 1000
-    assert sorted(setting.train_task_schedule.keys()) == list(range(0, 50_000, 1000))
+    assert setting.nb_tasks == len(setting.train_envs)
+    method = DummyMethod()
+    results = setting.apply(method, config=config)
+    assert results.summary()
+    # benchmark = metaworld.ML10()  # Construct the benchmark, sampling tasks
 
-    # TODO: Clear the transforms by default, and add it back if needed?
-    assert setting.train_transforms == []
-    assert setting.val_transforms == []
-    assert setting.test_transforms == []
+    # env_name = "reach-v2"
+    # env_type: Type[MetaWorldEnv] = benchmark.train_classes[env_name]
+    # env = env_type()
 
-    assert setting.observation_space.x == env.observation_space
+    # training_tasks = [
+    #     task for task in benchmark.train_tasks if task.env_name == env_name
+    # ]
+    # setting = TaskIncrementalRLSetting(
+    #     dataset=env,
+    #     train_task_schedule={
+    #         i* 1000: operator.methodcaller("set_task", task)
+    #         for i, task in enumerate(training_tasks)
+    #     },
+    #     transforms=[],
+    # )
+    # assert setting.nb_tasks == 50
+    # assert setting.steps_per_task == 1000
+    # assert sorted(setting.train_task_schedule.keys()) == list(range(0, 50_000, 1000))
 
-    # Only test out the first 3 tasks for now.
-    # TODO: Also try out the valid and test environments.
-    for task_id in range(3):
-        setting.current_task_id = task_id
+    # # TODO: Clear the transforms by default, and add it back if needed?
+    # assert setting.train_transforms == []
+    # assert setting.val_transforms == []
+    # assert setting.test_transforms == []
 
-        train_env = setting.train_dataloader()
-        assert train_env.observation_space.x == env.observation_space
-        assert train_env.observation_space.task_labels == spaces.Discrete(
-            setting.nb_tasks
-        )
+    # assert setting.observation_space.x == env.observation_space
 
-        n_episodes = 1
-        for episode in range(n_episodes):
-            obs = train_env.reset()
-            done = False
-            steps = 0
-            while not done and steps < env.max_path_length:
-                obs, reward, done, info = train_env.step(
-                    train_env.action_space.sample()
-                )
-                # train_env.render()
-                steps += 1
+    # # Only test out the first 3 tasks for now.
+    # # TODO: Also try out the valid and test environments.
+    # for task_id in range(3):
+    #     setting.current_task_id = task_id
+
+    #     train_env = setting.train_dataloader()
+    #     assert train_env.observation_space.x == env.observation_space
+    #     assert train_env.observation_space.task_labels == spaces.Discrete(
+    #         setting.nb_tasks
+    #     )
+
+    #     n_episodes = 1
+    #     for episode in range(n_episodes):
+    #         obs = train_env.reset()
+    #         done = False
+    #         steps = 0
+    #         while not done and steps < env.max_path_length:
+    #             obs, reward, done, info = train_env.step(
+    #                 train_env.action_space.sample()
+    #             )
+    #             # train_env.render()
+    #             steps += 1
 
 
 @pytest.mark.xfail(reason="Metaworld integration isn't done yet")
@@ -515,8 +547,13 @@ class TestPassingEnvsForEachTask:
             # TODO: Either add a `__getattr__` proxy on the Sparse space, or create
             # dedicated `SparseDiscrete`, `SparseBox` etc spaces so that we eventually
             # get to use `space.n` on a Sparse space.
-            assert train_env.observation_space.task_labels == spaces.Discrete(setting.nb_tasks)
-            assert setting.observation_space.task_labels.n == train_env.observation_space.task_labels.n
+            assert train_env.observation_space.task_labels == spaces.Discrete(
+                setting.nb_tasks
+            )
+            assert (
+                setting.observation_space.task_labels.n
+                == train_env.observation_space.task_labels.n
+            )
 
     def test_command_line(self):
         # TODO: If someone passes the same env ids from the command-line, then shouldn't
@@ -540,6 +577,7 @@ class TestPassingEnvsForEachTask:
         nb_tasks = 3
         gravities = [random.random() * 10 for _ in range(nb_tasks)]
         from gym.wrappers import TimeLimit
+
         def make_random_cartpole_env(task_id):
             def _env_fn() -> CartPoleEnv:
                 env = gym.make("CartPole-v0")
