@@ -3,17 +3,17 @@
 These wrappers can be used to get different kinds of multi-task environments, or even to
 concatenate environments.
 """
-import gym
 from abc import ABC, abstractmethod
-from typing import List, Sequence, Optional
-from sequoia.common.gym_wrappers import IterableWrapper
+from typing import Any, Callable, List, Optional, Sequence
+
+import gym
 import numpy as np
 from gym import spaces
-from typing import Callable
-from sequoia.common.gym_wrappers.utils import MayCloseEarly
+from sequoia.common.gym_wrappers import IterableWrapper
 from sequoia.common.gym_wrappers.multi_task_environment import add_task_labels
-from sequoia.utils.logging_utils import get_logger
+from sequoia.common.gym_wrappers.utils import MayCloseEarly
 from sequoia.utils.generic_functions import concatenate
+from sequoia.utils.logging_utils import get_logger
 
 logger = get_logger(__file__)
 
@@ -84,9 +84,7 @@ class MultiEnvWrapper(IterableWrapper, ABC):
             # this env manually?
             if self._is_closed:
                 return True
-            elif all(
-                self.is_closed(env_id) for env_id in range(self.nb_tasks)
-            ):
+            elif all(self.is_closed(env_id) for env_id in range(self.nb_tasks)):
                 self.close(env_index=None)
                 return True
             return False
@@ -149,12 +147,29 @@ class MultiEnvWrapper(IterableWrapper, ABC):
         return observation
 
 
-from torch.utils.data import ChainDataset
 from sequoia.common.gym_wrappers.env_dataset import EnvDataset
+from torch.utils.data import ChainDataset
 
 
 class ConcatEnvsWrapper(MultiEnvWrapper):
     """ Wrapper that exhausts the current environment before moving onto the next. """
+
+    def __init__(
+        self,
+        envs: List[gym.Env],
+        add_task_ids: bool = False,
+        on_task_switch_callback: Callable[[Optional[int]], Any] = None,
+    ):
+        super().__init__(envs, add_task_ids=add_task_ids)
+        self.on_task_switch_callback = on_task_switch_callback
+
+    def reset(self):
+        old_task = self._current_task_id
+        observation = super().reset()
+        new_task = self._current_task_id
+        if old_task != new_task and self.on_task_switch_callback:
+            self.on_task_switch_callback(new_task if self._add_task_labels else None)
+        return observation
 
     def next_task(self) -> int:
         assert not all(self._envs_is_closed)
@@ -165,36 +180,38 @@ class ConcatEnvsWrapper(MultiEnvWrapper):
 
     def __iter__(self):
         # BUG: iterating over a MultiEnvWrapper
-        current_env_id = self._current_task_id
-        if self.is_closed(current_env_id):
-            assert False, "huh?"
-        self.observation_ = self.reset()
-        self.done_ = False
-        self.action_ = None
-        self.reward_ = None
+        return super().__iter__()
+        
+        # current_env_id = self._current_task_id
+        # if self.is_closed(current_env_id):
+        #     assert False, "huh?"
+        # self.observation_ = self.reset()
+        # self.done_ = False
+        # self.action_ = None
+        # self.reward_ = None
 
-        yield self.observation_
-        if self.action_ is None:
-            raise RuntimeError(
-                f"You have to send an action using send() after every "
-                f"observation. (env = {self})"
-            )
+        # yield self.observation_
+        # if self.action_ is None:
+        #     raise RuntimeError(
+        #         f"You have to send an action using send() after every "
+        #         f"observation. (env = {self})"
+        #     )
 
-        while not self.done_:
-            self.action_ = None
-            self.reward_ = None
-            yield self.observation_
-            if self.action_ is None:
-                raise RuntimeError(
-                    f"You have to send an action using send() between every "
-                    f"observation. (env = {self})"
-                )
+        # while not self.done_:
+        #     self.action_ = None
+        #     self.reward_ = None
+        #     yield self.observation_
+        #     if self.action_ is None:
+        #         raise RuntimeError(
+        #             f"You have to send an action using send() between every "
+        #             f"observation. (env = {self})"
+        #         )
 
-        # return super().__iter__()
-        if self.is_closed():
-            self.close()
-        elif self.is_closed(current_env_id):
-            self.set_task(self.next_task())
+        # # return super().__iter__()
+        # if self.is_closed():
+        #     self.close()
+        # elif self.is_closed(current_env_id):
+        #     self.set_task(self.next_task())
         # self.observation_ = self.reset()
 
     def send(self, action):
@@ -202,14 +219,14 @@ class ConcatEnvsWrapper(MultiEnvWrapper):
         self.action_ = action
         self.observation_, self.reward_, self.done_, self.info_ = self.step(action)
         return self.reward_
-        
+
     #     if not self.is_closed(env_id):
     #         self.observation_ = env.reset()
     #         return super().__iter__(self)
     #     for env_id, env in enumerate(self._envs):
 
-        # yield from super().__iter__()
-        # self.observation_ = self.reset()
+    # yield from super().__iter__()
+    # self.observation_ = self.reset()
 
 
 # Register this as a 'concat' handler for gym environments!

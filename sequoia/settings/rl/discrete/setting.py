@@ -40,13 +40,19 @@ supported_envs: Dict[str, EnvSpec] = dict_union(
 )
 available_datasets: Dict[str, str] = {env_id: env_id for env_id in supported_envs}
 
+from .results import DiscreteTaskAgnosticRLResults
+from sequoia.settings.base import Results
 
 @dataclass
 class DiscreteTaskAgnosticRLSetting(DiscreteContextAssumption, ContinualRLSetting):
     """ Continual Reinforcement Learning Setting where there are clear task boundaries,
     but where the task information isn't available.
     """
-
+    # TODO: Update the type or results that we get for this Setting.
+    Results: ClassVar[Type[Results]] = DiscreteTaskAgnosticRLResults
+    
+    
+    
     # The type wrapper used to wrap the test environment, and which produces the
     # results.
     TestEnvironment: ClassVar[

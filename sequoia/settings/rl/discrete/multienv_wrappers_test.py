@@ -10,7 +10,7 @@ from sequoia.common.gym_wrappers.action_limit import ActionLimit
 from sequoia.common.spaces import TypedDictSpace
 from sequoia.common.gym_wrappers.env_dataset import EnvDataset
 
-from typing import List
+from typing import List, Optional
 import pytest
 from gym import spaces
 
@@ -170,7 +170,13 @@ class TestMultiEnvWrappers:
             )
             for i in range(nb_tasks)
         ]
-        env = ConcatEnvsWrapper(envs, add_task_ids=add_task_ids)
+        
+        on_task_switch_received_task_ids: List[Optional[int]] = []
+        def on_task_switch(task_id: Optional[int]) -> None:
+            print(f"On task switch: {task_id}.")
+            on_task_switch_received_task_ids.append(task_id)
+        
+        env = ConcatEnvsWrapper(envs, add_task_ids=add_task_ids, on_task_switch_callback=on_task_switch)
         env.seed(123)
         assert env.nb_tasks == nb_tasks
         if add_task_ids:
@@ -209,9 +215,13 @@ class TestMultiEnvWrappers:
 
         assert env.is_closed()
         from collections import Counter
-
-        assert task_ids == sum([[i] * episodes_per_task for i in range(nb_tasks)], [])
-        assert Counter(task_ids) == {i: episodes_per_task for i in range(nb_tasks)}
+        if add_task_ids:
+            assert task_ids == sum([[i] * episodes_per_task for i in range(nb_tasks)], [])
+            # should have received one per boundary
+            assert on_task_switch_received_task_ids == list(range(1, nb_tasks))
+            assert Counter(task_ids) == {i: episodes_per_task for i in range(nb_tasks)}
+        else:
+            assert on_task_switch_received_task_ids == [None] * (nb_tasks-1)
 
     def test_adding_envs(self):
         from sequoia.common.gym_wrappers.env_dataset import EnvDataset

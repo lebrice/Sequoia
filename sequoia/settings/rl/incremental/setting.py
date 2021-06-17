@@ -11,12 +11,14 @@ from typing import Any, Callable, ClassVar, Dict, List, Optional, Type, Union
 
 import gym
 from gym import spaces
+from sequoia.settings.base import Method
 from sequoia.common.gym_wrappers import MultiTaskEnvironment, TransformObservation
 from sequoia.common.gym_wrappers.action_limit import ActionLimit
 from sequoia.common.gym_wrappers.utils import is_monsterkong_env
 from sequoia.common.spaces import Sparse
+from sequoia.common.metrics import EpisodeMetrics
 from sequoia.common.transforms import Transforms
-from sequoia.settings.assumptions.incremental import IncrementalAssumption
+from sequoia.settings.assumptions.incremental import IncrementalAssumption, TaskSequenceResults, TaskResults
 from sequoia.settings.base import Results
 from sequoia.settings.rl.continual import ContinualRLSetting
 from sequoia.settings.rl.envs import (
@@ -280,6 +282,8 @@ class IncrementalRLSetting(IncrementalAssumption, DiscreteTaskAgnosticRLSetting)
             # `train/val/test_dataloader` methods work as usual!
             self.dataset = self.train_envs[self.current_task_id]
             self.val_dataset = self.val_envs[self.current_task_id]
+            # TODO: The test loop goes through all the envs, hence this doesn't really
+            # work.
             self.test_dataset = self.test_envs[self.current_task_id]
 
             # TODO: Check that the observation/action spaces are all the same for all
@@ -315,16 +319,76 @@ class IncrementalRLSetting(IncrementalAssumption, DiscreteTaskAgnosticRLSetting)
     #     This temporary environment only lives during the __post_init__() call.
     #     """
     #     super()._setup_fields_using_temp_env(temp_env)
+    def test_dataloader(self, batch_size: Optional[int] = None, num_workers: Optional[int] = None):
+        if not self._using_custom_envs_foreach_task:
+            return super().test_dataloader(batch_size=batch_size, num_workers=num_workers)
+        
+        # raise NotImplementedError("TODO:")
+        
+        # IDEA: Pretty hacky, but might be cleaner than adding fields for the moment.
+        test_max_steps = self.test_max_steps
+        test_max_episodes = self.test_max_episodes
+        self.test_max_steps = test_max_steps // self.nb_tasks
+        if self.test_max_episodes:
+            self.test_max_episodes = test_max_episodes // self.nb_tasks
+        # self.test_env = self.TestEnvironment(self.test_envs[self.current_task_id])
 
-    def test_loop(self, method):
+        task_test_env = super().test_dataloader(batch_size=batch_size, num_workers=num_workers)
+
+        self.test_max_steps = test_max_steps
+        self.test_max_episodes = test_max_episodes
+        return task_test_env
+
+    def test_loop(self, method: Method["IncrementalRLSetting"]):
+        if not self._using_custom_envs_foreach_task:
+            return super().test_loop(method)
+
         # TODO: If we're using custom envs for each task, then the test loop needs to be
-        # re-organized:
-        if self._using_custom_envs_foreach_task:
-            raise NotImplementedError(
-                f"TODO: Need to add a wrapper that can switch between envs, or "
-                f"re-write the test loop."
-            )
-        return super().test_loop(method)
+        # re-organized.
+        # raise NotImplementedError(
+        #     f"TODO: Need to add a wrapper that can switch between envs, or "
+        #     f"re-write the test loop."
+        # )
+        assert self.nb_tasks == len(self.test_envs), "assuming this for now."
+        test_envs = []
+        for task_id in range(self.nb_tasks):
+            # TODO: Make sure that self.test_dataloader() uses the right number of steps
+            # per test task (current hard-set to self.test_max_steps).
+            task_test_env = self.test_dataloader()
+            test_envs.append(task_test_env)
+        from ..discrete.multienv_wrappers import ConcatEnvsWrapper
+        on_task_switch_callback = getattr(method, "on_task_switch", None)        
+        joined_test_env = ConcatEnvsWrapper(
+            test_envs,
+            add_task_ids=self.task_labels_at_test_time,
+            on_task_switch_callback=on_task_switch_callback,
+        )
+        # TODO: Use this 'joined' test environment in this test loop somehow.
+        # IDEA: Hacky way to do it: (I don't think this will work as-is though)
+        _test_dataloader_method = self.test_dataloader
+        self.test_dataloader = lambda *args, **kwargs: joined_test_env
+        super().test_loop(method)
+        self.test_dataloader = _test_dataloader_method
+
+        test_loop_results = DiscreteTaskAgnosticRLSetting.Results()
+        for task_id, test_env in enumerate(test_envs):
+            # TODO: The results are still of the wrong type, because we aren't changing
+            # the type of test environment or the type of Results
+            results_of_wrong_type: IncrementalRLResults = test_env.get_results()
+            # For now this weird setup means that there will be only one 'result'
+            # object in this that actually has metrics:
+            # assert results_of_wrong_type.task_results[task_id].metrics
+            all_metrics: List[EpisodeMetrics] = sum([result.metrics for result in results_of_wrong_type.task_results], [])
+            n_metrics_in_each_result = [len(result.metrics) for result in results_of_wrong_type.task_results]
+            # assert all(n_metrics == 0 for i, n_metrics in enumerate(n_metrics_in_each_result) if i != task_id), (n_metrics_in_each_result, task_id)
+            # TODO: Also transfer the other properties like runtime, online performance,
+            # etc?
+            # TODO: Maybe add addition for these?
+            # task_result = sum(results_of_wrong_type.task_results)
+            task_result = TaskResults(metrics=all_metrics)
+            # task_result: TaskResults[EpisodeMetrics] = results_of_wrong_type.task_results[task_id]
+            test_loop_results.task_results.append(task_result)
+        return test_loop_results
 
     @property
     def phases(self) -> int:

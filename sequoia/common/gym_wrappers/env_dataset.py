@@ -133,7 +133,7 @@ class EnvDataset(
         action = self.action(action)
         if isinstance(action, Tensor) and action.requires_grad:
             action = action.detach()
-        observation, reward, done, info = self.env.step(action)
+        observation, reward, done, info = super().step(action)
         observation = self.observation(observation)
         reward = self.reward(reward)
         self.n_steps_ += 1

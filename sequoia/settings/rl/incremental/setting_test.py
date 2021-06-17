@@ -539,10 +539,11 @@ class TestPassingEnvsForEachTask:
     def test_random_baseline(self):
         nb_tasks = 3
         gravities = [random.random() * 10 for _ in range(nb_tasks)]
-
+        from gym.wrappers import TimeLimit
         def make_random_cartpole_env(task_id):
             def _env_fn() -> CartPoleEnv:
                 env = gym.make("CartPole-v0")
+                env = TimeLimit(env, max_episode_steps=50)
                 env.gravity = gravities[task_id]
                 return env
 
@@ -551,7 +552,7 @@ class TestPassingEnvsForEachTask:
         # task_envs = ["CartPole-v0", "CartPole-v1"]
         task_envs = [make_random_cartpole_env(i) for i in range(nb_tasks)]
         setting = IncrementalRLSetting(
-            train_envs=task_envs, train_max_steps=1000, test_max_steps=50
+            train_envs=task_envs, train_max_steps=1000, test_max_steps=1000
         )
         assert setting.nb_tasks == nb_tasks
         method = RandomBaselineMethod()

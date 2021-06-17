@@ -347,7 +347,7 @@ class TestContinualRLSetting:
             expected_x_space = temp_env.observation_space
             expected_action_space = temp_env.action_space
 
-        setting = self.Setting(**setting_kwargs,)
+        setting = self.Setting(**setting_kwargs, num_workers=0)
 
         if batch_size is not None:
             expected_batched_x_space = batch_space(expected_x_space, batch_size)
@@ -397,7 +397,7 @@ class TestContinualRLSetting:
                     task_label == None for task_label in obs.task_labels
                 )
 
-        with setting.train_dataloader(batch_size=batch_size) as env:
+        with setting.train_dataloader(batch_size=batch_size, num_workers=0) as env:
             assert env.batch_size == batch_size
             check_env_spaces(env)
 
@@ -438,7 +438,7 @@ class TestContinualRLSetting:
                 check_obs(iter_obs)
                 _ = env.send(env.action_space.sample())
 
-        with setting.val_dataloader(batch_size=batch_size) as env:
+        with setting.val_dataloader(batch_size=batch_size, num_workers=0) as env:
             assert env.batch_size == batch_size
             check_env_spaces(env)
 
@@ -457,7 +457,7 @@ class TestContinualRLSetting:
         batch_size = None
         expected_batched_x_space = expected_x_space
         expected_batched_action_space = expected_action_space
-        with setting.test_dataloader(batch_size=batch_size) as env:
+        with setting.test_dataloader(batch_size=batch_size, num_workers=0) as env:
             assert env.batch_size is None
             check_env_spaces(env)
 
