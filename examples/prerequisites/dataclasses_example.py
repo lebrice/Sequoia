@@ -58,7 +58,7 @@ HParams ['hparams']:
                         Choice of optimizer (default: sgd)
 """
 
-args = parser.parse_args()
+args = parser.parse_args("")
 hparams: HParams = args.hparams
 print(hparams)
 expected += """\

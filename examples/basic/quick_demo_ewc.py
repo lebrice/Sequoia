@@ -13,8 +13,8 @@ from torch import Tensor
 
 # This "hack" is required so we can run `python examples/quick_demo_ewc.py`
 sys.path.extend([".", ".."])
-from sequoia.settings import DomainIncrementalSetting
-from sequoia.settings.passive.cl.objects import Observations, Rewards
+from sequoia.settings import DomainIncrementalSLSetting
+from sequoia.settings.sl.incremental.objects import Observations, Rewards
 from sequoia.utils import dict_intersection
 from sequoia.utils.logging_utils import get_logger
 
@@ -108,7 +108,7 @@ class ImprovedDemoMethod(DemoMethod):
     def __init__(self, hparams: HParams = None):
         super().__init__(hparams=hparams or self.HParams.from_args())
 
-    def configure(self, setting: DomainIncrementalSetting):
+    def configure(self, setting: DomainIncrementalSLSetting):
         # Use the improved model, with the added EWC-like term.
         self.model = MyImprovedModel(
             observation_space=setting.observation_space,
@@ -127,13 +127,12 @@ class ImprovedDemoMethod(DemoMethod):
 
 def demo_ewc():
     """ Demo: Comparing two methods on the same setting: """
-    from sequoia.settings import DomainIncrementalSetting
 
     ## 1. Create the Setting (same as in quick_demo.py)
-    setting = DomainIncrementalSetting(
+    setting = DomainIncrementalSLSetting(
         dataset="fashionmnist", nb_tasks=5, batch_size=64
     )
-    # setting = DomainIncrementalSetting.from_args()
+    # setting = DomainIncrementalSLSetting.from_args()
 
     # 2.1: Get the results for the base method
     base_method = DemoMethod()
@@ -145,7 +144,7 @@ def demo_ewc():
 
     # Compare the two results:
     print(
-        f"\n\nComparison: DemoMethod vs ImprovedDemoMethod - (DomainIncrementalSetting, dataset=fashionmnist):"
+        f"\n\nComparison: DemoMethod vs ImprovedDemoMethod - (DomainIncrementalSLSetting, dataset=fashionmnist):"
     )
     print(base_results.summary())
     print(new_results.summary())
@@ -155,11 +154,11 @@ def demo_ewc():
 
 if __name__ == "__main__":
     # Example: Comparing two methods on the same setting:
-    from sequoia.settings import DomainIncrementalSetting
+    from sequoia.settings import DomainIncrementalSLSetting
 
     ## 1. Create the Setting (same as in quick_demo.py)
-    setting = DomainIncrementalSetting(dataset="fashionmnist", nb_tasks=5, monitor_training_performance=True)
-    # setting = DomainIncrementalSetting.from_args()
+    setting = DomainIncrementalSLSetting(dataset="fashionmnist", nb_tasks=5, monitor_training_performance=True)
+    # setting = DomainIncrementalSLSetting.from_args()
 
     # Get the results for the base method:
     base_method = DemoMethod()
@@ -170,7 +169,7 @@ if __name__ == "__main__":
     new_results = setting.apply(new_method)
 
     print(
-        f"\n\nComparison: DemoMethod vs ImprovedDemoMethod - (DomainIncrementalSetting, dataset=fashionmnist):"
+        f"\n\nComparison: DemoMethod vs ImprovedDemoMethod - (DomainIncrementalSLSetting, dataset=fashionmnist):"
     )
     print(base_results.summary())
     print(new_results.summary())

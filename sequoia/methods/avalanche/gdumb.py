@@ -20,7 +20,7 @@ from torch import Tensor
 from torch.utils.data import TensorDataset
 
 from sequoia.methods import register_method
-from sequoia.settings.passive import ClassIncrementalSetting, TaskIncrementalSetting
+from sequoia.settings.sl import ClassIncrementalSetting, TaskIncrementalSLSetting
 from sequoia.utils.logging_utils import get_logger
 
 from .base import AvalancheMethod
@@ -120,7 +120,7 @@ class GDumbPlugin(_GDumbPlugin):
 
 @register_method
 @dataclass
-class GDumbMethod(AvalancheMethod[GDumb], target_setting=ClassIncrementalSetting):
+class GDumbMethod(AvalancheMethod[GDumb]):
     """GDumb strategy from Avalanche.
     See GDumbPlugin for more details.
     This strategy does not use task identities.
@@ -164,7 +164,7 @@ class GDumbMethod(AvalancheMethod[GDumb], target_setting=ClassIncrementalSetting
 
 
 if __name__ == "__main__":
-    setting = TaskIncrementalSetting(
+    setting = TaskIncrementalSLSetting(
         dataset="mnist", nb_tasks=5, monitor_training_performance=True
     )
     # Create the Method, either manually or through the command-line:

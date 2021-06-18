@@ -8,7 +8,7 @@ from typing import Any, Dict, List, Sequence, Union, TypeVar, overload
 import numpy as np
 import torch
 from gym import Space, spaces
-from sequoia.common.spaces import Sparse
+from sequoia.common.spaces.sparse import Sparse
 from sequoia.utils.categorical import Categorical
 from torch import Tensor
 

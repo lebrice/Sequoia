@@ -123,6 +123,10 @@ class WandbConfig(Serializable):
     # Save checkpoints in wandb dir to upload on W&B servers.
     log_model: bool = False
 
+    # Class variables used to check wether wandb.login has already been called or not. 
+    logged_in: ClassVar[bool] = False
+    key_configured: ClassVar[bool] = False
+
     @property
     def log_dir(self):
         return self.log_dir_root.joinpath(
@@ -147,7 +151,12 @@ class WandbConfig(Serializable):
             else:
                 key = str(self.wandb_api_key)
             assert isinstance(key, str)
-        return wandb.login(key=key)
+
+        cls = type(self)
+        if not cls.logged_in:
+            cls.key_configured = wandb.login(key=key)
+            cls.logged_in = True
+        return cls.key_configured
 
     def wandb_init_kwargs(self) -> Dict:
         """ Return the kwargs to pass to wandb.init() """
@@ -155,8 +164,6 @@ class WandbConfig(Serializable):
             # TODO: Create a run name using the coefficients of the tasks, etc?
             # At the moment, if no run name is given, the 'random' name from wandb is used.
             pass
-        logger.info(f"Using wandb. Experiment name: {self.run_name}")
-
         if self.wandb_path is None:
             self.wandb_path = self.log_dir_root / "wandb"
         self.wandb_path.mkdir(parents=True, mode=0o777, exist_ok=True)

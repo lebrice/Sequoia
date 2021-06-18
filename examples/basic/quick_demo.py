@@ -16,19 +16,17 @@ from gym import spaces
 from torch import Tensor, nn
 from simple_parsing import ArgumentParser
 
-
-# This "hack" is required so we can run `python examples/quick_demo.py`
-sys.path.extend([".", ".."])
 from sequoia import Method, Setting
 from sequoia.common import Config
-from sequoia.settings import DomainIncrementalSetting, Environment
-from sequoia.settings.passive.cl.objects import (
+from sequoia.settings import Environment
+from sequoia.settings.sl import DomainIncrementalSLSetting
+from sequoia.settings.sl.incremental.objects import (
     Actions,
     Observations,
-    PassiveEnvironment,
-    Results,
     Rewards,
 )
+from sequoia.settings.sl.incremental.results import Results
+from sequoia.settings.sl.environment import PassiveEnvironment
 
 
 class MyModel(nn.Module):
@@ -50,7 +48,7 @@ class MyModel(nn.Module):
     ):
         super().__init__()
 
-        image_shape = observation_space[0].shape
+        image_shape = observation_space["x"].shape
         assert image_shape == (3, 28, 28), "this example only works on mnist-like data"
         assert isinstance(action_space, spaces.Discrete)
         assert action_space == reward_space
@@ -132,7 +130,7 @@ class MyModel(nn.Module):
         return loss, metrics_dict
 
 
-class DemoMethod(Method, target_setting=DomainIncrementalSetting):
+class DemoMethod(Method, target_setting=DomainIncrementalSLSetting):
     """ Minimal example of a Method targetting the Class-Incremental CL setting.
     
     For a quick intro to dataclasses, see examples/dataclasses_example.py    
@@ -154,7 +152,7 @@ class DemoMethod(Method, target_setting=DomainIncrementalSetting):
         self.model: MyModel
         self.optimizer: torch.optim.Optimizer
 
-    def configure(self, setting: DomainIncrementalSetting):
+    def configure(self, setting: DomainIncrementalSLSetting):
         """ Called before the method is applied on a setting (before training). 
 
         You can use this to instantiate your model, for instance, since this is
@@ -262,22 +260,20 @@ def demo_simple():
 
 def demo_command_line():
     """ Run this quick demo from the command-line. """
-    from sequoia.settings import DomainIncrementalSetting, DomainIncrementalSetting
-
     parser = ArgumentParser(description=__doc__)
     # Add command-line arguments for the Method and the Setting.
     DemoMethod.add_argparse_args(parser)
     # Add command-line arguments for the Setting and the Config (an object with
     # options like log_dir, debug, etc, which are not part of the Setting or the
     # Method) using simple-parsing.
-    parser.add_arguments(DomainIncrementalSetting, "setting")
+    parser.add_arguments(DomainIncrementalSLSetting, "setting")
     parser.add_arguments(Config, "config")
     args = parser.parse_args()
 
     # Create the Method from the parsed arguments
     method: DemoMethod = DemoMethod.from_argparse_args(args)
     # Extract the Setting and Config from the args.
-    setting: DomainIncrementalSetting = args.setting
+    setting: DomainIncrementalSLSetting = args.setting
     config: Config = args.config
 
     # Run the demo, applying that DemoMethod on the given setting.

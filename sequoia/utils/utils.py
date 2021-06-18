@@ -1,4 +1,4 @@
-""" Set of Utilities. """
+""" Miscelaneous utility functions. """
 import collections
 import functools
 import hashlib
@@ -8,6 +8,7 @@ import operator
 import os
 import random
 import re
+import warnings
 from collections import defaultdict, deque
 from collections.abc import MutableMapping
 from dataclasses import Field, fields
@@ -15,8 +16,21 @@ from functools import reduce
 from inspect import getsourcefile, isabstract, isclass
 from itertools import filterfalse, groupby
 from pathlib import Path
-from typing import (Any, Callable, Deque, Dict, Iterable, List, MutableMapping,
-                    Optional, Set, Tuple, Type, TypeVar, Union)
+from typing import (
+    Any,
+    Callable,
+    Deque,
+    Dict,
+    Iterable,
+    List,
+    MutableMapping,
+    Optional,
+    Set,
+    Tuple,
+    Type,
+    TypeVar,
+    Union,
+)
 
 import numpy as np
 import torch
@@ -34,10 +48,7 @@ Dataclass = TypeVar("Dataclass")
 
 
 def field_dict(dataclass: Dataclass) -> Dict[str, Field]:
-    return {
-        field.name: field
-        for field in fields(dataclass)
-    }
+    return {field.name: field for field in fields(dataclass)}
 
 
 def mean(values: Iterable[T]) -> T:
@@ -45,7 +56,16 @@ def mean(values: Iterable[T]) -> T:
     return sum(values) / len(values)
 
 
-def n_consecutive(items: Iterable[T], n: int=2, yield_last_batch=True) -> Iterable[Tuple[T, ...]]:
+def pairwise(iterable: Iterable[T]) -> Iterable[Tuple[T, T]]:
+    "s -> (s0,s1), (s1,s2), (s2, s3), ..."
+    a, b = itertools.tee(iterable)
+    next(b, None)
+    return zip(a, b)
+
+
+def n_consecutive(
+    items: Iterable[T], n: int = 2, yield_last_batch=True
+) -> Iterable[Tuple[T, ...]]:
     """Collect data into chunks of up to `n` elements.
     
     When `yield_last_batch` is True, the final chunk (which might have fewer
@@ -75,7 +95,9 @@ def fix_channels(x_batch: Tensor) -> Tensor:
             return x_batch
 
 
-def to_dict_of_lists(list_of_dicts: Iterable[Dict[str, Any]]) -> Dict[str, List[Tensor]]:
+def to_dict_of_lists(
+    list_of_dicts: Iterable[Dict[str, Any]]
+) -> Dict[str, List[Tensor]]:
     """ Returns a dict of lists given a list of dicts.
     
     Assumes that all dictionaries have the same keys as the first dictionary.
@@ -90,11 +112,13 @@ def to_dict_of_lists(list_of_dicts: Iterable[Dict[str, Any]]) -> Dict[str, List[
     for i, d in enumerate(list_of_dicts):
         for key, value in d.items():
             result[key].append(value)
-        assert d.keys() == result.keys(), f"Dict {d} at index {i} does not contain all the keys!"
+        assert (
+            d.keys() == result.keys()
+        ), f"Dict {d} at index {i} does not contain all the keys!"
     return result
 
 
-def add_prefix(some_dict: Dict[str, T], prefix: str="", sep=" ") -> Dict[str, T]:
+def add_prefix(some_dict: Dict[str, T], prefix: str = "", sep=" ") -> Dict[str, T]:
     """Adds the given prefix to all the keys in the dictionary that don't already start with it. 
     
     Parameters
@@ -134,7 +158,7 @@ def add_prefix(some_dict: Dict[str, T], prefix: str="", sep=" ") -> Dict[str, T]
     if not prefix:
         return some_dict
     result: Dict[str, T] = type(some_dict)()
-    
+
     if sep and prefix.endswith(sep):
         prefix = prefix.rstrip(sep)
 
@@ -168,7 +192,7 @@ def set_seed(seed: int):
         torch.cuda.manual_seed_all(seed)
 
 
-def compute_identity(size: int=16, **sample) -> str:
+def compute_identity(size: int = 16, **sample) -> str:
     """Compute a unique hash out of a dictionary
 
     Parameters
@@ -183,12 +207,12 @@ def compute_identity(size: int=16, **sample) -> str:
     sample_hash = hashlib.sha256()
 
     for k, v in sorted(sample.items()):
-        sample_hash.update(k.encode('utf8'))
+        sample_hash.update(k.encode("utf8"))
 
         if isinstance(v, dict):
-            sample_hash.update(compute_identity(size, **v).encode('utf8'))
+            sample_hash.update(compute_identity(size, **v).encode("utf8"))
         else:
-            sample_hash.update(str(v).encode('utf8'))
+            sample_hash.update(str(v).encode("utf8"))
 
     return sample_hash.hexdigest()[:size]
 
@@ -209,7 +233,7 @@ def common_fields(a, b) -> Iterable[Tuple[str, Tuple[Field, Field]]]:
     b_fields = fields(b)
     for field_a in a_fields:
         name_a: str = field_a.name
-        value_a = getattr(a, field_a.name) 
+        value_a = getattr(a, field_a.name)
         for field_b in b_fields:
             name_b: str = field_b.name
             value_b = getattr(b, field_b.name)
@@ -233,24 +257,30 @@ def add_dicts(d1: Dict, d2: Dict, add_values=True) -> Dict:
 
 def rsetattr(obj: Any, attr: str, val: Any) -> None:
     """ Taken from https://stackoverflow.com/questions/31174295/getattr-and-setattr-on-nested-subobjects-chained-properties """
-    pre, _, post = attr.rpartition('.')
+    pre, _, post = attr.rpartition(".")
     return setattr(rgetattr(obj, pre) if pre else obj, post, val)
+
 
 # using wonder's beautiful simplification: https://stackoverflow.com/questions/31174295/getattr-and-setattr-on-nested-objects/31174427?noredirect=1#comment86638618_31174427
 
+
 def rgetattr(obj: Any, attr: str, *args):
     """ Taken from https://stackoverflow.com/questions/31174295/getattr-and-setattr-on-nested-subobjects-chained-properties """
+
     def _getattr(obj, attr):
         return getattr(obj, attr, *args)
-    return functools.reduce(_getattr, [obj] + attr.split('.'))
+
+    return functools.reduce(_getattr, [obj] + attr.split("."))
 
 
 def is_nonempty_dir(path: Path) -> bool:
     return path.is_dir() and len(list(path.iterdir())) > 0
 
+
 D = TypeVar("D", bound=Dict)
 
-def flatten_dict(d: D, separator: str="/") -> D:
+
+def flatten_dict(d: D, separator: str = "/") -> D:
     """Flattens the given nested dict, adding `separator` between keys at different nesting levels.
 
     Args:
@@ -271,7 +301,9 @@ def flatten_dict(d: D, separator: str="/") -> D:
     return result
 
 
-def unique_consecutive(iterable: Iterable[T], key: Callable[[T], Any]=None) -> Iterable[T]:
+def unique_consecutive(
+    iterable: Iterable[T], key: Callable[[T], Any] = None
+) -> Iterable[T]:
     """List unique elements, preserving order. Remember only the element just seen.
     
     >>> list(unique_consecutive('AAAABBBCCDAABBB'))
@@ -312,8 +344,8 @@ def take(iterable: Iterable[T], n: Optional[int]) -> Iterable[T]:
 
 
 def camel_case(name):
-    s1 = re.sub('(.)([A-Z][a-z]+)', r'\1_\2', name)
-    s2 = re.sub('([a-z0-9])([A-Z])', r'\1_\2', s1).lower()
+    s1 = re.sub("(.)([A-Z][a-z]+)", r"\1_\2", name)
+    s2 = re.sub("([a-z0-9])([A-Z])", r"\1_\2", s1).lower()
     while "__" in s2:
         s2 = s2.replace("__", "_")
     return s2
@@ -322,6 +354,8 @@ def camel_case(name):
 def constant(v: T, **kwargs) -> T:
     metadata = kwargs.setdefault("metadata", {})
     metadata["constant"] = v
+    metadata["decoding_fn"] = lambda _: v
+    metadata["to_dict"] = lambda _: v
     return field(default=v, init=False, **kwargs)
 
 
@@ -329,7 +363,9 @@ def flag(default: bool, *args, **kwargs):
     return field(default=default, nargs=1, *args, **kwargs)
 
 
-def dict_union(*dicts: Dict[K, V], recurse: bool=True, dict_factory=dict) -> Dict[K, V]:
+def dict_union(
+    *dicts: Dict[K, V], recurse: bool = True, dict_factory=dict
+) -> Dict[K, V]:
     """ Simple dict union until we use python 3.9
     
     If `recurse` is True, also does the union of nested dictionaries.
@@ -367,13 +403,12 @@ def dict_union(*dicts: Dict[K, V], recurse: bool=True, dict_factory=dict) -> Dic
                 # Overwrite the new value for that key.
                 new_value = v
             n_values += 1
-        
+
         if len(sub_dicts) == n_values and recurse:
             # We only get here if all values for key `k` were dictionaries,
             # and if recurse was True.
             new_value = dict_union(*sub_dicts, recurse=True, dict_factory=dict_factory)
-        
-        
+
         result[k] = new_value
     return result
 
@@ -382,8 +417,10 @@ K = TypeVar("K")
 V = TypeVar("V")
 M = TypeVar("M")
 
-def zip_dicts(*dicts: Dict[K, V],
-               missing: M = None) -> Iterable[Tuple[K, Tuple[Union[M, V], ...]]]:
+
+def zip_dicts(
+    *dicts: Dict[K, V], missing: M = None
+) -> Iterable[Tuple[K, Tuple[Union[M, V], ...]]]:
     """Iterator over the union of all keys, giving the value from each dict if
     present, else `missing`.
     """
@@ -440,7 +477,7 @@ def remove_prefix(s: str, prefix: str) -> str:
     """
     if not s.startswith(prefix):
         return s
-    return s[len(prefix):]
+    return s[len(prefix) :]
 
 
 def get_all_subclasses_of(cls: Type[T]) -> Iterable[Type[T]]:
@@ -455,7 +492,10 @@ def get_all_concrete_subclasses_of(cls: Type[T]) -> Iterable[Type[T]]:
 
 
 def get_path_to_source_file(cls: Type) -> Path:
-    cwd = Path(os.getcwd())
+    """ Attempts to give a relative path to the given source path. If not possible, then
+    gives back an absolute path to the source file instead.
+    """
+    cwd = Path.cwd()
     source_file = getsourcefile(cls)
     assert isinstance(source_file, str), f"can't locate source file for {cls}?"
     source_path = Path(source_file).absolute()
@@ -465,10 +505,63 @@ def get_path_to_source_file(cls: Type) -> Path:
         # If we can't find the relative path, for instance when sequoia is
         # installed in site_packages (not with `pip install -e .``), give back
         # the absolute path instead.
-        pass
-    return source_path
+        return source_path
+
+
+def constant_property(fixed_value: T) -> T:
+    def constant_field(v: T, **kwargs) -> T:
+        metadata = kwargs.setdefault("metadata", {})
+        metadata["constant"] = v
+        metadata["decoding_fn"] = lambda _: v
+        metadata["to_dict"] = lambda _: v
+        return field(default=v, init=False, **kwargs)
+
+    def setter(_, value: Any):
+        if isinstance(value, property):
+            # This happens in the __init__ that is generated by dataclasses, so we
+            # do nothing here.
+            pass
+        elif value != fixed_value:
+            raise RuntimeError(
+                RuntimeWarning(
+                    f"This attribute is fixed at value {fixed_value}."
+                )
+            )
+    def getter(_) -> T:
+        return fixed_value
+    return property(fget=getter, fset=setter)
+
+
+def deprecated_property(old_name: str, new_name: str):
+    """ Marks a property as being deprecated, redirectly any changes to its value to the
+    property with name 'new_name'.
+    """
+    def setter(self, value: Any):
+        warnings.warn(
+            DeprecationWarning(
+                f"'{old_name}' property is deprecated, use '{new_name}' instead."
+            )
+        )
+        if isinstance(value, property):
+            # This happens in the __init__ that is generated by dataclasses, so we
+            # do nothing here.
+            pass
+        else:
+            setattr(self, new_name, value)
+        # raise RuntimeError(f"'{old_name}' property is deprecated, use '{new_name}' instead.")
+
+    def getter(self):
+        warnings.warn(
+            DeprecationWarning(
+                f"'{old_name}' property is deprecated, use '{new_name}' instead."
+            )
+        )
+        return getattr(self, new_name)
+    doc = f"Deprecated property, Please use '{new_name}' instead."
+    return property(fget=getter, fset=setter, doc=doc)
 
 
 if __name__ == "__main__":
     import doctest
+
     doctest.testmod()

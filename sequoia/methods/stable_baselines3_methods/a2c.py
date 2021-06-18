@@ -13,7 +13,7 @@ from stable_baselines3.a2c import A2C
 
 from sequoia.common.hparams import log_uniform, uniform
 from sequoia.methods import register_method
-from sequoia.settings.active import ContinualRLSetting
+from sequoia.settings.rl import ContinualRLSetting
 from sequoia.utils import get_logger
 
 from .on_policy_method import OnPolicyMethod, OnPolicyModel
@@ -174,6 +174,7 @@ class A2CMethod(OnPolicyMethod):
 
         todo: use this to customize how your method handles task transitions.
         """
+        super().on_task_switch(task_id=task_id)
 
     def get_search_space(
         self, setting: ContinualRLSetting

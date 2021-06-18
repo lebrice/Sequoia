@@ -4,43 +4,54 @@ from pathlib import Path
 from typing import Any, Callable, Dict, List, Tuple, Type
 
 import pytest
-
 from sequoia.common import ClassificationMetrics, Loss
-from sequoia.methods.aux_tasks import (AE, EWC, SIMCLR, VAE, AEReconstructionTask, EWCTask,
-                          SimCLRTask, VAEReconstructionTask)
 from sequoia.conftest import get_dataset_params, id_fn, parametrize, slow, xfail_param
-from sequoia.settings import (ClassIncrementalResults, ClassIncrementalSetting,
-                      IIDResults, IIDSetting, Results, Setting,
-                      TaskIncrementalResults, TaskIncrementalSetting)
+from sequoia.methods.aux_tasks import (
+    AE,
+    EWC,
+    SIMCLR,
+    VAE,
+    AEReconstructionTask,
+    EWCTask,
+    SimCLRTask,
+    VAEReconstructionTask,
+)
+from sequoia.methods.baseline_method import BaselineMethod
+from sequoia.settings.base import Setting, Results
+from sequoia.settings.sl import (
+    TaskIncrementalSLSetting,
+    TraditionalSLSetting,
+)
+from sequoia.settings.sl.incremental import (
+    IncrementalSLResults,
+    ClassIncrementalSetting,
+)
 
 from .self_supervised_model import SelfSupervisedModel
-from sequoia.methods.baseline_method import BaselineMethod
 
 Method = BaselineMethod
 # Use 'Method' as an alias for the actual Method subclass under test. (since at
 # the moment quite a few tests share some code.
 # List of datasets that are currently supported for this method.
 supported_datasets: List[str] = [
-    "mnist", "fashion_mnist", "cifar10", "cifar100", "kmnist",
+    "mnist",
+    "fashion_mnist",
+    "cifar10",
+    "cifar100",
+    "kmnist",
 ]
 
 
 def test_get_applicable_settings():
     settings = Method.get_applicable_settings()
     assert ClassIncrementalSetting in settings
-    assert TaskIncrementalSetting in settings
-    assert IIDSetting in settings
+    assert TaskIncrementalSLSetting in settings
+    assert TraditionalSLSetting in settings
 
 
 @pytest.fixture(
     scope="module",
-    params=[
-        {}, # no aux task.
-        {SIMCLR: 1},
-        {VAE: 1},
-        {AE: 1},
-        {EWC: 1},
-    ],
+    params=[{}, {SIMCLR: 1}, {VAE: 1}, {AE: 1}, {EWC: 1},],  # no aux task.
     ids=id_fn,
 )
 def method_and_coefficients(request, tmp_path_factory):
@@ -51,7 +62,7 @@ def method_and_coefficients(request, tmp_path_factory):
     log_dir = tmp_path_factory.mktemp("log_dir")
 
     aux_task_coefficients = request.param
-    
+
     args = f"""
     --debug
     --log_dir_root {log_dir}
@@ -70,10 +81,10 @@ def method_and_coefficients(request, tmp_path_factory):
 @slow
 @parametrize("setting_type", Method.get_applicable_settings())
 def test_fast_dev_run(
-        method_and_coefficients: Tuple[Method, Dict[str, float]],
-        setting_type: Type[Setting],
-        test_dataset: str
-        ):
+    method_and_coefficients: Tuple[Method, Dict[str, float]],
+    setting_type: Type[Setting],
+    test_dataset: str,
+):
     """ Performs a quick run with only one batch of train / val / test data and
     check that the 'Results' objects are ok.
     """
@@ -102,7 +113,7 @@ def validate_results(results: Results, aux_task_coefficients: Dict[str, float]):
         for aux_task_name, coef in aux_task_coefficients.items():
             assert aux_task_name in loss.losses
             aux_task_loss = loss.losses[aux_task_name]
-            assert aux_task_loss.loss >= 0.
+            assert aux_task_loss.loss >= 0.0
             assert aux_task_loss._coefficient == coef
 
 
@@ -120,11 +131,13 @@ def test_simclr_iid_accuracy_one_epoch():
     --debug --max_epochs 1 --simclr.coef 1 --limit_train_batches 50
     --limit_test_batches 10 --batch-size 100 --max_knn_samples 0
     """
-    setting: IIDSetting = IIDSetting()
+    setting: TraditionalSLSetting = TraditionalSLSetting()
     aux_task_coefficients: Dict[str, float] = {SIMCLR: 1}
-    method = SelfSupervision.from_args("""
+    method = SelfSupervision.from_args(
+        """
         --dataset mnist --debug --max_epochs 1 --simclr.coef 1
-    """)
+    """
+    )
     results: IIDResults = method.apply_to(setting)
     assert isinstance(results, IIDResults)
     validate_results(results, aux_task_coefficients)

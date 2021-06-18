@@ -11,38 +11,52 @@ from numpy import inf
 from simple_parsing import ArgumentParser
 from wandb.wandb_run import Run
 
-from sequoia import Environment
+from sequoia.settings.base import Environment
 from sequoia.common import Config
-from sequoia.common.hparams import (HyperParameters, categorical, log_uniform,
-                                    uniform)
+from sequoia.common.hparams import HyperParameters, categorical, log_uniform, uniform
 from sequoia.common.spaces import Image
+from sequoia.common.transforms.utils import is_image
 from sequoia.methods import register_method
-from sequoia.settings import (Actions, ActiveSetting, Method, Observations,
-                              PassiveEnvironment, Setting,
-                              TaskIncrementalRLSetting, TaskIncrementalSetting)
-from sequoia.settings.assumptions import IncrementalSetting
+from sequoia.settings import (
+    Actions,
+    Method,
+    Observations,
+    PassiveEnvironment,
+    RLSetting,
+    Setting,
+    TaskIncrementalRLSetting,
+    TaskIncrementalSLSetting,
+)
+from sequoia.settings.assumptions import IncrementalAssumption
+from sequoia.settings.assumptions.task_incremental import TaskIncrementalAssumption
+from sequoia.utils import get_logger
+
 from .model_rl import PnnA2CAgent
 from .model_sl import PnnClassifier
 
-# BUG: Can't apply PNN to the ClassIncrementalSetting at the moment. 
+logger = get_logger(__file__)
+
+# BUG: Can't apply PNN to the ClassIncrementalSetting at the moment.
 # BUG: Can't apply PNN to any RL Settings at the moment.
-# (it was hard-coded to handle pixel cartpole). 
-# TODO: When those bugs get fixed, restore the 'IncrementalSetting' as the target
+# (it was hard-coded to handle pixel cartpole).
+# TODO: When those bugs get fixed, restore the 'IncrementalAssumption' as the target
 # setting.
+# TODO: Debugging PNN on Incremental rather than TaskIncremental
 
 
 @register_method
-class PnnMethod(Method, target_setting=TaskIncrementalSetting):
+class PnnMethod(Method, target_setting=IncrementalAssumption):
     """
     PNN Method.
 
     Applicable to both RL and SL Settings, as long as there are clear task boundaries
-    during training (IncrementalSetting).
+    during training (IncrementalAssumption).
     """
 
     @dataclass
     class HParams(HyperParameters):
         """ Hyper-parameters of the Pnn method. """
+
         # Learning rate of the optimizer. Defauts to 0.0001 when in SL.
         learning_rate: float = log_uniform(1e-6, 1e-2, default=2e-4)
         num_steps: int = 200  # (only applicable in RL settings.)
@@ -54,7 +68,7 @@ class PnnMethod(Method, target_setting=TaskIncrementalSetting):
         # Defaults to None in RL, and 32 when in SL.
         batch_size: Optional[int] = None
         # Maximum number of training epochs per task. (only used in SL Settings)
-        max_epochs_per_task: int = uniform(1, 20, default=10)
+        max_epochs_per_task: int = uniform(1, 100, default=10)
 
     def __init__(self, hparams: HParams = None):
         # We will create those when `configure` will be called, before training.
@@ -71,7 +85,7 @@ class PnnMethod(Method, target_setting=TaskIncrementalSetting):
         where you get access to the observation & action spaces.
         """
 
-        input_space: Box = setting.observation_space[0]
+        input_space: Box = setting.observation_space["x"]
 
         # For now all Settings have `Discrete` (i.e. classification) action spaces.
         action_space: spaces.Discrete = setting.action_space
@@ -81,8 +95,12 @@ class PnnMethod(Method, target_setting=TaskIncrementalSetting):
         self.num_inputs = np.prod(input_space.shape)
 
         self.added_tasks = []
-
-        if isinstance(setting, ActiveSetting):
+        if not (setting.task_labels_at_train_time and setting.task_labels_at_test_time): 
+            logger.warning(RuntimeWarning(
+                "TODO: PNN doesn't have 'propper' task inference, and task labels "
+                "arent always available! This will use an output head at random."
+            ))
+        if isinstance(setting, RLSetting):
             # If we're applied to an RL setting:
 
             # Used these as the default hparams in RL:
@@ -98,12 +116,12 @@ class PnnMethod(Method, target_setting=TaskIncrementalSetting):
             self.loss_function = {
                 "gamma": self.hparams.gamma,
             }
-            if setting.observe_state_directly:
-                # Observing state input (e.g. the 4 floats in cartpole rather than images)
-                self.arch = "mlp"
-            else:
+            if is_image(setting.observation_space.x):
                 # Observing pixel input.
                 self.arch = "conv"
+            else:
+                # Observing state input (e.g. the 4 floats in cartpole rather than images)
+                self.arch = "mlp"
             self.model = PnnA2CAgent(self.arch, self.hparams.hidden_size)
 
         else:
@@ -274,7 +292,7 @@ class PnnMethod(Method, target_setting=TaskIncrementalSetting):
 
     def fit_sl(self, train_env: PassiveEnvironment, valid_env: PassiveEnvironment):
         """ Train on a Supervised Learning (a.k.a. "passive") environment. """
-        observations: TaskIncrementalSetting.Observations = train_env.reset()
+        observations: TaskIncrementalSLSetting.Observations = train_env.reset()
         cuda_observations = observations.to(self.device)
         assert isinstance(self.model, PnnClassifier)
         assert self.hparams
@@ -383,11 +401,8 @@ def main_rl():
     Config.add_argparse_args(parser, dest="config")
     PnnMethod.add_argparse_args(parser, dest="method")
 
-    # Haven't tested with observe_state_directly=False
-    # it run but I don't know if it converge
     setting = TaskIncrementalRLSetting(
         dataset="cartpole",
-        observe_state_directly=True,
         nb_tasks=2,
         train_task_schedule={
             0: {"gravity": 10, "length": 0.3},
@@ -420,8 +435,8 @@ def main_sl():
     # TODO: PNN is coded for the DomainIncrementalSetting, where the action space
     # is the same for each task.
     # parser.add_arguments(DomainIncrementalSetting, dest="setting")
-    parser.add_arguments(TaskIncrementalSetting, dest="setting")
-    # TaskIncrementalSetting.add_argparse_args(parser, dest="setting")
+    parser.add_arguments(TaskIncrementalSLSetting, dest="setting")
+    # TaskIncrementalSLSetting.add_argparse_args(parser, dest="setting")
     Config.add_argparse_args(parser, dest="config")
 
     # Add arguments for the Method:
@@ -429,10 +444,11 @@ def main_sl():
 
     args = parser.parse_args()
 
-    # setting: TaskIncrementalSetting = args.setting
-    setting: TaskIncrementalSetting = TaskIncrementalSetting.from_argparse_args(
-    # setting: DomainIncrementalSetting = DomainIncrementalSetting.from_argparse_args(
-        args, dest="setting"
+    # setting: TaskIncrementalSLSetting = args.setting
+    setting: TaskIncrementalSLSetting = TaskIncrementalSLSetting.from_argparse_args(
+        # setting: DomainIncrementalSetting = DomainIncrementalSetting.from_argparse_args(
+        args,
+        dest="setting",
     )
     config: Config = Config.from_argparse_args(args, dest="config")
 

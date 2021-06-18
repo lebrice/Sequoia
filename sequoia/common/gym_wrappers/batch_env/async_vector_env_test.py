@@ -163,7 +163,7 @@ def test_setattr_sets_attr_on_first_wrapper_with_attribute(batch_size: int):
         env[0].task_schedule = {0: dict(length=2.0)}
         
         env.reset()
-        env.step(env.random_actions())
+        env.step(env.action_space.sample())
 
         current_tasks = env[:].current_task
         print(f"Current tasks: {current_tasks}")

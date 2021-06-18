@@ -15,12 +15,12 @@ from sequoia.common.gym_wrappers import (
     EnvDataset,
 )
 from sequoia.common.gym_wrappers import PixelObservationWrapper
-from sequoia.settings.active.continual.make_env import make_batched_env
+from sequoia.settings.rl.continual.make_env import make_batched_env
 from sequoia.common.gym_wrappers.batch_env import BatchedVectorEnv
 from sequoia.common.loss import Loss
 from sequoia.conftest import DummyEnvironment
 from sequoia.methods.models.forward_pass import ForwardPass
-from sequoia.settings.active.continual import ContinualRLSetting
+from sequoia.settings.rl.continual import ContinualRLSetting
 from torch import Tensor, nn
 
 from .policy_head import PolicyHead
@@ -83,10 +83,10 @@ def test_with_controllable_episode_lengths(batch_size: int, monkeypatch):
     env = EnvDataset(env)
 
     obs_space = env.single_observation_space
-    x_dim = flatdim(obs_space[0])
+    x_dim = flatdim(obs_space["x"])
     # Create some dummy encoder.
     encoder = nn.Linear(x_dim, x_dim)
-    representation_space = obs_space[0]
+    representation_space = obs_space["x"]
 
     output_head = PolicyHead(
         input_space=representation_space,
@@ -121,7 +121,7 @@ def test_with_controllable_episode_lengths(batch_size: int, monkeypatch):
     step_done = np.zeros(batch_size, dtype=np.bool)
 
     for step in range(200):
-        x, obs_done = obs
+        x, obs_done = obs["x"], obs["done"]
 
         # The done from the obs should always be the same as the 'done' from the 'step' function.
         assert np.array_equal(obs_done, step_done)
@@ -225,7 +225,7 @@ def test_loss_is_nonzero_at_episode_end(batch_size: int):
     env = EnvDataset(env)
 
     head = PolicyHead(
-        input_space=obs_space[0],
+        input_space=obs_space.x,
         action_space=action_space,
         reward_space=reward_space,
         hparams=PolicyHead.HParams(accumulate_losses_before_backward=False),
@@ -249,10 +249,10 @@ def test_loss_is_nonzero_at_episode_end(batch_size: int):
     encoder.train()
 
     for i in range(100):
-        representations = encoder(obs[0])
+        representations = encoder(obs["x"])
 
         observations = ContinualRLSetting.Observations(
-            x=obs[0],
+            x=obs["x"],
             done=done,
             # info=info,
         )
@@ -298,9 +298,9 @@ def test_done_is_sometimes_True_when_iterating_through_env(batch_size: int):
     env = ConvertToFromTensors(env)
     env = EnvDataset(env)
     for i, obs in zip(range(100), env):
-        print(i, obs[1])
+        print(i, obs)
         _ = env.send(env.action_space.sample())
-        if any(obs[1]):
+        if any(obs["done"]):
             break
     else:
         assert False, "Never encountered done=True!"
@@ -327,7 +327,7 @@ def test_loss_is_nonzero_at_episode_end_iterate(batch_size: int):
 
     head = PolicyHead(
         # observation_space=obs_space,
-        input_space=obs_space[0],
+        input_space=obs_space["x"],
         action_space=action_space,
         reward_space=reward_space,
         hparams=PolicyHead.HParams(accumulate_losses_before_backward=False),
@@ -338,8 +338,8 @@ def test_loss_is_nonzero_at_episode_end_iterate(batch_size: int):
 
     for i, obs in zip(range(100), env):
         print(i, obs)
-        x = obs[0]
-        done = obs[1]
+        x = obs["x"]
+        done = obs["done"]
         representations = x
         assert isinstance(x, Tensor)
         assert isinstance(done, Tensor)
@@ -521,6 +521,7 @@ def test_buffers_are_stacked_correctly(monkeypatch):
     # loss: Loss = output_head.get_loss(forward_pass, actions=actions, rewards=rewards)
 
 
+@pytest.mark.no_xvfb
 def test_sanity_check_cartpole_done_vector():
     """TODO: Sanity check, make sure that cartpole has done=True at some point
     when using a BatchedEnv.
@@ -533,7 +534,7 @@ def test_sanity_check_cartpole_done_vector():
 
     for i in range(100):
         obs, rewards, done, info = env.step(env.action_space.sample())
-        assert all(obs[1] == done), i
+        assert all(obs["done"] == done), i
         if any(done):
             break
     else:

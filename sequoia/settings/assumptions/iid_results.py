@@ -1,13 +1,15 @@
 """ Results for an IID experiment. """
-from typing import TypeVar, List, Dict, ClassVar
+from dataclasses import dataclass, field
+from typing import TypeVar, List, Dict, ClassVar, Generic
 import matplotlib.pyplot as plt
-from sequoia.common.metrics import Metrics
-
+from sequoia.common.metrics import Metrics, EpisodeMetrics
+from sequoia.settings.base.results import Results
 
 MetricType = TypeVar("MetricType", bound=Metrics)
 
 
-class TaskResults(List[MetricType]):
+@dataclass
+class TaskResults(Results, Generic[MetricType]):
     """ Results within a given Task.
 
     This is just a List of a given Metrics type, with additional methods.
@@ -16,10 +18,25 @@ class TaskResults(List[MetricType]):
     # SL) have higher => better
     lower_is_better: ClassVar[bool] = False
 
+    metrics: List[MetricType] = field(default_factory=list)
+
+    def __post_init__(self):
+        if self.metrics and isinstance(self.metrics[0], dict):
+            self.metrics = [
+                Metrics.from_dict(metrics, drop_extra_fields=False) for metrics in self.metrics
+            ]
+
+    def __str__(self) -> str:
+        return f"{type(self).__name__}(average(metrics)={self.average_metrics})"
+
+    def __repr__(self) -> str:
+        return f"{type(self).__name__}(average(metrics)={self.average_metrics})"
+
+    
     @property
     def average_metrics(self) -> MetricType:
         """ Returns the average 'Metrics' object for this task. """
-        return sum(self, Metrics())
+        return sum(self.metrics, Metrics())
 
     @property
     def objective(self) -> float:
@@ -60,6 +77,9 @@ class TaskResults(List[MetricType]):
             form.
         """
         return self.average_metrics.to_log_dict(verbose=verbose)
+
+    def summary(self) -> str:
+        return str(self.to_log_dict())
 
     def make_plots(self) -> Dict[str, plt.Figure]:
         """Produce a set of plots using the Metrics stored in this object.

@@ -223,7 +223,7 @@ def test_newaxis():
         ))
 
 def test_single_index():
-    """ BUG: observations[0] gives another Observations object, rather than just x. """
+    """ observations[0] should gives the first field. """
     obs = Observations(
         x = torch.arange(5),
         task_labels = 1,

@@ -41,14 +41,14 @@ from sequoia.settings.base import (
 from sequoia.utils import constant, flag, mean
 from sequoia.utils.logging_utils import get_logger
 from sequoia.utils.utils import add_prefix
-from .continual import ContinualSetting
+from .continual import ContinualAssumption, TestEnvironment
 from .incremental_results import IncrementalResults, TaskResults, TaskSequenceResults
 
 logger = get_logger(__file__)
 
 
 @dataclass
-class IncrementalSetting(ContinualSetting):
+class IncrementalAssumption(ContinualAssumption):
     """ Mixin that defines methods that are common to all 'incremental'
     settings, where the data is separated into tasks, and where you may not
     always get the task labels.
@@ -68,10 +68,8 @@ class IncrementalSetting(ContinualSetting):
 
         Adds the 'task labels' to the base Observation.
         """
-
         task_labels: Union[Optional[Tensor], Sequence[Optional[Tensor]]] = None
 
-    # TODO: Actually add the 'smooth' task boundary case.
     # Wether we have clear boundaries between tasks, or if the transition is
     # smooth.
     smooth_task_boundaries: bool = constant(False)  # constant for now.
@@ -93,23 +91,13 @@ class IncrementalSetting(ContinualSetting):
 
     # The number of tasks. By default 0, which means that it will be set
     # depending on other fields in __post_init__, or eventually be just 1.
-    nb_tasks: int = field(0, alias=["n_tasks", "num_tasks"])
+    nb_tasks: int = field(5, alias=["n_tasks", "num_tasks"])
 
     # Attributes (not parsed through the command-line):
     _current_task_id: int = field(default=0, init=False)
 
-    # WIP: When True, a Monitor-like wrapper will be applied to the training environment
-    # and monitor the 'online' performance during training. Note that in SL, this will
-    # also cause the Rewards (y) to be withheld until actions are passed to the `send`
-    # method of the Environment.
-    monitor_training_performance: bool = False
-
-    # Options related to Weights & Biases (wandb). Turned Off by default. Passing any of
-    # its arguments will enable wandb.
-    wandb: Optional[WandbConfig] = None
-
-    def __post_init__(self, *args, **kwargs):
-        super().__post_init__(*args, **kwargs)
+    def __post_init__(self):
+        super().__post_init__()
 
         self.train_env: Environment = None  # type: ignore
         self.val_env: Environment = None  # type: ignore
@@ -197,14 +185,14 @@ class IncrementalSetting(ContinualSetting):
         if self.monitor_training_performance:
             results._online_training_performance = []
 
-        # TODO: Fix this up, need to set the '_objective_scaling_factor' to a different
-        # value depending on the 'dataset' / environment.
-        results._objective_scaling_factor = self._get_objective_scaling_factor()
-
         if self.wandb and self.wandb.project:
             # Init wandb, and then log the setting's options.
             self.wandb_run = self.setup_wandb(method)
             method.setup_wandb(self.wandb_run)
+
+        # TODO: Fix this up, need to set the '_objective_scaling_factor' to a different
+        # value depending on the 'dataset' / environment.
+        results._objective_scaling_factor = self._get_objective_scaling_factor()
 
         method.set_training()
 
@@ -238,7 +226,7 @@ class IncrementalSetting(ContinualSetting):
             test_metrics: TaskSequenceResults = self.test_loop(method)
 
             # Add a row to the transfer matrix.
-            results.append(test_metrics)
+            results.task_sequence_results.append(test_metrics)
             logger.info(f"Resulting objective of Test Loop: {test_metrics.objective}")
 
             if wandb.run:
@@ -254,74 +242,7 @@ class IncrementalSetting(ContinualSetting):
         self.log_results(method, results)
         return results
 
-    def setup_wandb(self, method: Method) -> Run:
-        """Call wandb.init, log the experiment configuration to the config dict.
-
-        This assumes that `self.wandb` is not None. This happens when one of the wandb
-        arguments is passed.
-
-        Parameters
-        ----------
-        method : Method
-            Method to be applied.
-        """
-        assert isinstance(self.wandb, WandbConfig)
-        method_name: str = method.get_name()
-        setting_name: str = self.get_name()
-
-        if not self.wandb.run_name:
-            # Set the default name for this run.
-            run_name = f"{method_name}-{setting_name}"
-            dataset = getattr(self, "dataset", None)
-            if isinstance(dataset, str):
-                run_name += f"-{dataset}"
-            if self.nb_tasks > 1:
-                run_name += f"_{self.nb_tasks}t"
-            self.wandb.run_name = run_name
-
-        run: Run = self.wandb.wandb_init()
-        run.config["setting"] = setting_name
-        run.config["method"] = method_name
-        for k, value in self.to_dict().items():
-            if not k.startswith("_"):
-                run.config[f"setting/{k}"] = value
-
-        run.summary["setting"] = self.get_name()
-        run.summary["method"] = method.get_name()
-        assert wandb.run is run
-        return run
-
-    def log_results(self, method: Method, results: IncrementalResults) -> None:
-        """
-        TODO: Create the tabs we need to show up in wandb:
-        1. Final
-            - Average "Current/Online" performance (scalar)
-            - Average "Final" performance (scalar)
-            - Runtime
-        2. Test
-            - Task i (evolution over time (x axis is the task id, if possible))
-        """
-        logger.info(results.summary())
-
-        if wandb.run:
-            wandb.summary["method"] = method.get_name()
-            wandb.summary["setting"] = self.get_name()
-            dataset = getattr(self, "dataset", "")
-            if dataset and isinstance(dataset, str):
-                wandb.summary["dataset"] = dataset
-
-            wandb.log(results.to_log_dict())
-
-            # BUG: Sometimes logging a matplotlib figure causes a crash:
-            # File "/home/fabrice/miniconda3/envs/sequoia/lib/python3.8/site-packages/plotly/matplotlylib/mplexporter/utils.py", line 246, in get_grid_style
-            # if axis._gridOnMajor and len(gridlines) > 0:
-            # AttributeError: 'XAxis' object has no attribute '_gridOnMajor'
-            # Seems to be fixed by downgrading the matplotlib version to 3.2.2
-            wandb.log(results.make_plots())
-
-            wandb.run.finish()
-
-    def test_loop(self, method: Method) -> "IncrementalSetting.Results":
+    def test_loop(self, method: Method) -> "IncrementalAssumption.Results":
         """ (WIP): Runs an incremental test loop and returns the Results.
 
         The idea is that this loop should be exactly the same, regardless of if
@@ -346,7 +267,7 @@ class IncrementalSetting(ContinualSetting):
         if self.known_task_boundaries_at_test_time and self.nb_tasks > 1:
 
             def _on_task_switch(step: int, *arg) -> None:
-                # TODO: This attribute isn't on IncrementalSetting itself, it's defined
+                # TODO: This attribute isn't on IncrementalAssumption itself, it's defined
                 # on ContinualRLSetting.
                 if step not in test_env.boundary_steps:
                     return
@@ -473,14 +394,14 @@ class IncrementalSetting(ContinualSetting):
     @abstractmethod
     def train_dataloader(
         self, *args, **kwargs
-    ) -> Environment["IncrementalSetting.Observations", Actions, Rewards]:
+    ) -> Environment["IncrementalAssumption.Observations", Actions, Rewards]:
         """ Returns the DataLoader/Environment for the current train task. """
         return super().train_dataloader(*args, **kwargs)
 
     @abstractmethod
     def val_dataloader(
         self, *args, **kwargs
-    ) -> Environment["IncrementalSetting.Observations", Actions, Rewards]:
+    ) -> Environment["IncrementalAssumption.Observations", Actions, Rewards]:
         """ Returns the DataLoader/Environment used for validation on the
         current task.
         """
@@ -489,103 +410,9 @@ class IncrementalSetting(ContinualSetting):
     @abstractmethod
     def test_dataloader(
         self, *args, **kwargs
-    ) -> Environment["IncrementalSetting.Observations", Actions, Rewards]:
+    ) -> Environment["IncrementalAssumption.Observations", Actions, Rewards]:
         """ Returns the Test Environment (for all the tasks). """
         return super().test_dataloader(*args, **kwargs)
 
     def _get_objective_scaling_factor(self) -> float:
         return 1.0
-
-class TestEnvironment(gym.wrappers.Monitor, IterableWrapper, ABC):
-    """ Wrapper around a 'test' environment, which limits the number of steps
-    and keeps tracks of the performance.
-    """
-
-    def __init__(
-        self,
-        env: gym.Env,
-        directory: Path,
-        step_limit: int = 1_000,
-        no_rewards: bool = False,
-        config: Config = None,
-        *args,
-        **kwargs,
-    ):
-        super().__init__(env, directory, *args, **kwargs)
-        self.step_limit = step_limit
-        self.no_rewards = no_rewards
-        self._closed = False
-        self._steps = 0
-        self.config = config
-        # if wandb.run:
-        #     wandb.gym.monitor()
-
-    def is_closed(self):
-        return self._closed
-
-    @abstractmethod
-    def get_results(self) -> Results:
-        """ Return how well the Method was applied on this environment.
-
-        In RL, this would be based on the mean rewards, while in supervised
-        learning it could be the average accuracy, for instance.
-
-        Returns
-        -------
-        Results
-            [description]
-        """
-        # TODO: In the case of the ClassIncremental Setting, we'd have to modify
-        # this so we can set the 'Reward' to be stored (and averaged out, etc)
-        # to be the accuracy? a Metrics object? idk.
-        # TODO: Total reward over a number of steps? Over a number of episodes?
-        # Average reward? What's the metric we care about in RL?
-        rewards = self.get_episode_rewards()
-        lengths = self.get_episode_lengths()
-        total_steps = self.get_total_steps()
-        return sum(rewards) / total_steps
-
-    def step(self, action):
-        # TODO: Its A bit uncomfortable that we have to 'unwrap' these here..
-        # logger.debug(f"Step {self._steps}")
-        action_for_stats = action.y_pred if isinstance(action, Actions) else action
-
-        self._before_step(action_for_stats)
-
-        if isinstance(action, Tensor):
-            action = action.cpu().numpy()
-        observation, reward, done, info = self.env.step(action)
-        observation_for_stats = observation.x
-        reward_for_stats = reward.y
-
-        # TODO: Always render when debugging? or only when the corresponding
-        # flag is set in self.config?
-        try:
-            if self.config and self.config.render and self.config.debug:
-                self.render("human")
-        except NotImplementedError:
-            pass
-
-        if isinstance(self.env.unwrapped, VectorEnv):
-            done = all(done)
-        else:
-            done = bool(done)
-
-        done = self._after_step(observation_for_stats, reward_for_stats, done, info)
-
-        if self.get_total_steps() >= self.step_limit:
-            done = True
-            self.close()
-
-        # Remove the rewards if they aren't allowed.
-        if self.no_rewards:
-            reward = None
-
-        return observation, reward, done, info
-
-    def close(self):
-        self._closed = True
-        return super().close()
-
-
-TestEnvironment.__test__ = False

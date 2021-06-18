@@ -22,15 +22,15 @@ from simple_parsing import (
     subparsers,
 )
 
-from sequoia.common.config import Config
+from sequoia.common.config import Config, WandbConfig
 from sequoia.methods import Method, all_methods
 from sequoia.settings import (
-    ClassIncrementalResults,
     Results,
     Setting,
     SettingType,
     all_settings,
 )
+from sequoia.settings.sl.incremental import IncrementalSLResults
 from sequoia.settings.presets import setting_presets
 from sequoia.utils import Parseable, Serializable, get_logger
 from sequoia.utils.logging_utils import get_logger
@@ -88,6 +88,8 @@ class Experiment(Parseable, Serializable):
     # of Setting or of Method, go in this next dataclass here! For example,
     # things like the log directory, wether Cuda is used, etc.
     config: Config = mutable_field(Config)
+
+    wandb: Optional[WandbConfig] = None
 
     def __post_init__(self):
         if not (self.setting or self.method):
@@ -169,9 +171,11 @@ class Experiment(Parseable, Serializable):
 
             assert isclass(self.setting) and issubclass(self.setting, Setting)
             # Actually load the setting from the file.
+            # TODO: Why isn't this using `load_benchmark`?
             self.setting = self.setting.load(
                 path=self.benchmark, drop_extra_fields=drop_extras
             )
+            self.setting.wandb = self.wandb
 
             if self.method is None:
                 raise NotImplementedError(
@@ -235,7 +239,7 @@ class Experiment(Parseable, Serializable):
             
         """
         assert setting is not None and method is not None
-
+        assert isinstance(setting, Setting), f"TODO: Fix this, need to pass a wandb config to the Setting from the experiment!"
         if not (isinstance(setting, Setting) and isinstance(method, Method)):
             setting, method = parse_setting_and_method_instances(
                 setting=setting, method=method, argv=argv, strict_args=strict_args
@@ -279,13 +283,17 @@ class Experiment(Parseable, Serializable):
         assert self.setting is not None
         assert self.method is not None
         assert self.config is not None
-        return self.run_experiment(
-            setting=self.setting,
-            method=self.method,
-            config=self.config,
-            argv=argv,
-            strict_args=strict_args,
-        )
+
+        if not (isinstance(self.setting, Setting) and isinstance(self.method, Method)):
+            setting, method = parse_setting_and_method_instances(
+                setting=self.setting, method=self.method, argv=argv, strict_args=strict_args
+            )
+
+        setting.wandb = self.wandb
+        setting.config = self.config
+
+        return setting.apply(method, config=self.config)
+
 
     @classmethod
     def main(
@@ -336,6 +344,7 @@ class Experiment(Parseable, Serializable):
             )
             assert isinstance(setting, Setting)
             assert isinstance(method, Method)
+            setting.wandb = experiment.wandb
 
             results = experiment.launch(argv, strict_args=strict_args)
             print("\n\n EXPERIMENT IS DONE \n\n")

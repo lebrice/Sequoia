@@ -6,7 +6,7 @@ data, the environment, the agent, etc.
 
 
 The Setting class is currently loosely based on the `LightningDataModule` class
-from pytorch-lightning, with the goal of having an `IIDSetting` node somewhere
+from pytorch-lightning, with the goal of having an `TraditionalSLSetting` node somewhere
 in the tree, which would be totally interchangeable with existing datamodules
 from pytorch-lightning.
 
@@ -41,7 +41,7 @@ import numpy as np
 import torch
 from gym import spaces
 from pytorch_lightning import LightningDataModule
-from sequoia.common.config import Config
+from sequoia.common.config import Config, WandbConfig
 from sequoia.common.metrics import Metrics
 from sequoia.common.transforms import Compose, Transforms
 from sequoia.settings.presets import setting_presets
@@ -155,6 +155,17 @@ class Setting(
     # # Number of labeled examples.
     # n_labeled_examples: Optional[int] = None
 
+    # Options related to Weights & Biases (wandb). Turned Off by default. Passing any of
+    # its arguments will enable wandb.
+    # NOTE: Adding `cmd=False` here, so we only create the args in `Experiment`.
+    # TODO: Fix this up.
+    wandb: Optional[WandbConfig] = field(default=None, compare=False, cmd=False)
+
+    # Group of configuration options like log_dir, data dir, etc.
+    # TODO: It's a bit confusing to also have a `config` attribute on the
+    # Setting. Might want to change this a bit.
+    config: Optional[Config] = field(default=None, cmd=False)
+
     def __post_init__(
         self,
         observation_space: gym.Space = None,
@@ -178,19 +189,21 @@ class Setting(
         if is_list_of_list(self.test_transforms):
             self.test_transforms = self.test_transforms[0]
 
-        if all(
-            t is None
-            for t in [
-                self.transforms,
-                self.train_transforms,
-                self.val_transforms,
-                self.test_transforms,
-            ]
-        ):
-            # Use these two transforms by default if no transforms are passed at all.
-            # TODO: Remove this after the competition perhaps.
-            self.transforms = Compose([Transforms.to_tensor, Transforms.three_channels])
+        # if all(
+        #     t is None
+        #     for t in [
+        #         self.transforms,
+        #         self.train_transforms,
+        #         self.val_transforms,
+        #         self.test_transforms,
+        #     ]
+        # ):
+        #     # Use these two transforms by default if no transforms are passed at all.
+        #     # TODO: Remove this after the competition perhaps.
+        #     self.transforms = Compose([Transforms.to_tensor, Transforms.three_channels])
 
+        # TODO: Should change this, so that these transform fields are only the
+        # additional transforms compared to `self.transforms` (the 'base' transforms)
         # If the constructor is called with just the `transforms` argument, like this:
         # <SomeSetting>(dataset="bob", transforms=foo_transform)
         # Then we use this value as the default for the train, val and test transforms.
@@ -233,10 +246,6 @@ class Setting(
         self._observation_space = observation_space
         self._action_space = action_space
         self._reward_space = reward_space
-
-        # TODO: It's a bit confusing to also have a `config` attribute on the
-        # Setting. Might want to change this a bit.
-        self.config: Config = None
 
         self.train_env: Environment = None  # type: ignore
         self.val_env: Environment = None  # type: ignore
@@ -324,8 +333,8 @@ class Setting(
         if isinstance(self.observation_space, spaces.Box):
             return self.observation_space
         if isinstance(self.observation_space, spaces.Tuple):
-            assert isinstance(self.observation_space[0], spaces.Box)
-            return self.observation_space[0]
+            assert isinstance(self.observation_space["x"], spaces.Box)
+            return self.observation_space["x"]
         if isinstance(self.observation_space, spaces.Dict):
             return self.observation_space.spaces["x"]
         logger.warning(
@@ -382,6 +391,24 @@ class Setting(
         """ Returns an iterable of strings which represent the names of datasets. """
         return cls.available_datasets
 
+    def _setup_config(self, method: Method) -> Config:
+        config: Config
+        if isinstance(getattr(method, "config", None), Config):
+            config = method.config
+            logger.debug(f"Using Config from the Method: {self.config}")
+        else:
+            argv = self._argv
+            if argv:
+                logger.debug(
+                    f"Parsing the Config from the command-line arguments ({argv})"
+                )
+            else:
+                logger.debug(
+                    f"Parsing the config from the current command-line arguments."
+                )
+            config = Config.from_args(argv, strict=False)
+        return config
+
     @classmethod
     def main(cls, argv: Optional[Union[str, List[str]]] = None) -> Results:
         from sequoia.main import Experiment
@@ -418,19 +445,13 @@ class Setting(
         )
         return all_results
 
-    @classmethod
-    def get_path_to_source_file(cls: Type) -> Path:
-        from sequoia.utils.utils import get_path_to_source_file
-
-        return get_path_to_source_file(cls)
-
     def _check_environments(self):
         """ Do a quick check to make sure that interacting with the envs/dataloaders
         works correctly.
         """
         # Check that the env's spaces are batched versions of the settings'.
         from gym.vector.utils import batch_space
-        from sequoia.settings.passive import PassiveEnvironment
+        from sequoia.settings.sl import PassiveEnvironment
 
         batch_size = self.batch_size
         for loader_method in [
@@ -460,8 +481,8 @@ class Setting(
             # TODO: Batching the 'Sparse' makes it really ugly, so just
             # comparing the 'image' portion of the space for now.
             assert (
-                env.observation_space[0].shape == expected_observation_space[0].shape
-            ), (env.observation_space[0], expected_observation_space[0])
+                env.observation_space["x"].shape == expected_observation_space[0].shape
+            ), (env.observation_space["x"], expected_observation_space[0])
 
             assert env.action_space == expected_action_space, (
                 env.action_space,
@@ -531,7 +552,7 @@ class Setting(
         if isinstance(env.observation_space, spaces.Box):
             image_space = env.observation_space
         elif isinstance(env.observation_space, spaces.Tuple):
-            image_space = env.observation_space[0]
+            image_space = env.observation_space["x"]
         else:
             raise RuntimeError(
                 f"Don't know how to find the image space in the "

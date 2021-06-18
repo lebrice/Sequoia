@@ -65,6 +65,7 @@ class HPOSweep(Experiment):
             )
         assert isinstance(self.setting, Setting)
         assert isinstance(self.method, Method)
+        self.setting.wandb = self.wandb
 
         # TODO: IDEA: It could actually be really cool if we created a list of
         # Experiment objects here, and just call their 'launch' methods in parallel,

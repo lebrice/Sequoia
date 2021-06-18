@@ -18,7 +18,7 @@ from sequoia.common.gym_wrappers.batch_env import BatchedVectorEnv
 from sequoia.common.loss import Loss
 from sequoia.conftest import DummyEnvironment
 from sequoia.methods.models.forward_pass import ForwardPass
-from sequoia.settings.active.continual import ContinualRLSetting
+from sequoia.settings.rl.continual import ContinualRLSetting
 from torch import Tensor, nn
 
 from .episodic_a2c import A2CHeadOutput, EpisodicA2C
@@ -85,10 +85,10 @@ def test_with_controllable_episode_lengths(batch_size: int, monkeypatch):
     env = EnvDataset(env)
 
     obs_space = env.single_observation_space
-    x_dim = flatdim(obs_space[0])
+    x_dim = flatdim(obs_space["x"])
     # Create some dummy encoder.
     encoder = nn.Linear(x_dim, x_dim)
-    representation_space = obs_space[0]
+    representation_space = obs_space["x"]
 
     output_head = EpisodicA2C(
         input_space=representation_space,
@@ -213,7 +213,7 @@ def test_loss_is_nonzero_at_episode_end(batch_size: int):
     env = EnvDataset(env)
 
     head = EpisodicA2C(
-        input_space=obs_space[0],
+        input_space=obs_space["x"],
         action_space=action_space,
         reward_space=reward_space,
         hparams=EpisodicA2C.HParams(accumulate_losses_before_backward=False),
@@ -235,10 +235,10 @@ def test_loss_is_nonzero_at_episode_end(batch_size: int):
     encoder.train()
 
     for i in range(100):
-        representations = encoder(obs[0])
+        representations = encoder(obs["x"])
 
         observations = ContinualRLSetting.Observations(
-            x=obs[0],
+            x=obs["x"],
             done=done,
             # info=info,
         )
@@ -300,7 +300,7 @@ def test_loss_is_nonzero_at_episode_end_iterate(batch_size: int):
 
     head = EpisodicA2C(
         # observation_space=obs_space,
-        input_space=obs_space[0],
+        input_space=obs_space["x"],
         action_space=action_space,
         reward_space=reward_space,
         hparams=EpisodicA2C.HParams(accumulate_losses_before_backward=False),
@@ -311,7 +311,7 @@ def test_loss_is_nonzero_at_episode_end_iterate(batch_size: int):
 
     for i, obs in zip(range(100), env):
         print(i, obs)
-        x = obs[0]
+        x = obs["x"]
         done = obs[1]
         representations = x
         assert isinstance(x, Tensor)

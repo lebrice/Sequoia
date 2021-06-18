@@ -1,14 +1,24 @@
 import bisect
 from functools import singledispatch
-from typing import (Any, Callable, Dict, List, Optional,
-                    Sequence, Tuple, Type, TypeVar, Union)
+from typing import (
+    Any,
+    Callable,
+    Dict,
+    List,
+    Optional,
+    Sequence,
+    Tuple,
+    Type,
+    TypeVar,
+    Union,
+)
 
 import gym
 import numpy as np
 from gym import spaces
 from gym.envs.classic_control import CartPoleEnv
 from torch import Tensor
-from sequoia.common.spaces.named_tuple import NamedTuple, NamedTupleSpace
+from sequoia.common.spaces.named_tuple import NamedTupleSpace
 from sequoia.utils.logging_utils import get_logger
 
 task_param_names: Dict[Union[Type[gym.Env], str], List[str]] = {
@@ -24,9 +34,45 @@ K = TypeVar("K")
 V = TypeVar("V")
 
 
-class ObservationsAndTaskLabels(NamedTuple):
-    x: Any
-    task_labels: Any
+def make_env_attributes_task(
+    env: gym.Env,
+    task_params: Union[List[str], Dict[str, Any]],
+    seed: int = None,
+    rng: np.random.Generator = None,
+    noise_std: float = 0.2,
+) -> Dict[str, Any]:
+    task: Dict[str, Any] = {}
+    rng: np.random.Generator = rng or np.random.default_rng(seed)
+
+    if isinstance(task_params, list):
+        task_params = {param: getattr(env.unwrapped, param) for param in task_params}
+
+    for attribute, default_value in task_params.items():
+        new_value = default_value
+
+        if isinstance(default_value, (int, float, np.ndarray)):
+            new_value *= rng.normal(1.0, noise_std)
+            # Clip the value to be in the [0.1*default, 10*default] range.
+            new_value = max(0.1 * default_value, new_value)
+            new_value = min(10 * default_value, new_value)
+            if isinstance(default_value, int):
+                new_value = round(new_value)
+
+        elif isinstance(default_value, bool):
+            new_value = rng.choice([True, False])
+        else:
+            raise NotImplementedError(
+                f"TODO: Don't yet know how to sample a random value for "
+                f"attribute {attribute} with default value {default_value} of type "
+                f" {type(default_value)}."
+            )
+        task[attribute] = new_value
+    return task
+
+
+# class ObservationsAndTaskLabels(NamedTuple):
+#     x: Any
+#     task_labels: Any
 
 
 @singledispatch
@@ -39,15 +85,26 @@ def add_task_labels(observation: Any, task_labels: Any) -> Any:
 @add_task_labels.register(Tensor)
 @add_task_labels.register(np.ndarray)
 def _add_task_labels_to_single_obs(observation: X, task_labels: T) -> Tuple[X, T]:
-    return ObservationsAndTaskLabels(observation, task_labels)
+    return {
+        "x": observation,
+        "task_labels": task_labels,
+    }
+    # return ObservationsAndTaskLabels(observation, task_labels)
+
+
+from sequoia.common.spaces import TypedDictSpace
 
 
 @add_task_labels.register(spaces.Space)
-def _add_task_labels_to_space(observation: X, task_labels: T) -> spaces.Dict:
+def _add_task_labels_to_space(observation: spaces.Space, task_labels: T) -> spaces.Dict:
     # TODO: Return a dict or NamedTuple at some point:
-    return NamedTupleSpace(
-        x=observation, task_labels=task_labels, dtype=ObservationsAndTaskLabels,
+    return TypedDictSpace(
+        x=observation,
+        task_labels=task_labels,
     )
+    # return NamedTupleSpace(
+    #     x=observation, task_labels=task_labels, dtype=ObservationsAndTaskLabels,
+    # )
 
 
 @add_task_labels.register(NamedTupleSpace)
@@ -55,7 +112,9 @@ def _add_task_labels_to_namedtuple(
     observation: NamedTupleSpace, task_labels: gym.Space
 ) -> NamedTupleSpace:
     assert "task_labels" not in observation._spaces, "space already has task labels!"
-    return type(observation)(**observation._spaces, task_labels=task_labels)
+    return type(observation)(
+        **observation._spaces, task_labels=task_labels, dtype=observation.dtype
+    )
 
 
 @add_task_labels.register(spaces.Tuple)
@@ -69,9 +128,21 @@ def _add_task_labels_to_dict_space(
     observation: spaces.Dict, task_labels: T
 ) -> spaces.Dict:
     assert "task_labels" not in observation.spaces
-    spaces = observation.spaces.copy()
-    spaces["task_labels"] = task_labels
-    return type(observation)(**spaces)
+    d_spaces = observation.spaces.copy()
+    d_spaces["task_labels"] = task_labels
+    return type(observation)(**d_spaces)
+
+
+@add_task_labels.register(TypedDictSpace)
+def _add_task_labels_to_typed_dict_space(
+    observation: TypedDictSpace, task_labels: T
+) -> TypedDictSpace:
+    assert "task_labels" not in observation.spaces
+    d_spaces = observation.spaces.copy()
+    d_spaces["task_labels"] = task_labels
+    # NOTE: We assume here that the `dtype` of the typed dict space (e.g. the
+    # `Observations` class, usually) can handle having a `task_labels` field.
+    return type(observation)(**d_spaces, type=observation.dtype)
 
 
 @add_task_labels.register(dict)
@@ -161,14 +232,24 @@ class MultiTaskEnvironment(gym.Wrapper):
             unwrapped_type = type(env.unwrapped)
             if unwrapped_type in task_param_names:
                 task_params = task_param_names[unwrapped_type]
+            elif task_schedule:
+                if any(isinstance(v, dict) for v in task_schedule.values()):
+                    first_task_dict = task_schedule[min(task_schedule)]
+                    task_params = first_task_dict.keys()
+                    for task_dict in task_schedule.values():
+                        assert (
+                            task_params == task_dict.keys()
+                        ), "All tasks need to have the same keys for now."
+                    task_params = list(task_params)
             else:
-                pass
-                # logger.warning(UserWarning(
-                #     f"You didn't pass any 'task params', and the task "
-                #     f"parameters aren't known for this type of environment "
-                #     f"({unwrapped_type}), so we can't make it multi-task with "
-                #     f"this wrapper."
-                # ))
+                logger.warning(
+                    UserWarning(
+                        f"You didn't pass any 'task params', and the task "
+                        f"parameters aren't known for this type of environment "
+                        f"({unwrapped_type}), so we can't make it multi-task with "
+                        f"this wrapper."
+                    )
+                )
 
         self._max_steps: Optional[int] = max_steps
         self._starting_step: int = starting_step
@@ -248,7 +329,7 @@ class MultiTaskEnvironment(gym.Wrapper):
 
         if self.steps in self.task_schedule and not self.new_random_task_on_reset:
             self.current_task = self.task_schedule[self.steps]
-            logger.debug(f"New task: {self.current_task}")
+            logger.debug(f"New task at step {self.steps}: {self.current_task}")
             # Adding this on_task_switch, since it could maybe be easier than
             # having to add a callback wrapper to use.
             task_id = sorted(self.task_schedule.keys()).index(self.steps)
@@ -259,13 +340,7 @@ class MultiTaskEnvironment(gym.Wrapper):
 
         observation, rewards, done, info = super().step(*args, **kwargs)
         if self.add_task_id_to_obs:
-            # TODO: Not actually using the add_task_labels in this case.
-            if isinstance(self.observation_space, NamedTupleSpace):
-                observation = self.observation_space.dtype(
-                    x=observation, task_labels=self.current_task_id
-                )
-            else:
-                observation = add_task_labels(observation, self.current_task_id)
+            observation = add_task_labels(observation, self.current_task_id)
         if self.add_task_dict_to_info:
             info.update(self.current_task)
 
@@ -306,7 +381,7 @@ class MultiTaskEnvironment(gym.Wrapper):
 
         observation = self.env.reset(**kwargs)
         if self.add_task_id_to_obs:
-            observation = (observation, self.current_task_id)
+            observation = add_task_labels(observation, self.current_task_id)
 
         self._episodes += 1
         return observation
@@ -423,26 +498,12 @@ class MultiTaskEnvironment(gym.Wrapper):
         """
         if self.new_random_task_on_reset:
             return self.np_random.choice(list(self.task_schedule.values()))
-        task: Dict = {}
-        for attribute, default_value in self.default_task.items():
-            new_value = default_value
-            if isinstance(default_value, (int, float, np.ndarray)):
-                new_value *= self.np_random.normal(1.0, self.noise_std)
-                # Clip the value to be in the [0.1*default, 10*default] range.
-                new_value = max(0.1 * default_value, new_value)
-                new_value = min(10 * default_value, new_value)
-                if isinstance(default_value, int):
-                    new_value = round(new_value)
-            elif isinstance(default_value, bool):
-                new_value = self.np_random.choice([True, False])
-            else:
-                raise NotImplementedError(
-                    f"TODO: Don't yet know how to sample a random value for "
-                    f"attribute {attribute} with default value {default_value} of type "
-                    f" {type(default_value)}."
-                )
-            task[attribute] = new_value
-        return task
+        return make_env_attributes_task(
+            self,
+            task_params=self.default_task,
+            rng=self.np_random,
+            noise_std=self.noise_std,
+        )
 
     def update_task(self, values: Dict = None, **kwargs):
         """Updates the current task with the params from values or kwargs.

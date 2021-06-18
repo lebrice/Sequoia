@@ -5,9 +5,9 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from torch import Tensor
-from sequoia.settings.passive.cl.objects import Observations, Rewards
+from sequoia.settings.sl.incremental import Observations, Rewards
 from sequoia.settings import PassiveEnvironment, Actions
-from layers import PNNConvLayer, PNNLinearBlock
+from .layers import PNNConvLayer, PNNLinearBlock
 
 
 class PnnClassifier(nn.Module):

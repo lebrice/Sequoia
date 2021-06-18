@@ -12,7 +12,7 @@ from stable_baselines3.common.off_policy_algorithm import TrainFreq
 
 from sequoia.common.hparams import log_uniform
 from sequoia.methods import register_method
-from sequoia.settings.active import ContinualRLSetting
+from sequoia.settings.rl import ContinualRLSetting
 from sequoia.utils.logging_utils import get_logger
 
 from .off_policy_method import OffPolicyModel, OffPolicyMethod
@@ -33,7 +33,7 @@ class DDPGModel(DDPG, OffPolicyModel):
         # The verbosity level: 0 none, 1 training information, 2 debug
         verbose: int = 0
 
-        train_freq: TrainFreq = (1, "episode")
+        train_freq: TrainFreq = TrainFreq(frequency=1, unit="episode")
 
         # Minibatch size for each gradient update
         batch_size: int = 100
@@ -83,6 +83,7 @@ class DDPGMethod(OffPolicyMethod):
 
         todo: use this to customize how your method handles task transitions.
         """
+        super().on_task_switch(task_id=task_id)
 
 
 if __name__ == "__main__":

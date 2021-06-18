@@ -36,6 +36,7 @@ eai job submit \
     --data $ACCOUNT_ID.data:/mnt/data \
     --data $ACCOUNT_ID.results:/mnt/results \
     --env WANDB_API_KEY="$WANDB_API_KEY" \
+    --env HOME=/home/toolkit \
     --image $EAI_Registry/sequoia_eai:$BRANCH \
     --gpu 1 --cpu 8 --mem 12 --gpu-model-filter 12gb \
     -- "$@"

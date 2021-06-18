@@ -17,7 +17,7 @@ namespace torch {
 
 
 package settings {
-    !include settings/base.puml
+    ' !include base/base.puml
 
     abstract class Setting extends SettingABC {
         ' 'root' setting.
@@ -39,11 +39,11 @@ package settings {
     
     package assumptions as settings.assumptions {
         package continual as settings.assumptions.continual {
-            abstract class ContinualSetting extends Setting {
+            abstract class ContinualAssumption extends Setting {
             }
         }
         package incremental as settings.assumptions.incremental {
-            abstract class IncrementalSetting extends ContinualSetting {
+            abstract class IncrementalAssumption extends ContinualAssumption {
                 + nb_tasks: int
                 + task_labels_at_train_time: bool
                 + task_labels_at_test_time: bool
@@ -67,22 +67,20 @@ package settings {
 
             }
         }
-        ' TODO: Need to rename `TaskIncrementalSetting` below to something like
-        ' `TaskIncrementalSL`
         ' package task_incremental as settings.assumptions.task_incremental {
-        '     abstract class TaskIncrementalSetting extends IncrementalSetting {
+        '     abstract class TaskIncrementalAssumption extends IncrementalAssumption {
         '     }
         ' }
 
         ' package iid as settings.assumptions.iid {
-        '     abstract class IIDSetting extends TaskIncrementalSetting {
+        '     abstract class TraditionalSLSetting extends TaskIncrementalSLSetting {
         '     }
         ' }
     }
 
     package passive as settings.passive {
         class PassiveEnvironment implements Environment {}
-        abstract class PassiveSetting extends Setting {
+        abstract class SLSetting extends Setting {
             {abstract} + train_dataloader(): PassiveEnvironment
             {abstract} + val_dataloader(): PassiveEnvironment
             {abstract} + test_dataloader(): PassiveEnvironment
@@ -92,8 +90,8 @@ package settings {
         ' PassiveEnvironment extends DataLoader
         
         package cl as settings.passive.cl {
-            class ClassIncrementalSetting implements PassiveSetting, IncrementalSetting {
-                {static} + Results: Type[Results] = ClassIncrementalResults
+            class ClassIncrementalSetting implements SLSetting, IncrementalAssumption {
+                {static} + Results: Type[Results] = IncrementalSLResults
                 + nb_tasks: int
                 + task_labels_at_train_time: bool = True
                 + task_labels_at_test_time: bool = False
@@ -102,7 +100,7 @@ package settings {
                 + relabel: bool = False
             }
 
-            class ClassIncrementalResults implements IncrementalResults {}
+            class IncrementalSLResults implements IncrementalResults {}
             package domain_incremental as settings.passive.cl.domain_incremental {
                 class DomainIncrementalSetting extends ClassIncrementalSetting {
                     + relabel: bool = True
@@ -113,22 +111,22 @@ package settings {
             }
 
             package task_incremental as settings.passive.cl.task_incremental {
-                class TaskIncrementalSetting extends ClassIncrementalSetting {
+                class TaskIncrementalSLSetting extends ClassIncrementalSetting {
                     {field} + task_labels_at_train_time: bool = True (constant)
                     {field} + task_labels_at_test_time: bool = True (constant)
                 }
-                ' class TaskIncrementalResults extends ClassIncrementalResults{}
+                ' class TaskIncrementalResults extends IncrementalSLResults{}
                
                 package multi_task as settings.passive.cl.task_incremental.multi_task {
-                    class MultiTaskSetting extends TaskIncrementalSetting {
+                    class MultiTaskSetting extends TaskIncrementalSLSetting {
                     }
                 }
             }
             package iid as settings.passive.cl.iid {
-                class IIDSetting extends TaskIncrementalSetting, DomainIncrementalSetting {
+                class TraditionalSLSetting extends TaskIncrementalSLSetting, DomainIncrementalSetting {
                     {field} + nb_tasks: int = 1 (constant)
                 }
-                class IIDResults extends ClassIncrementalResults{}
+                class IIDResults extends IncrementalSLResults{}
             }
         }
     }
@@ -136,14 +134,14 @@ package settings {
     package active as settings.active {
         'note: This is currently called GymDataLoader in the repo.
         class ActiveEnvironment extends Environment {}
-        abstract class ActiveSetting extends Setting {
+        abstract class RLSetting extends Setting {
             {abstract} + train_dataloader(): ActiveEnvironment
             {abstract} + val_dataloader(): ActiveEnvironment
             {abstract} + test_dataloader(): ActiveEnvironment
         }
 
         package continual as settings.active.continual {
-            class ContinualRLSetting implements ActiveSetting, IncrementalSetting {
+            class ContinualRLSetting implements RLSetting, IncrementalAssumption {
                 {static} + Results: Type[Results] = RLResults
 
                 + dataset: str = "cartpole"
@@ -156,10 +154,9 @@ package settings {
                 + test_steps: Optional[int] = None
 
                 + smooth_task_boundaries: bool = True
-                + observe_state_directly: bool = False
                 
                 + train_task_schedule: dict
-                + valid_task_schedule: dict
+                + val_task_schedule: dict
                 + test_task_schedule: dict
                 + task_noise_std: float
 
@@ -197,14 +194,14 @@ package settings {
     }
 }
 
-IncrementalSetting -left-> IncrementalResults : produces
-IncrementalSetting -down-> IncrementalObservations : envs yield
-ClassIncrementalSetting -left-> ClassIncrementalResults : produces
-TaskIncrementalSetting -left-> TaskIncrementalResults : produces
-IIDSetting -left-> IIDResults : produces
+IncrementalAssumption -left-> IncrementalResults : produces
+IncrementalAssumption -down-> IncrementalObservations : envs yield
+ClassIncrementalSetting -left-> IncrementalSLResults : produces
+TaskIncrementalSLSetting -left-> TaskIncrementalResults : produces
+TraditionalSLSetting -left-> IIDResults : produces
 
-PassiveSetting --> PassiveEnvironment : uses
-ActiveSetting -right-> ActiveEnvironment : uses
+SLSetting --> PassiveEnvironment : uses
+RLSetting -right-> ActiveEnvironment : uses
 ContinualRLSetting -> RLResults : produces
 
 @enduml

@@ -279,7 +279,10 @@ def unroll(chunks: Sequence[Sequence[T]], item_space: gym.Space = None) -> List[
     if isinstance(chunks, np.ndarray):
         # print(f"Unrolling chunks with shape {chunks.shape} (item space {item_space})")
         return list(chunks.reshape([-1, *chunks.shape[2:]]))
-    
+    if isinstance(chunks, dict):
+        return {
+            k: unroll(chunks[k], sub_space) for k, sub_space in item_space.spaces.items()
+        }
     return list(itertools.chain.from_iterable(chunks))
 
 from functools import singledispatch
@@ -310,10 +313,12 @@ def fuse_and_batch_dicts(item_space: spaces.Dict, *sequences: Sequence[Dict[K, V
     values = {
         k: [] for k in item_space.spaces.keys()
     }
-    for sequence in sequences:
-        for item in sequence:
-            for k, v in item.items():
+    for item_dict in sequences:
+        if isinstance(item_dict, dict):
+            for k, v in item_dict.items():
                 values[k].append(v)
+        else:
+            assert not item_dict
     return {
         k: fuse_and_batch(item_space.spaces[k], values[k], n_items=n_items)
         for k in values

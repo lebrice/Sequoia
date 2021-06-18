@@ -28,13 +28,12 @@ from wandb.wandb_run import Run
 
 from sequoia.common.gym_wrappers.batch_env.batched_vector_env import VectorEnv
 from sequoia.common.gym_wrappers.utils import has_wrapper
-from sequoia.common.hparams import HyperParameters, log_uniform
+from simple_parsing.helpers.hparams import HyperParameters, log_uniform, categorical
+from sequoia.common.spaces import Image
+from sequoia.common.transforms.utils import is_image
 from sequoia.settings import Method, Setting
-from sequoia.settings.active.continual import ContinualRLSetting
-from sequoia.settings.active.continual.wrappers import (
-    NoTypedObjectsWrapper,
-    RemoveTaskLabelsWrapper,
-)
+from sequoia.settings.rl.continual import ContinualRLSetting
+from sequoia.settings.rl.wrappers import NoTypedObjectsWrapper, RemoveTaskLabelsWrapper
 from sequoia.utils.logging_utils import get_logger
 from sequoia.utils.serialization import register_decoding_fn
 
@@ -148,6 +147,10 @@ class SB3BaseHParams(HyperParameters):
     # # Sample a new noise matrix every n steps when using gSDE Default: -1
     # (only sample at the beginning of the rollout)
     # sde_sample_freq: int = -1
+    
+    # Wether to clear the experience buffer at the beginning of a new task.
+    # NOTE: We use to_dict here so that it doesn't get passed do the Policy class.
+    clear_buffers_between_tasks: bool = categorical(True, False, default=False, to_dict=False)
 
 
 @dataclass
@@ -194,15 +197,17 @@ class StableBaselines3Method(Method, ABC, target_setting=ContinualRLSetting):
         self.model: Optional[BaseAlgorithm] = None
         # Extra wrappers to add to the train_env and valid_env before passing
         # them to the `learn` method from stable-baselines3.
+        from sequoia.common.gym_wrappers import TransformObservation, TransformAction, TransformReward
+        import operator
+        from functools import partial
         self.extra_train_wrappers: List[Callable[[gym.Env], gym.Env]] = [
-            RemoveTaskLabelsWrapper,
-            NoTypedObjectsWrapper,
-            RemoveInfoWrapper,
+            partial(TransformObservation, f=operator.itemgetter("x")),
+            # partial(TransformAction, f=operator.itemgetter("y_pred"),
+            partial(TransformReward, f=operator.itemgetter("y")),
         ]
         self.extra_valid_wrappers: List[Callable[[gym.Env], gym.Env]] = [
-            RemoveTaskLabelsWrapper,
-            NoTypedObjectsWrapper,
-            RemoveInfoWrapper,
+            partial(TransformObservation, f=operator.itemgetter("x")),
+            partial(TransformReward, f=operator.itemgetter("y")),
         ]
         # Number of timesteps to train on for each task.
         self.total_timesteps_per_task: int = 0
@@ -234,10 +239,10 @@ class StableBaselines3Method(Method, ABC, target_setting=ContinualRLSetting):
         setting.test_transforms = transforms
 
         if self.hparams.policy is None:
-            if setting.observe_state_directly:
-                self.hparams.policy = "MlpPolicy"
-            else:
+            if is_image(setting.observation_space.x):
                 self.hparams.policy = "CnnPolicy"
+            else:
+                self.hparams.policy = "MlpPolicy"
 
         logger.debug(f"Will use {self.hparams.policy} as the policy.")
         # TODO: Double check that some settings might not impose a limit on
@@ -257,7 +262,9 @@ class StableBaselines3Method(Method, ABC, target_setting=ContinualRLSetting):
 
     def create_model(self, train_env: gym.Env, valid_env: gym.Env) -> BaseAlgorithm:
         """ Create a Model given the training and validation environments. """
-        return self.Model(env=train_env, **self.hparams.to_dict())
+        model_kwargs = self.hparams.to_dict()
+        assert "clear_buffers_between_tasks" not in model_kwargs
+        return self.Model(env=train_env, **model_kwargs)
 
     def fit(self, train_env: gym.Env, valid_env: gym.Env):
         # Remove the extra information that the Setting gives us.
@@ -301,16 +308,6 @@ class StableBaselines3Method(Method, ABC, target_setting=ContinualRLSetting):
         assert action in action_space, (observations, action, action_space)
         return action
 
-    def on_task_switch(self, task_id: Optional[int]) -> None:
-        """ Called when switching tasks in a CL setting.
-
-        If task labels are available, `task_id` will correspond to the index of
-        the new task. Otherwise, if task labels aren't available, `task_id` will
-        be `None`.
-
-        todo: use this to customize how your method handles task transitions.
-        """
-
     def get_search_space(self, setting: Setting) -> Mapping[str, Union[str, Dict]]:
         """Returns the search space to use for HPO in the given Setting.
 
@@ -325,7 +322,9 @@ class StableBaselines3Method(Method, ABC, target_setting=ContinualRLSetting):
             An orion-formatted search space dictionary, mapping from hyper-parameter
             names (str) to their priors (str), or to nested dicts of the same form.
         """
-        return self.hparams.get_orion_space()
+        return {
+            "algo_hparams": self.hparams.get_orion_space(),
+        }
 
     def adapt_to_new_hparams(self, new_hparams: Dict[str, Any]) -> None:
         """Adapts the Method when it receives new Hyper-Parameters to try for a new run.
@@ -343,7 +342,7 @@ class StableBaselines3Method(Method, ABC, target_setting=ContinualRLSetting):
         # leaving other fields unchanged.
         # NOTE: These new hyper-paramers will be used in the next run in the sweep,
         # since each call to `configure` will create a new Model.
-        self.hparams = self.hparams.replace(**new_hparams)
+        self.hparams = self.hparams.replace(**new_hparams["algo_hparams"])
 
     def setup_wandb(self, run: Run) -> None:
         """ Called by the Setting when using Weights & Biases, after `wandb.init`.
@@ -361,6 +360,28 @@ class StableBaselines3Method(Method, ABC, target_setting=ContinualRLSetting):
         """
         run.config["hparams"] = self.hparams.to_dict()
 
+    def on_task_switch(self, task_id: Optional[int]) -> None:
+        """ Called when switching tasks in a CL setting.
+
+        If task labels are available, `task_id` will correspond to the index of
+        the new task. Otherwise, if task labels aren't available, `task_id` will
+        be `None`.
+
+        todo: use this to customize how your method handles task transitions.
+        """
+        if self.hparams.clear_buffers_between_tasks:
+            self.clear_buffers()
+
+    def clear_buffers(self):
+        """ Clears out the experience buffer of the Policy. """
+        # I think that's the right way to do it.. not sure.
+        assert False, self.model.replay_buffer.pos
+        if self.model:
+            # TODO: These are really interesting methods!
+            # self.model.save_replay_buffer
+            # self.model.load_replay_buffer
+            
+            self.model.replay_buffer.reset()
 
 # We do this just to prevent errors when trying to decode the hparams class above, and
 # also to silence the related warnings from simple-parsing's decoding.py module.

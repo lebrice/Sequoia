@@ -9,7 +9,7 @@ from torch.nn import Module
 
 from sequoia.common.config import Config
 from sequoia.conftest import xfail_param
-from sequoia.settings.passive import TaskIncrementalSetting
+from sequoia.settings.sl import TaskIncrementalSLSetting
 
 from .ar1 import AR1Method
 from .base import AvalancheMethod
@@ -43,7 +43,7 @@ class TestAR1Method(_TestAvalancheMethod):
     def test_short_task_incremental_setting(
         self,
         model_type: Type[Module],
-        short_task_incremental_setting: TaskIncrementalSetting,
+        short_task_incremental_setting: TaskIncrementalSLSetting,
         config: Config,
     ):
         method = self.Method(model=model_type)

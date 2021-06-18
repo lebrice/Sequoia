@@ -72,6 +72,9 @@ class ClassificationMetrics(Metrics):
             self.accuracy = round(self.accuracy, 6)
             self.class_accuracy = get_class_accuracy(self.confusion_matrix)
 
+    @property
+    def objective_name(self) -> str:
+        return "Accuracy"
 
     def __add__(self, other: "ClassificationMetrics") -> "ClassificationMetrics":
         confusion_matrix: Optional[Tensor] = None

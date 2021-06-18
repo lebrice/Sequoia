@@ -3,10 +3,13 @@ from typing import List, Optional, Tuple
 import torch
 import torch.nn as nn
 from sequoia.settings import Actions, PassiveEnvironment
-from sequoia.settings.passive.cl.objects import Observations, Rewards
+from sequoia.settings.sl.incremental.objects import Observations, Rewards
 from torch import Tensor
-
+from sequoia.utils.logging_utils import get_logger
 from .layers import PNNLinearBlock
+import numpy as np
+
+logger = get_logger(__file__)
 
 
 class PnnClassifier(nn.Module):
@@ -29,18 +32,32 @@ class PnnClassifier(nn.Module):
         self.n_tasks = 0
         self.n_classes_per_task: List[int] = []
 
-    def forward(self, observations):
+    def forward(self, observations: Observations):
         assert (
             self.columns
         ), "PNN should at least have one column (missing call to `new_task` ?)"
         x = observations.x
         x = torch.flatten(x, start_dim=1)
-        labels = observations.task_labels
+        task_labels: Optional[Tensor] = observations.task_labels
+        batch_size = x.shape[0]
+        n_known_tasks = len(self.columns)
+        last_known_task_id = n_known_tasks - 1
+
+        if task_labels is None:
+            # TODO: Use random output heads per item?
+            logger.warning(
+                f"Encoutering None task labels, assigning a fake random task id for each sample."
+            )
+            task_labels = torch.randint(n_known_tasks, (batch_size,))
+            # task_labels = np.array([None for _ in range(len(x))])
+
+        unique_task_labels = set(task_labels.tolist())
         # TODO: Debug this:
-        inputs = [
-            c[0](x) + n_classes_in_task
-            for n_classes_in_task, c in zip(self.n_classes_per_task, self.columns)
+        column_outputs = [
+            column[0](x) + n_classes_in_task
+            for n_classes_in_task, column in zip(self.n_classes_per_task, self.columns)
         ]
+        inputs = column_outputs
         for layer in range(1, self.n_layers):
             outputs = []
 
@@ -49,24 +66,26 @@ class PnnClassifier(nn.Module):
 
             inputs = outputs
 
-        y: Optional[Tensor] = None
+        y_logits: Optional[Tensor] = None
         task_masks = {}
-        # BUG: Can't apply PNN to the ClassIncrementalSetting at the moment. 
-        if labels is None:
-            raise NotImplementedError(
-                "TODO: Make a prediction when task labels aren't given."
-            )
-        for task_id in set(labels.tolist()):
-            task_mask = labels == task_id
+        # BUG: Can't apply PNN to the ClassIncrementalSetting at the moment.
+
+        for task_id in unique_task_labels:
+            task_mask = task_labels == task_id
             task_masks[task_id] = task_mask
+            if task_id is None or task_id >= n_known_tasks:
+                logger.warning(
+                    f"Task id {task_id} is encountered, but we haven't trained for it yet!"
+                )
+                task_id = last_known_task_id
 
-            if y is None:
-                y = inputs[task_id]
+            if y_logits is None:
+                y_logits = inputs[task_id]
             else:
-                y[task_mask] = inputs[task_id][task_mask]
+                y_logits[task_mask] = inputs[task_id][task_mask]
 
-        assert y is not None, "Can't get prediction in model PNN"
-        return y
+        assert y_logits is not None, "Can't get prediction in model PNN"
+        return y_logits
 
     # def new_task(self, device, num_inputs, num_actions = 5):
     def new_task(self, device, sizes: List[int]):
@@ -76,7 +95,8 @@ class PnnClassifier(nn.Module):
         )
         self.n_tasks += 1
         # TODO: Fix this to use the actual number of classes per task.
-        self.n_classes_per_task.append(2)
+        n_outputs = sizes[-1]
+        self.n_classes_per_task.append(n_outputs)
         task_id = len(self.columns)
         modules = []
         # TODO: Would it also be possible to use convolutional layers here?
@@ -112,17 +132,17 @@ class PnnClassifier(nn.Module):
         environment: PassiveEnvironment,
     ):
         """Shared step used for both training and validation.
-                
+
         Parameters
         ----------
         batch : Tuple[Observations, Optional[Rewards]]
             Batch containing Observations, and optional Rewards. When the Rewards are
             None, it means that we'll need to provide the Environment with actions
             before we can get the Rewards (e.g. image labels) back.
-            
+
             This happens for example when being applied in a Setting which cares about
             sample efficiency or training performance, for example.
-            
+
         environment : Environment
             The environment we're currently interacting with. Used to provide the
             rewards when they aren't already part of the batch (as mentioned above).

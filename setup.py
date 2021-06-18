@@ -1,18 +1,57 @@
 from setuptools import setup, find_packages
 import os
 import versioneer
+
 with open(os.path.join(os.path.dirname(__file__), "requirements.txt"), "r") as file:
     lines = [ln.strip() for ln in file.readlines()]
 
-packages_pip = []
+packages_to_export = find_packages(
+    where=".", exclude=["tests*", "examples*"], include="sequoia*"
+)
 
-for ln in lines:
-    if ln.startswith("#"):
-        continue
-    if ln:  # if requirement is not empty
-        packages_pip.append(ln)
+required_packages = [
+    line for line in lines if line and not line.startswith("#")
+]
 
-packages_git = []
+extras_require = {
+    "monsterkong": [
+        "meta_monsterkong @ git+https://github.com/lebrice/MetaMonsterkong.git#egg=meta_monsterkong"
+    ],
+    "atari": [
+        "gym[atari] @ git+https://www.github.com/lebrice/gym@easier_custom_spaces#egg=gym"
+    ],
+    "hpo": ["orion", "orion.algo.skopt"],
+    "avalanche": [
+        "gdown",  # BUG: Avalanche needs this to download cub200 dataset.
+        "avalanche @ git+https://github.com/ContinualAI/avalanche.git#egg=avalanche",
+    ],
+    # NOTE: Removing this for now, because it has very strict requirements, and includes
+    # a lot of copy-pasted code, and doesn't really add anything compared to metaworld.
+    # This isn't right.
+    # "mtenv": [
+    #     "mtenv @ git+https://github.com/facebookresearch/mtenv.git@main#egg='mtenv[metaworld]'"
+    # ],
+    "mujoco": [
+        "mujoco_py",
+    ],
+    "metaworld": [
+        "metaworld @ git+https://github.com/rlworkgroup/metaworld.git@master#egg=metaworld"
+    ],
+}
+# Add-up all the optional requirements, and then remove any duplicates.
+extras_require["all"] = list(
+    set(
+        sum(
+            [
+                [extra_requirements]
+                if isinstance(extra_requirements, str)
+                else extra_requirements
+                for extra_requirements in extras_require.values()
+            ],
+            [],
+        )
+    )
+)
 
 setup(
     name="sequoia",
@@ -23,27 +62,9 @@ setup(
     author="Fabrice Normandin",
     author_email="fabrice.normandin@gmail.com",
     license="GPLv3",
-    packages=[package for package in find_packages() if package.startswith("sequoia")],
-    extras_require={
-        "monsterkong": [
-            "meta_monsterkong @ git+https://github.com/lebrice/MetaMonsterkong.git#egg=meta_monsterkong"
-        ],
-        "atari": [
-            "gym[atari] @ git+https://www.github.com/lebrice/gym@easier_custom_spaces#egg=gym"
-        ],
-        "hpo": ["orion", "orion.algo.skopt"],
-        "mtenv": [
-            "mtenv @ git+https://github.com/facebookresearch/mtenv.git@main#egg='mtenv[metaworld]'"
-        ],
-        "metaworld": [
-            "metaworld @ git+https://github.com/rlworkgroup/metaworld.git@master#egg=metaworld"
-        ],
-        "avalanche": [
-            "avalanche @ git+https://github.com/ContinualAI/avalanche.git#egg=avalanche"
-        ],
-    },
-    install_requires=packages_pip,
-    dependency_links=packages_git,
+    packages=packages_to_export,
+    extras_require=extras_require,
+    install_requires=required_packages,
     python_requires=">=3.7",
     tests_require=["pytest"],
     classifiers=[
@@ -57,7 +78,7 @@ setup(
             "sequoia = sequoia.experiments.experiment:main",
             # TODO: This entry-point is added temporarily while we redesign the
             # command-line API (See https://github.com/lebrice/Sequoia/issues/47)
-            "sequoia_sweep = sequoia.experiments.hpo_sweep:main"
+            "sequoia_sweep = sequoia.experiments.hpo_sweep:main",
         ],
-    }
+    },
 )

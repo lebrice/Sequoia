@@ -1,5 +1,4 @@
-dataset: CartPole-v0
-observe_state_directly: false
+dataset: PixelCartPole-v0
 max_episodes: null
 nb_tasks: 3
 max_steps: 3000
@@ -16,7 +15,7 @@ train_task_schedule:
   2000:
     gravity: 10
     length: 0.2
-valid_task_schedule:
+val_task_schedule:
   0:
     gravity: 10
     length: 0.2

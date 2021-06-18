@@ -32,9 +32,9 @@ def test_no_collisions_in_setting_names():
 
 def test_applicable_methods():
     from sequoia.methods import BaselineMethod
-    from sequoia.settings import IIDSetting
+    from sequoia.settings import TraditionalSLSetting
 
-    assert BaselineMethod in IIDSetting.get_applicable_methods()
+    assert BaselineMethod in TraditionalSLSetting.get_applicable_methods()
 
 
 def mock_apply(self: Setting, method: Method, config: Config) -> Results:

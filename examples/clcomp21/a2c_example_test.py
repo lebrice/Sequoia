@@ -1,7 +1,7 @@
 import pytest
 from sequoia.client.setting_proxy import SettingProxy
-from sequoia.settings.active import IncrementalRLSetting, RLSetting
-from sequoia.settings.passive import ClassIncrementalSetting
+from sequoia.settings.rl import IncrementalRLSetting, RLSetting
+from sequoia.settings.sl import ClassIncrementalSetting
 
 from .dummy_method import DummyMethod
 from .a2c_example import ExampleA2CMethod

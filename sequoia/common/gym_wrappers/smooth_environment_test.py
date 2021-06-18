@@ -106,7 +106,8 @@ def test_task_id_is_always_None():
         add_task_dict_to_info=True,
     )
 
-    for x, task_id in (env.observation_space.sample() for i in range(100)):
+    for observation in (env.observation_space.sample() for i in range(100)):
+        x, task_id = observation["x"], observation["task_labels"]
         assert task_id is None
 
     env.reset()
@@ -115,14 +116,14 @@ def test_task_id_is_always_None():
     for i in range(total_steps):
         assert env.steps == i
         obs, _, done, _ = env.step(env.action_space.sample())
-        
-        x, task_id = obs
+
+        x, task_id = obs["x"], obs["task_labels"]
         assert task_id is None
                 
         assert env.steps == i + 1
         if done:
             obs = env.reset()
-            x, task_id = obs
+            x, task_id = obs["x"], obs["task_labels"]
             assert task_id is None
             
             expected_length = start_length + ((i+1) / total_steps) * (end_length - start_length)

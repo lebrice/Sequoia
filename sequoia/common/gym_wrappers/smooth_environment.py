@@ -14,7 +14,6 @@ from gym import spaces
 
 from torch import Tensor
 from sequoia.common.spaces.sparse import Sparse
-from sequoia.common.spaces.named_tuple import NamedTuple, NamedTupleSpace
 from sequoia.utils.logging_utils import get_logger
 
 from .multi_task_environment import MultiTaskEnvironment, add_task_labels
@@ -23,7 +22,7 @@ logger = get_logger(__file__)
 
 
 ## TODO (@lebrice): Really cool idea!: Create a TaskSchedule class that inherits
-# from Dict and when you __getitem__ a missing key, returns an interpolation! 
+# from Dict and when you __getitem__ a missing key, returns an interpolation!
 
 
 class SmoothTransitions(MultiTaskEnvironment):
@@ -41,7 +40,7 @@ class SmoothTransitions(MultiTaskEnvironment):
     env.seed(123)
     env.reset()
     ```
-    
+
     At step 0, the length is the default value (0.5)
     at step 1, the length is 0.5 + (1 / 10) * (1.0-0.5) = 0.55
     at step 2, the length is 0.5 + (2 / 10) * (1.0-0.5) = 0.60,
@@ -50,12 +49,15 @@ class SmoothTransitions(MultiTaskEnvironment):
     NOTE: This only works with float attributes at the moment.
 
     """
-    def __init__(self,
-                 env: gym.Env,
-                 add_task_dict_to_info: bool = False,
-                 add_task_id_to_obs: bool = False,
-                 only_update_on_episode_end: bool = False,
-                 **kwargs):
+
+    def __init__(
+        self,
+        env: gym.Env,
+        add_task_dict_to_info: bool = False,
+        add_task_id_to_obs: bool = False,
+        only_update_on_episode_end: bool = False,
+        **kwargs
+    ):
         """ Wraps the environment, allowing for smooth task transitions.
 
         Same as `MultiTaskEnvironment`, but when in between two tasks, the
@@ -82,13 +84,17 @@ class SmoothTransitions(MultiTaskEnvironment):
                 step. When `True`, only update at the end of episodes (when
                 `reset()` is called).
         """
-        super().__init__(env, add_task_dict_to_info=add_task_dict_to_info,
-                         add_task_id_to_obs=add_task_id_to_obs, **kwargs)
+        super().__init__(
+            env,
+            add_task_dict_to_info=add_task_dict_to_info,
+            add_task_id_to_obs=add_task_id_to_obs,
+            **kwargs
+        )
         self.only_update_on_episode_end: bool = only_update_on_episode_end
         if self._max_steps is None and len(self.task_schedule) > 1:
             # TODO: DO we want to prevent going past the 'task step' in the task schedule?
             pass
-        
+
         if isinstance(self.env.unwrapped, gym.vector.VectorEnv):
             raise NotImplementedError(
                 "This isn't really supposed to be applied on top of a "
@@ -118,15 +124,13 @@ class SmoothTransitions(MultiTaskEnvironment):
     @property
     def current_task_id(self) -> Optional[int]:
         """ Returns the 'index' of the current task within the task schedule.
-        
-        In this case, we return None, since there aren't clear task boundaries. 
+
+        In this case, we return None, since there aren't clear task boundaries.
         """
         return None
 
     def task_array(self, task: Dict[str, float]) -> np.ndarray:
-        return np.array([
-            task.get(k, self.default_task[k]) for k in self.task_params
-        ])
+        return np.array([task.get(k, self.default_task[k]) for k in self.task_params])
 
     def smooth_update(self) -> None:
         """ Update the curren_task at every step, based on a smooth mix of the
@@ -134,6 +138,7 @@ class SmoothTransitions(MultiTaskEnvironment):
         task schedule, we update the 'prev_task_step' and 'next_task_step'
         attributes.
         """
+
         current_task: Dict[str, float] = {}
         for attr in self.task_params:
             steps: List[int] = []
@@ -144,9 +149,7 @@ class SmoothTransitions(MultiTaskEnvironment):
                 fixed_points.append(task.get(attr, self.default_task[attr]))
             # logger.debug(f"{attr}: steps={steps}, fp={fixed_points}")
             interpolated_value: float = np.interp(
-                x=self.steps,
-                xp=steps,
-                fp=fixed_points,
+                x=self.steps, xp=steps, fp=fixed_points,
             )
             current_task[attr] = interpolated_value
             # logger.debug(f"interpolated value of {attr} at step {self.step}: {interpolated_value}")

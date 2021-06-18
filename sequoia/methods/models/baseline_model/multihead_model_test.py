@@ -21,10 +21,12 @@ from torch.utils.data import DataLoader, Dataset
 from sequoia.common import Loss
 from sequoia.common.config import Config
 from sequoia.common.gym_wrappers import MultiTaskEnvironment
+from sequoia.methods.baseline_method import BaselineMethod
 from sequoia.methods.models.forward_pass import ForwardPass
 from sequoia.methods.models.output_heads.rl.episodic_a2c import EpisodicA2C
-from sequoia.settings import ClassIncrementalSetting, RLSetting
+from sequoia.settings import ClassIncrementalSetting, TraditionalRLSetting, RLSetting
 from sequoia.settings.base import Environment
+from sequoia.settings.rl import IncrementalRLSetting
 from sequoia.utils import take
 
 from .baseline_model import BaselineModel
@@ -67,8 +69,9 @@ class MockOutputHead(OutputHead):
         from sequoia.methods.models.output_heads.classification_head import (
             ClassificationOutput,
         )
-
-        assert issubclass(ClassificationOutput, self.Actions)
+        # assert issubclass(ClassificationOutput, self.Actions)
+        # TODO: Ideally self.Actions would already be a subclass of ClassificationActions!
+        # return self.Actions(y_pred=actions, logits=fake_logits)
         return ClassificationOutput(y_pred=actions, logits=fake_logits)
 
     def get_loss(self, forward_pass, actions, rewards):
@@ -145,15 +148,15 @@ def test_multitask_rl_bug_without_PL(monkeypatch):
     # NOTE: Tasks don't have anything to do with the task schedule. They are sampled at
     # each episode.
     max_episode_steps = 5
-    setting = RLSetting(
+    setting = TraditionalRLSetting(
         dataset="cartpole",
         batch_size=1,
         nb_tasks=2,
+        train_max_steps=100,
         max_episode_steps=max_episode_steps,
         add_done_to_observations=True,
-        observe_state_directly=True,
     )
-    assert setting._new_random_task_on_reset
+    assert setting.stationary_context
 
     # setting = RLSetting.load_benchmark("monsterkong")
     config = Config(debug=True, verbose=True, seed=123)
@@ -191,7 +194,7 @@ def test_multitask_rl_bug_without_PL(monkeypatch):
 
             if step == 0:
                 assert not any(obs.done)
-            start_task_label = obs[1][0]
+            start_task_label = obs["task_labels"][0]
 
             stored_steps_in_each_head_before = {
                 task_key: output_head.num_stored_steps(0)
@@ -230,42 +233,50 @@ def test_multitask_rl_bug_without_PL(monkeypatch):
                 assert loss.loss == 0.0
             # TODO:
             print(
-                f"Step {step}, episode {episodes}: x={obs[0]}, done={obs.done}, reward={rewards} task labels: {obs.task_labels}, loss: {loss.losses.keys()}: {loss.loss}"
+                f"Step {step}, episode {episodes}: x={obs.x}, done={obs.done}, reward={rewards} task labels: {obs.task_labels}, loss: {loss.losses.keys()}: {loss.loss}"
             )
 
             if episodes > max_episodes:
                 break
     # assert False, losses
 
-
-def test_multitask_rl_bug_with_PL(monkeypatch):
-    """ TODO: on_task_switch is called on the new observation, but we need to produce a
-    loss for the output head that we were just using!
+# @pytest.mark.xfail(
+#     reason=f"Not quite sure why, but getting weird device bug here *sometimes*:"
+# )
+def test_multitask_rl_bug_with_PL(monkeypatch, config: Config):
+    """
     """
     # NOTE: Tasks don't have anything to do with the task schedule. They are sampled at
     # each episode.
-    max_episode_steps = 5
-    setting = RLSetting(
+
+    cpu_config = config
+    # cpu_config = Config(device="cpu", num_workers=0)
+
+    setting = TraditionalRLSetting(
         dataset="cartpole",
         batch_size=1,
+        num_workers=0,
         nb_tasks=2,
-        max_episode_steps=max_episode_steps,
+        train_max_steps=200,
+        test_max_steps=200,
+        max_episode_steps=5,
         add_done_to_observations=True,
-        observe_state_directly=True,
+        config=cpu_config,
     )
-    assert setting._new_random_task_on_reset
+    assert setting.train_max_steps == 200
+    assert setting.test_max_steps == 200
+    assert setting.stationary_context
 
     # setting = RLSetting.load_benchmark("monsterkong")
-    config = Config(debug=True, verbose=True, seed=123)
-    config.seed_everything()
+    cpu_config.seed_everything()
     model = BaselineModel(
         setting=setting,
         hparams=MultiHeadModel.HParams(
             multihead=True,
             output_head=EpisodicA2C.HParams(accumulate_losses_before_backward=True),
         ),
-        config=config,
-    )
+        config=cpu_config,
+    ).to(device=config.device)
 
     # TODO: Maybe add some kind of "hook" to check which losses get returned when?
     model.train()
@@ -273,12 +284,32 @@ def test_multitask_rl_bug_with_PL(monkeypatch):
 
     from pytorch_lightning import Trainer
 
-    trainer = Trainer(fast_dev_run=True)
-    trainer.fit(model, train_dataloader=setting.train_dataloader())
+    # Import this and use it to create the Trainer, rather than creating the Trainer
+    # directly, so we don't get the same bug (due to with_is_last in PL) from the
+    # DataConnector.
+    from sequoia.methods.baseline_method import TrainerConfig
 
-    # from pytorch_lightning import Trainer
+    # NOTE: We only do this so that the Model has a self.trainer attribute and so the
+    # model.training_step below can be used:
+    if config.device.type == "cuda":
+        trainer_config = TrainerConfig(fast_dev_run=True)
+    else:
+        trainer_config = TrainerConfig(
+            fast_dev_run=True, gpus=0, distributed_backend=None,
+        )
+
+    trainer = trainer_config.make_trainer(config=cpu_config)
+
+    # Fit in 'fast_dev_run' mode, so just a single batch of train / valid / test data.
+    with setting.train_dataloader() as temp_env:
+        temp_env.seed(123)
+        trainer.fit(model, train_dataloader=temp_env)
+
+    #NOTE: If we don't clear the buffers, there is a bug because the things that get put
+    # in buffers aren't on the same device as later.
+    model.output_head.clear_all_buffers()
+    
     optimizer = torch.optim.Adam(model.parameters(), lr=0.01)
-
     episodes = 0
     max_episodes = 5
 
@@ -288,15 +319,20 @@ def test_multitask_rl_bug_with_PL(monkeypatch):
     with setting.train_dataloader() as env:
         env.seed(123)
 
-        # env = TimeLimit(env, max_episode_steps=max_episode_steps)
-        # Iterate over the environment, which yields one observation at a time:
+        # TODO: Interesting bug/problem: Since the VectorEnvs always want to reset the
+        # env at the end of the episode, they also also so on the individual envs.
+        # In order to solve that, we need to NOT put any 'ActionLimit' on the inside
+        # envs, but only on the outer env.
         for step, obs in enumerate(env):
             assert isinstance(obs, RLSetting.Observations)
+            from sequoia.utils.generic_functions import to_tensor
 
+            print(step, env.is_closed())
             step_results = model.training_step(batch=obs, batch_idx=step)
             loss_tensor: Optional[Tensor] = None
 
             if step > 0 and step % 5 == 0:
+                # We should get a loss at each episode end:
                 assert all(obs.done), step  # Since batch_size == 1 for now.
                 assert step_results is not None, (step, obs.task_labels)
                 loss_tensor = step_results["loss"]
@@ -308,11 +344,11 @@ def test_multitask_rl_bug_with_PL(monkeypatch):
                 assert step_results is None
 
             print(
-                f"Step {step}, episode {episodes}: x={obs[0]}, done={obs.done}, task labels: {obs.task_labels}, loss_tensor: {loss_tensor}"
+                f"Step {step}, episode {episodes}: x={obs.x}, done={obs.done}, task labels: {obs.task_labels}, loss_tensor: {loss_tensor}"
             )
 
-            if step > 100:
-                break
+            if step >= setting.train_max_steps:
+                assert False, "Shouldn't the environment have closed at this point?"
 
     for step, step_losses in losses.items():
         print(f"Losses at step {step}:")
@@ -403,14 +439,15 @@ def test_task_inference_rl_easy(config: Config):
     from sequoia.methods.baseline_method import BaselineMethod
 
     method = BaselineMethod(config=config)
-    from sequoia.settings.active import IncrementalRLSetting
+    from sequoia.settings.rl import IncrementalRLSetting
 
     setting = IncrementalRLSetting(
         dataset="cartpole",
-        observe_state_directly=True,
         nb_tasks=2,
-        steps_per_task=1000,
-        test_steps_per_task=1000,
+        max_episode_steps=20,
+        train_max_steps=200,
+        test_max_steps=200,
+        config=config,
     )
     results = setting.apply(method)
     assert results
@@ -419,31 +456,46 @@ def test_task_inference_rl_easy(config: Config):
 
 @pytest.mark.timeout(120)
 def test_task_inference_rl_hard(config: Config):
-    from sequoia.methods.baseline_method import BaselineMethod
 
     method = BaselineMethod(config=config)
-    from sequoia.settings.active import RLSetting
 
-    setting = RLSetting(
+    setting = IncrementalRLSetting(
         dataset="cartpole",
-        observe_state_directly=True,
         nb_tasks=2,
-        max_steps=1000,
-        test_steps_per_task=1000,
+        train_max_steps=1000,
+        test_max_steps=1000,
+        config=config,
     )
     results = setting.apply(method)
     assert results
     # assert False, results.to_log_dict()
 
 
-@pytest.mark.timeout(180)
+from sequoia.methods.baseline_method import BaselineMethod
+from sequoia.settings.sl import TraditionalSLSetting
+from sequoia.settings.sl.continual.setting import subset
+
+
+@pytest.mark.timeout(30)
 def test_task_inference_multi_task_sl(config: Config):
-    # TODO Create a dummy supervised dataset for testing
-    from sequoia.methods.baseline_method import BaselineMethod
-
+    setting = TraditionalSLSetting(dataset="mnist", nb_tasks=2, config=config)
+    # TODO: Maybe add this kind of 'max_steps_per_task' argument even in supervised
+    # settings:
+    dataset_length = 1000
+    # TODO: Shorten the train/test datasets?
     method = BaselineMethod(config=config, max_epochs=1)
-    from sequoia.settings.passive import MultiTaskSetting
+    setting.setup()
+    setting.train_datasets = [
+        subset(dataset, list(range(dataset_length)))
+        for dataset in setting.train_datasets
+    ]
+    setting.val_datasets = [
+        subset(dataset, list(range(dataset_length))) for dataset in setting.val_datasets
+    ]
+    setting.test_datasets = [
+        subset(dataset, list(range(dataset_length)))
+        for dataset in setting.test_datasets
+    ]
 
-    setting = MultiTaskSetting(dataset="mnist", nb_tasks=2,)
     results = setting.apply(method)
-    assert 0.95 <= results.average_final_performance.objective
+    assert 0.80 <= results.average_final_performance.objective

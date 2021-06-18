@@ -27,23 +27,23 @@ Requires python >= 3.7
 
 1. Clone the repo:
 
-	```console
-	$ git clone https://www.github.com/lebrice/Sequoia.git
-	$ cd Sequoia
-	```
+    ```console
+    $ git clone https://www.github.com/lebrice/Sequoia.git
+    $ cd Sequoia
+    ```
 
 2. Optional: Create the conda environment (only once):
 
-	```console
-	$ conda env create -f environment.yaml
-	$ conda activate sequoia
-	```
+    ```console
+    $ conda env create -f environment.yaml
+    $ conda activate sequoia
+    ```
 
 3. Install the dependencies:
 
-	```console
-	$ pip install -e .
-	```
+    ```console
+    $ pip install -e .
+    ```
 
 ### Additional Installation Steps for Mac
 
@@ -66,21 +66,28 @@ sudo chown root /tmp/.X11-unix/
 
 ### Current Settings & Assumptions:
 
-| Setting | Active/Passive? | clear task boundaries? | task labels at train time | task labels at test time | # of tasks ? |
-| -----   | --------------  | ---------------------- | ------------------------- | ------------------------ | ------------ |
-| [ContinualRLSetting](sequoia/settings/active/continual/continual_rl_setting.py) | Active | no | no | no | 1* |
-| [IncrementalRLSetting](sequoia/settings/active/continual/incremental/incremental_rl_setting.py) | Active | **yes** | **yes** | no | ≥1 |
-| [TaskIncrementalRLSetting](sequoia/settings/active/continual/incremental/task_incremental/task_incremental_rl_setting.py) | Active | **yes** | **yes** | **yes** | ≥1 |
-| [RLSetting](sequoia/settings/active/continual/incremental/task_incremental/stationary/iid_rl_setting.py) | Active | **yes** | **yes** | **yes** | **1** |
-| [ClassIncrementalSetting](sequoia/settings/passive/cl/class_incremental_setting.py) | Passive | **yes** | **yes** | no | ≥1 |
-| [TaskIncrementalSetting](sequoia/settings/passive/cl/task_incremental/task_incremental_setting.py) | Passive | **yes** | **yes** | **yes** | ≥1 |
-| [IIDSetting](sequoia/settings/passive/cl/task_incremental/iid/iid_setting.py) | Passive | **yes** | **yes** | **yes** | **1** |
+| Setting                                                                    | RL vs SL | clear task boundaries? | Task boundaries given? | Task labels at training time? | task labels at test time | Stationary context? | Fixed action space  |
+| ------------------------------------------------------------------------   | --       | ---------------------- | ---------------------- | ----------------------------- | ------------------------ | ------------------- | ------------------- |
+| [Continual RL](sequoia/settings/rl/continual/setting.py)                   | RL       | no                     | no                     | no                            | no                       | no                  | no(?)               |
+| [Discrete Task-Agnostic RL](sequoia/settings/rl/discrete/setting.py)       | RL       | **yes**                | **yes**                | no                            | no                       | no                  | no(?)               |
+| [Incremental RL](sequoia/settings/rl/incremental/setting.py)               | RL       | **yes**                | **yes**                | **yes**                       | no                       | no                  | no(?)               |
+| [Task-Incremental RL](sequoia/settings/rl/task_incremental/setting.py)     | RL       | **yes**                | **yes**                | **yes**                       | **yes**                  | no                  | no(?)               |
+| [Traditional RL](sequoia/settings/rl/task_incremental/setting.py)          | RL       | **yes**                | **yes**                | **yes**                       | no                       | **yes**             | no(?)               |
+| [Multi-Task RL](sequoia/settings/rl/task_incremental/setting.py)           | RL       | **yes**                | **yes**                | **yes**                       | **yes**                  | **yes**             | no(?)               |
+| [Continual SL](sequoia/settings/sl/continual/setting.py)                   | SL       | no                     | no                     | no                            | no                       | no                  | no                  |
+| [Discrete Task-Agnostic SL](sequoia/settings/sl/discrete/setting.py)       | SL       | **yes**                | no                     | no                            | no                       | no                  | no                  |
+| [(Class) Incremental SL](sequoia/settings/sl/incremental/setting.py)       | SL       | **yes**                | **yes**                | no                            | no                       | no                  | no                  |
+| [Domain-Incremental SL](sequoia/settings/sl/domain_incremental/setting.py) | SL       | **yes**                | **yes**                | **yes**                       | no                       | no                  | **yes**             |
+| [Task-Incremental SL](sequoia/settings/sl/task_incremental/setting.py)     | SL       | **yes**                | **yes**                | **yes**                       | **yes**                  | no                  | no                  |
+| [Traditional SL](sequoia/settings/sl/traditional/setting.py)               | SL       | **yes**                | **yes**                | **yes**                       | no                       | **yes**             | no                  |
+| [Multi-Task SL](sequoia/settings/sl/multi_task/setting.py)                 | SL       | **yes**                | **yes**                | **yes**                       | **yes**                  | **yes**             | no                  |
+<!-- | [Class-Incremental SL](sequoia/settings/sl/class_incremental/setting.py)   | SL       | **yes**                | **yes**                | no                            | no                       | no                  | -->
 
 #### Notes
 
 - **Active / Passive**:
-	Active settings are Settings where the next observation depends on the current action, i.e. where actions influence future observations, e.g. Reinforcement Learning.
-	Passive settings are Settings where the current actions don't influence the next observations (e.g. Supervised Learning.)
+    Active settings are Settings where the next observation depends on the current action, i.e. where actions influence future observations, e.g. Reinforcement Learning.
+    Passive settings are Settings where the current actions don't influence the next observations (e.g. Supervised Learning.)
 
 - **Bold entries** in the table mark constant attributes which cannot be
    changed from their default value.
@@ -97,9 +104,9 @@ sudo chown root /tmp/.X11-unix/
 #### Directly in code:
 
 ```python
-from sequoia.settings import TaskIncrementalSetting
+from sequoia.settings import TaskIncrementalSLSetting
 from sequoia.methods import BaselineMethod
-setting = TaskIncrementalSetting(dataset="mnist")
+setting = TaskIncrementalSLSetting(dataset="mnist")
 method = BaselineMethod(max_epochs=1)
 
 results = setting.apply(method)
@@ -112,17 +119,17 @@ sequoia --setting <some_setting> --method <some_method>  (arguments)
 ```
 For example:
 - Run the BaselineMethod on task-incremental MNIST, with one epoch per task, and without wandb:
-	```console
-	sequoia --setting task_incremental --dataset mnist --method baseline --max_epochs 1 --no_wandb
-	```
+    ```console
+    sequoia --setting task_incremental --dataset mnist --method baseline --max_epochs 1 --no_wandb
+    ```
 - Run the PPO Method from stable-baselines3 on an incremental RL setting, with the default dataset (CartPole) and 5 tasks: 
-	```console
-	sequoia --setting incremental_rl --nb_tasks 5 --method ppo --steps_per_task 10_000
-	```
+    ```console
+    sequoia --setting incremental_rl --nb_tasks 5 --method ppo --steps_per_task 10_000
+    ```
 
 - Running multiple experiments (wip):
 
-	If you leave out the `--method` argument above, the experiment will compare the results of all the methods applicable to the chosen Setting.
+    If you leave out the `--method` argument above, the experiment will compare the results of all the methods applicable to the chosen Setting.
 
-	Likewise, if you leave the `--setting` option unset, the experiment will evaluate the performance of the selected method on all its applicable settings (WIP: and a table will be shown).
+    Likewise, if you leave the `--setting` option unset, the experiment will evaluate the performance of the selected method on all its applicable settings (WIP: and a table will be shown).
 

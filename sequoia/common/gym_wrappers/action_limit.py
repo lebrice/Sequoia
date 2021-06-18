@@ -17,8 +17,10 @@ class ActionCounter(IterableWrapper):
 
     def __init__(self, env: gym.Env):
         super().__init__(env=env)
-        self.is_vectorized = isinstance(env.unwrapped, VectorEnv)
         self._action_counter: int = 0
+
+    def step_count(self) -> int:
+        return self._action_counter
 
     def action_count(self) -> int:
         return self._action_counter
@@ -39,7 +41,6 @@ class ActionLimit(ActionCounter):
 
     def __init__(self, env: gym.Env, max_steps: int):
         super().__init__(env=env)
-        self.is_vectorized = isinstance(env.unwrapped, VectorEnv)
 
         self._max_steps = max_steps
         self._initial_reset = False
@@ -48,6 +49,12 @@ class ActionLimit(ActionCounter):
     @property
     def max_steps(self) -> int:
         return self._max_steps
+
+    def __len__(self):
+        return self.max_steps
+
+    def closed_error_message(self) -> str:
+        return f"Env reached max number of steps ({self._max_steps})"
 
     def step(self, action):
         if self._action_counter >= self._max_steps:

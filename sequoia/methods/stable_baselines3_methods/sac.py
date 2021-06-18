@@ -11,7 +11,7 @@ from stable_baselines3.sac.sac import SAC
 
 from sequoia.methods import register_method
 from sequoia.common.hparams import log_uniform
-from sequoia.settings.active import ContinualRLSetting
+from sequoia.settings.rl import ContinualRLSetting
 from sequoia.utils.logging_utils import get_logger
 from .off_policy_method import OffPolicyMethod, OffPolicyModel
 
@@ -81,6 +81,7 @@ class SACMethod(OffPolicyMethod):
 
         todo: use this to customize how your method handles task transitions.
         """
+        super().on_task_switch(task_id=task_id)
 
 
 if __name__ == "__main__":
