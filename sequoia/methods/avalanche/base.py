@@ -13,7 +13,7 @@ import tqdm
 from gym import spaces
 from gym.spaces.utils import flatdim
 from gym.utils import colorize
-from simple_parsing.helpers import choice
+from simple_parsing.helpers import choice, field, list_field
 from simple_parsing.helpers.hparams import HyperParameters, log_uniform, uniform
 from torch import nn, optim
 from torch.nn import Module
@@ -122,9 +122,9 @@ class AvalancheMethod(
     #  The device to use. Defaults to None (cpu).
     device: torch.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     # Plugins to be added. Defaults to None.
-    plugins: Optional[List[StrategyPlugin]] = None
+    plugins: Optional[List[StrategyPlugin]] = list_field(default=None, cmd=False, to_dict=False)
     # (optional) instance of EvaluationPlugin for logging and metric computations.
-    evaluator: Optional[EvaluationPlugin] = None
+    evaluator: Optional[EvaluationPlugin] = field(None, cmd=False, to_dict=False)
     # The frequency of the calls to `eval` inside the training loop.
     # if -1: no evaluation during training.
     # if  0: calls `eval` after the final epoch of each training

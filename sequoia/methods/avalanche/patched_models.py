@@ -1,6 +1,7 @@
 """ Patch for the multi-task models in Avalanche, so that we can evaluate on future
 tasks, by selecting random prediction.
 """
+import warnings
 from abc import abstractmethod
 from typing import Optional, List, Any
 
@@ -154,10 +155,10 @@ class MultiHeadClassifier(_MultiHeadClassifier):
 
     def forward(self, x: Tensor, task_labels: Optional[Tensor]) -> Tensor:
         if task_labels is None:
-            # TODO: Use a task-inference module when `task_labels` is None.
-            # task_labels = torch.as_tensor([-1 for _ in x], dtype=int)
+            # We don't do task inference in this layer, since it's handled in the
+            # patched models below.
             raise NotImplementedError(
-                f"Shouldn't get None task labels in the MultiHeadClassifier!"
+                "Shouldn't get None task labels in the MultiHeadClassifier!"
             )
         else:
             assert isinstance(task_labels, Tensor)
@@ -174,8 +175,8 @@ class MultiHeadClassifier(_MultiHeadClassifier):
         if task_label is not None:
             if not isinstance(task_label, int):
                 task_label = task_label.item()
-            # TODO: If/when we make the context variable truly continuous, then this
-            # won't work.
+        # TODO: If/when we make the context variable truly continuous, then this
+        # won't work.
         assert task_label is None or isinstance(task_label, int), task_label
 
         if str(task_label) not in self.classifiers:
@@ -184,9 +185,12 @@ class MultiHeadClassifier(_MultiHeadClassifier):
             assert known_task_labels, "Need to have seen at least one task!"
             last_known_task = known_task_labels[-1]
             task_label = last_known_task
-            # raise NotImplementedError(
-            #     f"Don't yet have an output layer for task {task_label}."
-            # )
+            warnings.warn(
+                RuntimeWarning(
+                    f"performing forward pass on previously unseen task, will pretend "
+                    f"inputs come from task {last_known_task} instead."
+                )
+            )
         return super().forward_single_task(x, task_label)
 
 
@@ -204,23 +208,10 @@ class MTSimpleCNN(_MTSimpleCNN, PatchedMultiTaskModule):
             # of GEM though, it doesnt pass the task id when calculating the
             # reference gradient, so I'm not sure we want to be using this in this case.
             if self.training:
-                # TODO: Pretend that they have the id of the last task? Or use the task
-                # inference mechanism? It isn't so clear what this should do!
-                assert self.current_task_id is not None
-                logger.warning(
-                    f"Pretending that this batch comes from task "
-                    f"{self.current_task_id}, because it doesn't have task labels, and "
-                    f"we're training!"
-                )
-                task_labels = torch.as_tensor(
-                    [self.current_task_id for _ in x], dtype=int
-                )
-                return super().forward(x=x, task_labels=task_labels)
-            else:
-                # Use the task-inference mechanism during test-time, if there aren't
-                # task labels.
-                return self.task_inference_forward_pass(x=x)
-
+                warnings.warn(RuntimeWarning(
+                    "Using task inference in the forward pass while training?"
+                ))
+            return self.task_inference_forward_pass(x=x)
         return super().forward(x=x, task_labels=task_labels)
 
     @property
@@ -238,30 +229,11 @@ class MTSimpleMLP(_MTSimpleMLP, PatchedMultiTaskModule):
 
     def forward(self, x: Tensor, task_labels: Optional[Tensor] = None) -> Tensor:
         if task_labels is None:
-            # NOTE: When training, we could rely on a property like `current_task_id`
-            # being set within the `on_task_switch` callback.
-            # The reason for this is that in some of the strategies, `GEM` strategy (and
-            # others), when training they sometimes don't pass a task index! In the case
-            # of GEM though, it doesnt pass the task id when calculating the
-            # reference gradient, so I'm not sure we want to be using this in this case.
             if self.training:
-                # TODO: Pretend that they have the id of the last task? Or use the task
-                # inference mechanism? It isn't so clear what this should do!
-                assert self.current_task_id is not None
-                logger.warning(
-                    f"Pretending that this batch comes from task "
-                    f"{self.current_task_id}, because it doesn't have task labels, and "
-                    f"we're training!"
-                )
-                task_labels = torch.as_tensor(
-                    [self.current_task_id for _ in x], dtype=int
-                )
-                return super().forward(x=x, task_labels=task_labels)
-            else:
-                # Use the task-inference mechanism during test-time, if there aren't
-                # task labels.
-                return self.task_inference_forward_pass(x=x)
-
+                warnings.warn(RuntimeWarning(
+                    "Using task inference in the forward pass while training?"
+                ))
+            return self.task_inference_forward_pass(x=x)
         return super().forward(x=x, task_labels=task_labels)
 
     @property

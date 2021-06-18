@@ -32,6 +32,7 @@ class _TestAvalancheMethod:
     # Names of (hyper-)parameters which are allowed to have a different default value in
     # Sequoia compared to their implementations in Avalanche.
     ignored_parameter_differences: ClassVar[List[str]] = [
+        "plugins",
         "device",
         "eval_mb_size",
         "criterion",
