@@ -53,7 +53,7 @@ from sequoia.methods.models.forward_pass import ForwardPass
 from sequoia.settings.rl.continual import ContinualRLSetting
 from sequoia.settings.base.objects import Actions, Observations, Rewards
 from sequoia.utils.categorical import Categorical
-from sequoia.utils.generic_functions import detach, get_slice, set_slice, stack
+from sequoia.utils.generic_functions import detach, get_slice, set_slice, stack, move
 from sequoia.utils.logging_utils import get_logger
 from sequoia.utils.utils import flag, prod
 from ..classification_head import ClassificationHead, ClassificationOutput
@@ -67,7 +67,7 @@ T = TypeVar("T")
 @dataclass(frozen=True)
 class PolicyHeadOutput(ClassificationOutput):
     """ WIP: Adds the action pdf to ClassificationOutput. """
-    
+
     # The distribution over the actions, either as a single
     # (batched) distribution or as a list of distributions, one for each
     # environment in the batch.
@@ -86,7 +86,7 @@ class PolicyHeadOutput(ClassificationOutput):
     @property
     def action_log_prob(self) -> Tensor:
         return self.y_pred_log_prob
-    
+
     @property
     def action_prob(self) -> Tensor:
         return self.y_pred_log_prob
@@ -101,18 +101,18 @@ class PolicyHeadOutput(ClassificationOutput):
 ## AddInfoToObservations wrapper, for instance), then the 'final'
 ## observation would be stored in the dict for this environment in
 ## the Observations object, while the 'observation' you get from step
-## is the 'initial' observation of the new episode.             
+## is the 'initial' observation of the new episode.
 
 
 class PolicyHead(ClassificationHead):
     """ [WIP] Output head for RL settings.
-    
-    Uses the REINFORCE algorithm to calculate its loss. 
-    
+
+    Uses the REINFORCE algorithm to calculate its loss.
+
     TODOs/issues:
     - Only currently works with batch_size == 1
     - The buffers are common to training/validation/testing atm..
-    
+
     """
     name: ClassVar[str] = "policy"
 
@@ -122,11 +122,11 @@ class PolicyHead(ClassificationHead):
         hidden_neurons: List[int] = list_field()
         # The discount factor for the Return term.
         gamma: float = 0.99
-        
+
         # The maximum length of the buffer that will hold the most recent
         # states/actions/rewards of the current episode.
         max_episode_window_length: int = 1000
-        
+
         # Minumum number of epidodes that need to be completed in each env
         # before we update the parameters of the output head.
         min_episodes_before_update: int = 1
@@ -190,15 +190,17 @@ class PolicyHead(ClassificationHead):
 
         self._training: bool = True
 
+        self.device: Optional[Union[str, torch.device]] = None
+
     def create_buffers(self):
         """ Creates the buffers to hold the items from each env. """
         logger.debug(f"Creating buffers (batch size={self.batch_size})")
         logger.debug(f"Maximum buffer length: {self.hparams.max_episode_window_length}")
-        
+
         self.representations = self._make_buffers()
         self.actions = self._make_buffers()
         self.rewards = self._make_buffers()
-        
+
         self.num_steps_in_episode = np.zeros(self.batch_size, dtype=int)
         self.num_episodes_since_update = np.zeros(self.batch_size, dtype=int)
 
@@ -208,21 +210,21 @@ class PolicyHead(ClassificationHead):
         TODO: Do we actually need the observations here? It is here so we have
         access to the 'done' from the env, but do we really need it here? or
         would there be another (cleaner) way to do this?
-        """        
+        """
         if len(representations.shape) < 2:
             # Flatten the representations.
             representations = representations.reshape([-1, flatdim(self.input_space)])
-        
+
         # Setup the buffers, which will hold the most recent observations,
         # actions and rewards within the current episode for each environment.
         if not self.batch_size:
             self.batch_size = representations.shape[0]
             self.create_buffers()
-            
+
         representations = representations.float()
-        
+
         logits = self.dense(representations)
-        
+
         # The policy is the distribution over actions given the current state.
         action_dist = Categorical(logits=logits)
         sample = action_dist.sample()
@@ -232,6 +234,16 @@ class PolicyHead(ClassificationHead):
             action_dist=action_dist,
         )
         return actions
+    
+    T = TypeVar("T")
+
+    def to(self: T,
+           device: Optional[Union[int, torch.device]] = None,
+           **kwargs) -> T:
+        result = super().to(device=device, **kwargs)
+        if device is not None:
+            result.device = torch.device(device)
+        return result
 
     def get_loss(self,
                  forward_pass: ForwardPass,
@@ -240,18 +252,18 @@ class PolicyHead(ClassificationHead):
         """ Given the forward pass, the actions produced by this output head and
         the corresponding rewards for the current step, get a Loss to use for
         training.
-        
+
         TODO: Replace the `forward_pass` argument with just `observations` and
         `representations` and provide the right (augmented) observations to the
         aux tasks. (Need to design that part later).
-        
+
         NOTE: If an end of episode was reached in a given environment, we always
         calculate the losses and clear the buffers before adding in the new observation.
         """
         observations: ContinualRLSetting.Observations = forward_pass.observations
         representations: Tensor = forward_pass.representations
         assert self.batch_size, "forward() should have been called before this."
-        
+
         if not self.hparams.accumulate_losses_before_backward:
             # Reset the loss for the current step, if we're not accumulating it.
             self.loss = Loss(self.name)
@@ -301,10 +313,19 @@ class PolicyHead(ClassificationHead):
             env_actions = actions.slice(env_index)
             # env_actions = actions[env_index, ...] # TODO: Is this nicer?
             env_rewards = rewards.slice(env_index)
+            # BUG: Seems to be some issue of things in the buffers not all being on the
+            # same device
+            # assert self.device is not None
+            # # TODO: Should we be storing these tensors in GPU memory though? Not sure if
+            # # this makes sense.
+            # env_representations = move(env_representations, device=self.device)
+            # env_actions = move(env_actions, device=self.device)
+            # env_rewards = move(env_rewards, device=self.device)
+
             self.representations[env_index].append(env_representations)
             self.actions[env_index].append(env_actions)
             self.rewards[env_index].append(env_rewards)
-        
+
         self.num_steps_in_episode += 1
         # TODO:
         # If we want to accumulate the losses before backward, then we just return self.loss
@@ -312,13 +333,13 @@ class PolicyHead(ClassificationHead):
         # 'small' backward pass, and return a detached loss.
         if self.hparams.accumulate_losses_before_backward:
             if all(self.num_episodes_since_update >= self.hparams.min_episodes_before_update):
-                # Every environment has seen the required number of episodes.    
+                # Every environment has seen the required number of episodes.
                 # We return the accumulated loss, so that the model can do the backward
                 # pass and update the weights.
                 returned_loss = self.loss
                 self.loss = Loss(self.name)
                 self.detach_all_buffers()
-                self.num_episodes_since_update[:] = 0            
+                self.num_episodes_since_update[:] = 0
                 return returned_loss
             else:
                 return Loss(self.name)
@@ -326,13 +347,13 @@ class PolicyHead(ClassificationHead):
             # Perform the backward pass as soon as a loss is available (with
             # retain_graph=True).
             if all(self.num_episodes_since_update >= self.hparams.min_episodes_before_update):
-                # Every environment has seen the required number of episodes.    
+                # Every environment has seen the required number of episodes.
                 # We return the loss for this step, with gradients, to indicate to the
                 # Model that it can perform the backward pass and update the weights.
                 returned_loss = self.loss
                 self.loss = Loss(self.name)
                 self.detach_all_buffers()
-                self.num_episodes_since_update[:] = 0            
+                self.num_episodes_since_update[:] = 0
                 return returned_loss
 
             elif self.loss.requires_grad:
@@ -340,7 +361,7 @@ class PolicyHead(ClassificationHead):
                 self.loss.backward(retain_graph=True)
                 # self.loss will be reset at each step in the `forward` method above.
                 return self.loss.detach()
-            
+
             else:
                 # TODO: Why is self.loss non-zero here?
                 if self.loss.loss != 0.:
@@ -354,12 +375,12 @@ class PolicyHead(ClassificationHead):
                 return self.loss
         assert False, f"huh? {self.loss}"
         return self.loss
-    
+
     def on_episode_end(self, env_index: int) -> None:
         self.num_episodes_since_update[env_index] += 1
         self.num_steps_in_episode[env_index] = 0
         self.clear_buffers(env_index)
-                     
+
     def get_episode_loss(self,
                          env_index: int,
                          done: bool) -> Optional[Loss]:
@@ -373,7 +394,7 @@ class PolicyHead(ClassificationHead):
         NOTE: While the Batch Observations/Actions/Rewards objects usually
         contain the "batches" of data coming from the N different environments,
         now they are actually a sequence of items coming from this single
-        environment. For more info on how this is done, see the  
+        environment. For more info on how this is done, see the
         """
         inputs: Tensor
         actions: PolicyHeadOutput
@@ -400,7 +421,7 @@ class PolicyHead(ClassificationHead):
 
         log_probabilities = actions.y_pred_log_prob
         rewards = rewards.y
-        
+
         loss_tensor = self.policy_gradient(
             rewards=rewards,
             log_probs=log_probabilities,
@@ -416,14 +437,14 @@ class PolicyHead(ClassificationHead):
         # to `Loss`.
         loss.metrics["gradient_usage"] = self.get_gradient_usage_metrics(env_index)
         return loss
-        
+
     def get_gradient_usage_metrics(self, env_index: int) -> GradientUsageMetric:
         """ Returns a Metrics object that describes how many of the actions
         from an episode that are used to calculate a loss still have their
         graphs, versus ones that don't have them (due to being created before
         the last model update, and therefore having been detached.)
 
-        Does this by inspecting the contents of `self.actions[env_index]`. 
+        Does this by inspecting the contents of `self.actions[env_index]`.
         """
         episode_actions = self.actions[env_index]
         n_stored_items = len(self.actions[env_index])
@@ -512,7 +533,7 @@ class PolicyHead(ClassificationHead):
 
     def detach_buffers(self, env_index: int) -> None:
         """ Detach all the tensors in the buffers for a given environment.
-        
+
         We have to do this when we update the model while an episode in one of
         the enviroment isn't done.
         """
@@ -525,12 +546,12 @@ class PolicyHead(ClassificationHead):
         # assert False, (self.representations[0], self.representations[-1])
 
     def _detach_buffer(self, old_buffer: Sequence[Tensor]) -> deque:
-            new_items = self._make_buffer()
-            for item in old_buffer:
-                detached = item.detach()
-                new_items.append(detached)
-            return new_items
-    
+        new_items = self._make_buffer()
+        for item in old_buffer:
+            detached = item.detach()
+            new_items.append(detached)
+        return new_items
+
     def _make_buffer(self, elements: Sequence[T] = None) -> Deque[T]:
         buffer: Deque[T] = deque(maxlen=self.hparams.max_episode_window_length)
         if elements:
@@ -550,6 +571,17 @@ class PolicyHead(ClassificationHead):
         assert len(episode_representations)
         assert len(episode_actions)
         assert len(episode_rewards)
+        # BUG: Need to make sure that all tensors are on the same device:
+        # assert self.device is not None
+        # episode_representations = [
+        #     move(item, device=self.device) for item in episode_representations
+        # ]
+        # episode_actions = [
+        #     move(item, device=self.device) for item in episode_actions
+        # ]
+        # episode_rewards = [
+        #     move(item, device=self.device) for item in episode_rewards
+        # ]
         stacked_inputs = stack(episode_representations)
         stacked_actions = stack(episode_actions)
         stacked_rewards = stack(episode_rewards)

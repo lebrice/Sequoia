@@ -13,7 +13,6 @@ import gym
 from gym import spaces
 from sequoia.settings.base import Method
 from sequoia.common.gym_wrappers import MultiTaskEnvironment, TransformObservation
-from sequoia.common.gym_wrappers.action_limit import ActionLimit
 from sequoia.common.gym_wrappers.utils import is_monsterkong_env
 from sequoia.common.spaces import Sparse
 from sequoia.common.metrics import EpisodeMetrics

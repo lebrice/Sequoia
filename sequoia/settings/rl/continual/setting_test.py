@@ -75,9 +75,13 @@ def make_dataset_fixture(setting_type) -> pytest.fixture:
     def dataset(self, request):
         dataset = request.param
         return dataset
-
+    datasets = list(set(setting_type.available_datasets.values()))
+    # FIXME: Temporarily removing this MT10 from the datasets, because it isn't the same
+    # as a gym ID
+    if "MT10" in datasets:
+        datasets.remove("MT10")
     return pytest.fixture(
-        params=list(set(setting_type.available_datasets.values())), scope="module",
+        params=datasets, scope="module",
     )(dataset)
 
 

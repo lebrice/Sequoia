@@ -39,7 +39,7 @@ def get_confusion_matrix(y_pred: Union[np.ndarray, Tensor], y: Union[np.ndarray,
 
     # BUG: This is failing on the last batch.
     assert y.shape == y_preds.shape, (y.shape, y_preds.shape)
-    assert y.dtype == y_preds.dtype == np.int, (y.dtype, y_preds.dtype)
+    # assert y.dtype == y_preds.dtype == np.int, (y.dtype, y_preds.dtype)
 
     confusion_matrix = np.zeros([n_classes, n_classes])
     

@@ -1239,7 +1239,8 @@ class ContinualRLSetting(RLSetting, ContinualAssumption):
                 partial(TimeLimit, max_episode_steps=self.max_episode_steps)
             )
 
-        wrappers.append(partial(ActionLimit, max_steps=max_steps))
+        # NOTE: Removing this 'ActionLimit' from the 'pre-batch' wrappers.
+        # wrappers.append(partial(ActionLimit, max_steps=max_steps))
 
         # if is_classic_control_env(base_env):
         # If we are in a classic control env, and we dont want the state to

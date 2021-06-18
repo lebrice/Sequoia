@@ -44,14 +44,15 @@ logger = get_logger(__file__)
 
 from pytorch_lightning import Trainer
 from pytorch_lightning.trainer.connectors.data_connector import DataConnector
-from sequoia.common.gym_wrappers.utils import IterableWrapper
+from sequoia.common.gym_wrappers.utils import IterableWrapper, has_wrapper
 from sequoia.settings.rl.continual.environment import GymDataLoader
+
 
 class PatchedDataConnector(DataConnector):
     def _with_is_last(self, iterable):
         """ Patch for this 'with_is_last' which messes up iterating over an RL env.
         """
-        if isinstance(iterable, GymDataLoader):
+        if isinstance(iterable, gym.Env) and has_wrapper(iterable, GymDataLoader):
             env = iterable
             assert isinstance(env, IterableWrapper), env
             while not env.is_closed():

@@ -53,6 +53,9 @@ class ActionLimit(ActionCounter):
     def __len__(self):
         return self.max_steps
 
+    def closed_error_message(self) -> str:
+        return f"Env reached max number of steps ({self._max_steps})"
+
     def step(self, action):
         if self._action_counter >= self._max_steps:
             raise ClosedEnvironmentError(

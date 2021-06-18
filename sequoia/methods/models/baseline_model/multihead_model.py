@@ -637,6 +637,7 @@ def get_task_indices(
     return all_task_indices
 
 
+# TODO: Remove this, currently unused.
 def cleanup_task_labels(
     task_labels: Optional[Sequence[Optional[int]]],
 ) -> Optional[np.ndarray]:
@@ -665,8 +666,8 @@ def cleanup_task_labels(
         if task_labels.dtype == object:
             if all(task_labels == None):
                 task_labels = None
-            elif all(task_labels != None):
-                task_labels = torch.as_tensor(task_labels.astype(np.int))
+            elif not any(task_labels == None):
+                task_labels = torch.as_tensor(task_labels.astype(int))
             else:
                 raise NotImplementedError(f"TODO: Only given a portion of task labels?")
                 # IDEA: Maybe set task_id to -1 in those cases, and return an int

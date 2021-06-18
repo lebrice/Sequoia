@@ -521,6 +521,7 @@ def test_buffers_are_stacked_correctly(monkeypatch):
     # loss: Loss = output_head.get_loss(forward_pass, actions=actions, rewards=rewards)
 
 
+@pytest.mark.no_xvfb
 def test_sanity_check_cartpole_done_vector():
     """TODO: Sanity check, make sure that cartpole has done=True at some point
     when using a BatchedEnv.
