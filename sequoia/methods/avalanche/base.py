@@ -78,6 +78,10 @@ class AvalancheMethod(
     # The Strategy class to use for this Method. Subclasses have to add this property.
     strategy_class: ClassVar[Type[StrategyType]] = BaseStrategy
 
+    # TODO: Maybe use a 'PluginClass', so that we can avoid subclassing both the
+    # plugin and the strategy when we need to patch something in the plugin.
+    plugin_class: ClassVar[Optional[Type[StrategyPlugin]]]
+
     # Class Variable to hold the types of models available as options for the `model`
     # field below.
     available_models: ClassVar[Dict[str, Type[nn.Module]]] = {
