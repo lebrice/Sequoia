@@ -1,5 +1,5 @@
 """ Defines a (hopefully general enough) Output Head class to be used by the
-BaselineMethod when applied on an RL setting.
+BaseMethod when applied on an RL setting.
 
 NOTE: The training procedure is fundamentally on-policy atm, i.e. the
 observation is a single state, not a rollout, and the reward is the

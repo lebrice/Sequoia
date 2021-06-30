@@ -87,8 +87,8 @@ pytorch_lightning.trainer.connectors.data_connector.DataConnector = PatchedDataC
     
 @register_method
 @dataclass
-class BaselineMethod(Method, Serializable, Parseable, target_setting=Setting):
-    """ Versatile Baseline method which targets all settings.
+class BaseMethod(Method, Serializable, Parseable, target_setting=Setting):
+    """ Versatile Base method which targets all settings.
 
     Uses pytorch-lightning's Trainer for training and LightningModule as model.
 
@@ -114,7 +114,7 @@ class BaselineMethod(Method, Serializable, Parseable, target_setting=Setting):
         trainer_options: TrainerConfig = None,
         **kwargs,
     ):
-        """ Creates a new BaselineMethod, using the provided configuration options.
+        """ Creates a new BaseMethod, using the provided configuration options.
 
         Parameters
         ----------
@@ -135,18 +135,18 @@ class BaselineMethod(Method, Serializable, Parseable, target_setting=Setting):
 
         ## Examples:
         ```
-        method = BaselineMethod(hparams=BaselineModel.HParams(learning_rate=0.01))
-        method = BaselineMethod(learning_rate=0.01) # Same as above
+        method = BaseMethod(hparams=BaselineModel.HParams(learning_rate=0.01))
+        method = BaseMethod(learning_rate=0.01) # Same as above
 
-        method = BaselineMethod(config=Config(debug=True))
-        method = BaselineMethod(debug=True) # Same as above
+        method = BaseMethod(config=Config(debug=True))
+        method = BaseMethod(debug=True) # Same as above
 
-        method = BaselineMethod(hparams=BaselineModel.HParams(learning_rate=0.01),
+        method = BaseMethod(hparams=BaselineModel.HParams(learning_rate=0.01),
                                 config=Config(debug=True))
-        method = BaselineMethod(learning_rate=0.01, debug=True) # Same as above
+        method = BaseMethod(learning_rate=0.01, debug=True) # Same as above
         ```
         """
-        # TODO: When creating a Method from a script, like `BaselineMethod()`,
+        # TODO: When creating a Method from a script, like `BaseMethod()`,
         # should we expect the hparams to be passed? Should we create them from
         # the **kwargs? Should we parse them from the command-line?
 
@@ -586,7 +586,7 @@ class BaselineMethod(Method, Serializable, Parseable, target_setting=Setting):
         if not is_dataclass(cls):
             logger.critical(
                 UserWarning(
-                    f"The BaselineMethod subclass {cls} should be decorated with "
+                    f"The BaseMethod subclass {cls} should be decorated with "
                     f"@dataclass!\n"
                     f"While this isn't strictly necessary for things to work, it is"
                     f"highly recommended, as any dataclass-style class attributes "

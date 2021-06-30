@@ -84,7 +84,7 @@ BaseModel "1" *-- "1" OutputHead
 ' SelfSupervisedModel *-- SelfSupervisedModel.HParams
 ' MultiHeadModel *-- MultiHeadModel.HParams
 SelfSupervisedModel "1" o-- "many" aux_tasks.AuxiliaryTask
-' BaselineMethod "1" *--> "1" BaselineModel : uses
+' BaseMethod "1" *--> "1" BaselineModel : uses
 MultiHeadModel "1" *-- "many" OutputHead
 ' MultiHeadModel "1" *-- "1" OutputHead
 

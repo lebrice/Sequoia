@@ -111,7 +111,7 @@
 
 ## Registered Methods (so far):
 
-- ## [BaselineMethod](sequoia/methods/baseline_method.py) 
+- ## [BaseMethod](sequoia/methods/base_method.py) 
 
 	 - Target setting: [Setting](sequoia/settings/base/setting.py)
 
@@ -285,7 +285,7 @@
 
 	 - Target setting: [IncrementalAssumption](sequoia/settings/assumptions/incremental.py)
 
-	Subclass of the BaselineMethod, which adds the EWCTask to the `BaselineModel`.
+	Subclass of the BaseMethod, which adds the EWCTask to the `BaselineModel`.
 
 	This Method is applicable to any CL setting (RL or SL) where there are clear task
 	boundaries, regardless of if the task labels are given or not.

@@ -9,7 +9,7 @@ import pytest
 from sequoia.conftest import slow
 from sequoia.common.config import Config
 from sequoia.methods import Method, all_methods
-from sequoia.methods.baseline_method import BaselineMethod
+from sequoia.methods.base_method import BaseMethod
 from sequoia.methods.random_baseline import RandomBaselineMethod
 from sequoia.settings import Results, Setting, all_settings
 
@@ -20,7 +20,7 @@ method_names = get_method_names()
 @pytest.mark.xfail(
     reason="@lebrice: I changed my mind on this. For example, it could make "
     "sense to have multiple methods called 'baseline' when a new Setting needs "
-    "to create a new subclass of the BaselineMethod or a new Method altogether."
+    "to create a new subclass of the BaseMethod or a new Method altogether."
 )
 def test_no_collisions_in_method_names():
     assert len(set(method.get_name() for method in all_methods)) == len(all_methods)
@@ -31,10 +31,10 @@ def test_no_collisions_in_setting_names():
 
 
 def test_applicable_methods():
-    from sequoia.methods import BaselineMethod
+    from sequoia.methods import BaseMethod
     from sequoia.settings import TraditionalSLSetting
 
-    assert BaselineMethod in TraditionalSLSetting.get_applicable_methods()
+    assert BaseMethod in TraditionalSLSetting.get_applicable_methods()
 
 
 def mock_apply(self: Setting, method: Method, config: Config) -> Results:

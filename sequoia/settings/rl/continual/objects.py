@@ -13,7 +13,7 @@ class Observations(RLSetting.Observations, ContinualAssumption.Observations):
     task_labels: Optional[Tensor] = None
     # The 'done' that is normally returned by the 'step' method.
     # We add this here in case a method were to iterate on the environments in the
-    # dataloader-style so they also have access to those (i.e. for the BaselineMethod).
+    # dataloader-style so they also have access to those (i.e. for the BaseMethod).
     done: Optional[Union[bool, Sequence[bool]]] = None
 
 

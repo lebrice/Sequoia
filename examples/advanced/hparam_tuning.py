@@ -39,7 +39,7 @@
 """
 import wandb
 from sequoia.common import Config
-from sequoia.methods.baseline_method import BaselineMethod
+from sequoia.methods.base_method import BaseMethod
 from sequoia.settings import TraditionalSLSetting, Results, Setting
 from sequoia.utils.logging_utils import get_logger
 
@@ -56,16 +56,16 @@ if __name__ == "__main__":
     # from sequoia.settings import TaskIncrementalSLSetting
     # setting = TaskIncrementalSLSetting(dataset="cifar10")
     
-    ## Create the BaselineMethod:
+    ## Create the BaseMethod:
     # Option 1: Create the method manually:
-    # method = BaselineMethod()
+    # method = BaseMethod()
 
     # Option 2: From the command-line:
-    method, unused_args = BaselineMethod.from_known_args()  # allow unused args.
+    method, unused_args = BaseMethod.from_known_args()  # allow unused args.
     # parser = ArgumentParser(description=__doc__)
-    # BaselineMethod.add_argparse_args(parser, dest="method")
+    # BaseMethod.add_argparse_args(parser, dest="method")
     # args, unused_args = parser.parse_known_args()
-    # method: BaselineMethod = BaselineMethod.from_argparse_args(args, dest="method")
+    # method: BaseMethod = BaseMethod.from_argparse_args(args, dest="method")
 
     # Search space for the Hyper-Parameter optimization algorithm.
     # NOTE: This is just a copy of the spaces that are auto-generated from the fields of

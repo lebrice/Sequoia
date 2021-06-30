@@ -21,7 +21,7 @@ from torch.utils.data import DataLoader, Dataset
 from sequoia.common import Loss
 from sequoia.common.config import Config
 from sequoia.common.gym_wrappers import MultiTaskEnvironment
-from sequoia.methods.baseline_method import BaselineMethod
+from sequoia.methods.base_method import BaseMethod
 from sequoia.methods.models.forward_pass import ForwardPass
 from sequoia.methods.models.output_heads.rl.episodic_a2c import EpisodicA2C
 from sequoia.settings import ClassIncrementalSetting, TraditionalRLSetting, RLSetting
@@ -287,7 +287,7 @@ def test_multitask_rl_bug_with_PL(monkeypatch, config: Config):
     # Import this and use it to create the Trainer, rather than creating the Trainer
     # directly, so we don't get the same bug (due to with_is_last in PL) from the
     # DataConnector.
-    from sequoia.methods.baseline_method import TrainerConfig
+    from sequoia.methods.base_method import TrainerConfig
 
     # NOTE: We only do this so that the Model has a self.trainer attribute and so the
     # model.training_step below can be used:
@@ -436,9 +436,9 @@ def test_task_inference_sl(
 
 @pytest.mark.timeout(120)
 def test_task_inference_rl_easy(config: Config):
-    from sequoia.methods.baseline_method import BaselineMethod
+    from sequoia.methods.base_method import BaseMethod
 
-    method = BaselineMethod(config=config)
+    method = BaseMethod(config=config)
     from sequoia.settings.rl import IncrementalRLSetting
 
     setting = IncrementalRLSetting(
@@ -457,7 +457,7 @@ def test_task_inference_rl_easy(config: Config):
 @pytest.mark.timeout(120)
 def test_task_inference_rl_hard(config: Config):
 
-    method = BaselineMethod(config=config)
+    method = BaseMethod(config=config)
 
     setting = IncrementalRLSetting(
         dataset="cartpole",
@@ -471,7 +471,7 @@ def test_task_inference_rl_hard(config: Config):
     # assert False, results.to_log_dict()
 
 
-from sequoia.methods.baseline_method import BaselineMethod
+from sequoia.methods.base_method import BaseMethod
 from sequoia.settings.sl import TraditionalSLSetting
 from sequoia.settings.sl.continual.setting import subset
 
@@ -483,7 +483,7 @@ def test_task_inference_multi_task_sl(config: Config):
     # settings:
     dataset_length = 1000
     # TODO: Shorten the train/test datasets?
-    method = BaselineMethod(config=config, max_epochs=1)
+    method = BaseMethod(config=config, max_epochs=1)
     setting.setup()
     setting.train_datasets = [
         subset(dataset, list(range(dataset_length)))

@@ -38,8 +38,8 @@ def register_method(new_method: Type[Method]) -> Type[Method]:
             if method.get_name() == name:
                 # BUG: There's this weird double-import thing happening during
                 # testing, where some methods are import twice, first as
-                # methods.baseline_method.BaselineMethod, for instance, then again
-                # as SSCL.methods.baseline_method.BaselineMethod
+                # methods.base_method.BaseMethod, for instance, then again
+                # as SSCL.methods.base_method.BaseMethod
                 from os.path import abspath
                 method_source_file = inspect.getsourcefile(method)
                 assert isinstance(method_source_file, str), f"cant find source file of {method}?"
@@ -62,8 +62,13 @@ def register_method(new_method: Type[Method]) -> Type[Method]:
     return new_method
 
 # NOTE: Even though these methods would be dynamically registered (see below),
-# we still import them so we can do `from methods import BaselineMethod`.
-from .baseline_method import BaselineMethod
+# we still import them so we can do `from methods import BaseMethod`.
+from .base_method import BaseMethod
+
+# Keeping a pointer to the old name, just to help with backward-compatibility a little
+# bit?
+BaselineMethod = BaseMethod
+
 from .random_baseline import RandomBaselineMethod
 from .pnn import PnnMethod
 

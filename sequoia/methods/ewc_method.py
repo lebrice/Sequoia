@@ -1,4 +1,4 @@
-"""Defines the EWC method, as a subclass of the BaselineMethod.
+"""Defines the EWC method, as a subclass of the BaseMethod.
 
 Likewise, defines the `EwcModel`, which is a very simple subclass of the
 `BaselineModel`, adding in the Ewc auxiliary task (`EWCTask`).
@@ -17,7 +17,7 @@ from sequoia.common.config import Config
 from sequoia.common.config.trainer_config import TrainerConfig
 from sequoia.methods import register_method
 from sequoia.methods.aux_tasks.ewc import EWCTask
-from sequoia.methods.baseline_method import BaselineMethod, BaselineModel
+from sequoia.methods.base_method import BaseMethod, BaselineModel
 from sequoia.settings import Setting, TaskIncrementalRLSetting
 from sequoia.settings.assumptions.incremental import IncrementalAssumption
 
@@ -43,8 +43,8 @@ class EwcModel(BaselineModel):
 
 @register_method
 @dataclass
-class EwcMethod(BaselineMethod, target_setting=IncrementalAssumption):
-    """ Subclass of the BaselineMethod, which adds the EWCTask to the `BaselineModel`.
+class EwcMethod(BaseMethod, target_setting=IncrementalAssumption):
+    """ Subclass of the BaseMethod, which adds the EWCTask to the `BaselineModel`.
 
     This Method is applicable to any CL setting (RL or SL) where there are clear task
     boundaries, regardless of if the task labels are given or not.

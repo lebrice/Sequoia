@@ -13,7 +13,7 @@ used to make sure that the results make sense, for the given method and setting.
 
 For instance, when testing a RandomBaselineMethod on an TraditionalSLSetting, the accuracy
 should be close to chance level. Likewise, in the `baseline_test.py` file, we
-make sure that the BaselineMethod (just a classifier, no CL adjustments) also
+make sure that the BaseMethod (just a classifier, no CL adjustments) also
 exhibits catastrophic forgetting when applied on a Class or Task Incremental
 Setting.
 """

@@ -1132,8 +1132,8 @@ class ContinualRLSetting(RLSetting, ContinualAssumption):
 
         # Apply the "post-batch" wrappers:
         # from sequoia.common.gym_wrappers import ConvertToFromTensors
-        # TODO: Only the BaselineMethod requires this, we should enable it only
-        # from the BaselineMethod, and leave it 'off' by default.
+        # TODO: Only the BaseMethod requires this, we should enable it only
+        # from the BaseMethod, and leave it 'off' by default.
         if self.add_done_to_observations:
             env = AddDoneToObservation(env)
         # # Convert the samples to tensors and move them to the right device.

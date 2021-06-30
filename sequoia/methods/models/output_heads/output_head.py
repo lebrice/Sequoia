@@ -122,7 +122,7 @@ class OutputHead(nn.Module, ABC):
             preserved and any new values parsed from the command-line.
         """
         # NOTE: This (getting the wrong hparams class) could happen for
-        # instance when parsing a BaselineMethod from the command-line, the
+        # instance when parsing a BaseMethod from the command-line, the
         # default type of hparams on the method is BaselineModel.HParams,
         # whose `output_head` field doesn't have the right type exactly.
         current_hparams = self.hparams.to_dict()

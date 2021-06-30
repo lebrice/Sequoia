@@ -16,7 +16,7 @@ from sequoia.methods.aux_tasks import (
     SimCLRTask,
     VAEReconstructionTask,
 )
-from sequoia.methods.baseline_method import BaselineMethod
+from sequoia.methods.base_method import BaseMethod
 from sequoia.settings.base import Setting, Results
 from sequoia.settings.sl import (
     TaskIncrementalSLSetting,
@@ -29,7 +29,7 @@ from sequoia.settings.sl.incremental import (
 
 from .self_supervised_model import SelfSupervisedModel
 
-Method = BaselineMethod
+Method = BaseMethod
 # Use 'Method' as an alias for the actual Method subclass under test. (since at
 # the moment quite a few tests share some code.
 # List of datasets that are currently supported for this method.

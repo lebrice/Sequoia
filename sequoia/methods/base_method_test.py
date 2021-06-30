@@ -10,7 +10,7 @@ from sequoia.settings import (ClassIncrementalSetting, IncrementalRLSetting,
                               RLSetting, Setting)
 from sequoia.settings.rl.continual.results import ContinualRLResults
 
-from .baseline_method import BaselineMethod, BaselineModel
+from .base_method import BaseMethod, BaselineModel
 
 
 @pytest.fixture
@@ -29,8 +29,8 @@ def trainer(tmp_path_factory):
 @pytest.mark.timeout(120)
 def test_cartpole_state(config: Config, trainer: Trainer):
     """ Test that the baseline method can learn cartpole (state input) """
-    # TODO: Actually remove the trainer_config class from the BaselineMethod?
-    method = BaselineMethod(config=config)
+    # TODO: Actually remove the trainer_config class from the BaseMethod?
+    method = BaseMethod(config=config)
     method.trainer = trainer
     method.hparams.learning_rate = 0.01
     
@@ -48,8 +48,8 @@ def test_cartpole_state(config: Config, trainer: Trainer):
 @pytest.mark.timeout(120)
 def test_incremental_cartpole_state(config: Config, trainer: Trainer):
     """ Test that the baseline method can learn cartpole (state input) """
-    # TODO: Actually remove the trainer_config class from the BaselineMethod?
-    method = BaselineMethod(config=config)
+    # TODO: Actually remove the trainer_config class from the BaseMethod?
+    method = BaseMethod(config=config)
     method.trainer = trainer
     method.hparams.learning_rate = 0.01
     
@@ -71,7 +71,7 @@ def test_device_of_output_head_is_correct():
     model is on GPU.
     """
     setting = ClassIncrementalSetting(dataset="mnist")
-    method = BaselineMethod(max_epochs=1, no_wandb=True)
+    method = BaseMethod(max_epochs=1, no_wandb=True)
 
     results = setting.apply(method)
     assert 0.10 <= results.objective <= 0.30

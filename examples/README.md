@@ -22,7 +22,7 @@ Here's a brief description of the examples in this folder:
         CL regularization loss.
 
 - [baseline_demo.py](basic/baseline_demo.py): Shows how the
-    BaselineMethod can be applied to get results in both RL and SL Settings.
+    BaseMethod can be applied to get results in both RL and SL Settings.
 
 
 ## CLVision Workshop Submission Examples:
@@ -50,7 +50,7 @@ As such, it is recommended that you take a look at the examples in the following
 
 - [RL_and_SL_demo.py](advanced/RL_and_SL_demo.py):
     
-    Example that shows how the BaselineMethod can easily be extended by adding
+    Example that shows how the BaseMethod can easily be extended by adding
     AuxiliaryTasks to it, allows you to get results in both RL and SL.
 
 - [continual_rl_demo.py](advanced/ewc_in_rl.py):
