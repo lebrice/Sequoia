@@ -281,24 +281,32 @@ class ContinualRLSetting(RLSetting, ContinualAssumption):
     batch_size: Optional[int] = field(default=None, cmd=False)
     num_workers: Optional[int] = field(default=None, cmd=False)
 
-    # Deprecated: use `train_max_steps` instead.
-    # max_steps: Optional[int] = field(default=None, to_dict=False, cmd=False)
-    # Deprecated: use `train_max_steps` instead.
-    test_steps: Optional[int] = field(default=None, to_dict=False, cmd=False)
-    steps_per_task: Optional[int] = field(default=None, to_dict=False, cmd=False)
-    # TODO: 
+    # Maximum number of training steps per task.
+    # NOTE: In this particular setting, since there aren't clear 'tasks' to speak of, we
+    # don't expose this option on the command-line.
     train_steps_per_task: Optional[int] = field(default=None, to_dict=False, cmd=False)
+    # Number of test steps per task.
+    # NOTE: In this particular setting, since there aren't clear 'tasks' to speak of, we
+    # don't expose this option on the command-line.
     test_steps_per_task: Optional[int] = field(default=None, to_dict=False, cmd=False)
-    # max_steps = property(lambda self: )
 
     # Deprecated: use `train_max_steps` instead.
     max_steps: Optional[int] = deprecated_property("max_steps", "train_max_steps")
     # Deprecated: use `train_max_steps` instead.
     test_steps: Optional[int] = deprecated_property("test_steps", "test_max_steps")
-    # steps_per_task: Optional[int] = field(default=None, to_dict=False, cmd=False)
+    # Deprecated, use `train_steps_per_task` instead.
+    steps_per_task: Optional[int] = field(default=None, to_dict=False, cmd=False)
 
     def __post_init__(self):
         super().__post_init__()
+
+        # TODO: Fix nnoying little issues with this trio of fields that are interlinked:
+        if self.test_steps_per_task is not None:
+            if self.test_max_steps == 10_000:
+                self.test_max_steps = self.nb_tasks * self.test_steps_per_task
+            else:
+                self.nb_tasks = self.test_max_steps // self.test_steps_per_task
+
         renamed_fields = {
             # "max_steps": "train_max_steps",
             # "test_steps": "test_max_steps",
@@ -328,11 +336,15 @@ class ContinualRLSetting(RLSetting, ContinualAssumption):
                     self.available_datasets, self.dataset
                 )
             except NotImplementedError as e:
-                warnings.warn(
-                    RuntimeWarning(
-                        f"Will attempt to use unsupported dataset {textwrap.shorten(str(self.dataset), 100)}!"
+                # FIXME: Removing this warning in the case where a custom env is pased
+                # for each task. However, the train_envs field is only created in a
+                # subclass, so this check is ugly.
+                if not (hasattr(self, "train_envs") and self.dataset is self.train_envs[0]):
+                    warnings.warn(
+                        RuntimeWarning(
+                            f"Will attempt to use unsupported dataset {textwrap.shorten(str(self.dataset), 100)}!"
+                        )
                     )
-                )
             except Exception as e:
                 raise gym.error.UnregisteredEnv(
                     f"({e}) The chosen dataset/environment ({self.dataset}) isn't in the dict of "
