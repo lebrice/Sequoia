@@ -117,7 +117,7 @@
 
 	Versatile Baseline method which targets all settings.
 
-	Uses pytorch-lightning's Trainer for training and LightningModule as model.
+	Uses pytorch-lightning's Trainer for training and a LightningModule as a model.
 
 	Uses a [BaselineModel](methods/models/baseline_model/baseline_model.py), which
 	can be used for:

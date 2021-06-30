@@ -102,12 +102,12 @@ class BaselineModel(
         # When left to None (default), the hidden size from the pretrained
         # encoder model will be used. When set to an integer value, an
         # additional Linear layer will be placed between the outputs of the
-        # encoder in order to map from the pretrained encoder's output size H_e
+        # encoder in order to map from the encoder's output size H_e
         # to this new hidden size `new_hidden_size`.
         new_hidden_size: Optional[int] = None
-        # Retrain the encoder from scratch.
+        # Retrain the encoder from scratch or start from pretrained weights.
         train_from_scratch: bool = False
-        # Wether we should keep the weights of the pretrained encoder frozen.
+        # Wether we should keep the weights of the encoder frozen.
         freeze_pretrained_encoder_weights: bool = False
 
         # Hyper-parameters of the output head.

@@ -1,12 +1,12 @@
-"""Base class for the Model to be used as part of a Method.
+"""Base for the model used by the `BaseMethod`.
 
-This is meant
-
-TODO: There is a bunch of work to be done here.
+This model is basically just an encoder and an output head. Both of these can be
+switched out/customized as needed.
 """
 from dataclasses import dataclass
 from typing import Any, Dict, Generic, Optional, Tuple, Type, TypeVar
 
+from sequoia.utils.pretrained_utils import get_pretrained_encoder
 import gym
 import numpy as np
 import torch
@@ -34,8 +34,13 @@ from sequoia.utils.logging_utils import get_logger
 
 from ..fcnet import FCNet
 from ..forward_pass import ForwardPass
-from ..output_heads import (ActorCriticHead, ClassificationHead, OutputHead,
-                            PolicyHead, RegressionHead)
+from ..output_heads import (
+    ActorCriticHead,
+    ClassificationHead,
+    OutputHead,
+    PolicyHead,
+    RegressionHead,
+)
 from ..output_heads.rl.episodic_a2c import EpisodicA2C
 from .base_hparams import BaseHParams
 
@@ -44,10 +49,8 @@ SettingType = TypeVar("SettingType", bound=IncrementalAssumption)
 
 
 class BaseModel(LightningModule, Generic[SettingType]):
-    """ Base model LightningModule (nn.Module extended by pytorch-lightning)
-
-    WIP: (@lebrice): Trying to tidy up the hierarchy of the different kinds of
-    models a little bit.
+    """LightningModule (nn.Module extended by pytorch-lightning) which can be trained
+    on either Supervised or Reinforcement Learning environments.
 
     This model splits the learning task into a representation-learning problem
     and a downstream task (output head) applied on top of it.
@@ -102,7 +105,7 @@ class BaseModel(LightningModule, Generic[SettingType]):
         )
         self.config: Config = config
         # TODO: Decided to Not set this property, so the trainer doesn't
-        # fallback to using it instead of the passed datamodules/dataloaders.
+        # fallback to using it instead of the passed dataloaders/environments.
         # self.datamodule: LightningDataModule = setting
 
         # (Testing) Setting this attribute is supposed to help with ddp/etc
@@ -132,9 +135,7 @@ class BaseModel(LightningModule, Generic[SettingType]):
             )
             self.hidden_size = output_dims
         else:
-            # TODO: Refactor this 'make_encoder' being on the hparams, its a bit
-            # weird.
-            self.encoder, self.hidden_size = self.hp.make_encoder()
+            self.encoder, self.hidden_size = self.make_encoder()
             # TODO: Check that the outputs of the encoders are actually
             # flattened. I'm not sure they all are, which case the samples
             # wouldn't match with this space.
@@ -155,6 +156,30 @@ class BaseModel(LightningModule, Generic[SettingType]):
             )
         # Then, create the 'default' output head.
         self.output_head: OutputHead = self.create_output_head(task_id=0)
+
+    def make_encoder(self) -> Tuple[nn.Module, int]:
+        """Creates an Encoder model and returns the number of output dimensions.
+
+        Returns:
+            Tuple[nn.Module, int]: the encoder and the hidden size.
+            
+        TODO: Could instead return its output space, in case we didn't necessarily want
+        to flatten the representations (e.g. for image segmentation tasks).
+        """
+        # Get the chosen type of encoder
+        encoder_type: Type[nn.Module] = self.hp.encoder
+        # This does a few things:
+        # 1. Instantiate the model (with pretrained weights if desired)
+        # 2. Infer the output size of the model
+        # 3. Remove the output fully-connected layer, if present.
+        encoder, hidden_size = get_pretrained_encoder(
+            encoder_model=encoder_type,
+            pretrained=not self.train_from_scratch,
+            freeze_pretrained_weights=self.freeze_pretrained_encoder_weights,
+            new_hidden_size=self.new_hidden_size,
+        )
+        return encoder, hidden_size
+
 
     @auto_move_data
     def forward(self, observations: IncrementalAssumption.Observations) -> ForwardPass:
@@ -405,7 +430,9 @@ class BaseModel(LightningModule, Generic[SettingType]):
             observations, rewards = batch
 
         assert isinstance(observations, self.Observations), (
-            observations, type(observations), self.Observations,
+            observations,
+            type(observations),
+            self.Observations,
         )
         # Move the observations to the right device, and convert numpy arrays to
         # tensors.
@@ -487,7 +514,16 @@ class BaseModel(LightningModule, Generic[SettingType]):
         return reward
 
     def configure_optimizers(self):
-        return self.hp.make_optimizer(self.parameters())
+        optimizer_class: Type[Optimzier] = self.hp.optimizer
+        options = {
+            "lr": self.hp.learning_rate,
+            "weight_decay": self.hp.weight_decay,
+        }
+        return optimizer_class(
+            self.parameters(),
+            lr=self.hp.learning_rate,
+            weight_decay=self.hp.weight_decay,
+        )
 
     @property
     def batch_size(self) -> int:

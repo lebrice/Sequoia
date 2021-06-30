@@ -7,6 +7,10 @@ from sequoia.settings import Setting
 from sequoia.settings.base import Method
 
 
+class MethodTests:
+    """ Base class that can be extended to generate tests for a method. """
+
+
 @dataclass
 class NewSetting(Setting):
     pass
@@ -19,8 +23,6 @@ class NewMethod(Method, target_setting=NewSetting):
 
     def get_actions(self, observations, action_space):
         return action_space.sample()
-
-    pass
 
 
 def test_passing_arg_to_class_constructor_works():

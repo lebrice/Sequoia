@@ -34,7 +34,7 @@ available_encoders: Dict[str, Type[nn.Module]] = {
 
 @dataclass
 class BaseHParams(HyperParameters):
-    """ Set of 'base' Hyperparameters for the 'base' LightningModule. """
+    """ Hyperparameters for the 'base' Model. """
     # Class variable versions of the above dicts, for easier subclassing.
     # NOTE: These don't get parsed from the command-line.
     available_optimizers: ClassVar[Dict[str, Type[Optimizer]]] = available_optimizers.copy()
@@ -84,39 +84,3 @@ class BaseHParams(HyperParameters):
         command-line.
         """
         super().__post_init__()
-
-    def make_optimizer(self, *args, **kwargs) -> Optimizer:
-        """ Creates the Optimizer object from the options. """
-        optimizer_class = self.optimizer
-        options = {
-            "lr": self.learning_rate,
-            "weight_decay": self.weight_decay,
-        }
-        options.update(kwargs)
-        return optimizer_class(*args, **options)
-
-    @property
-    def encoder_model(self) -> Type[nn.Module]:
-        return self.encoder
-    
-    def make_encoder(self, encoder_name: str = None) -> Tuple[nn.Module, int]:
-        """Creates an Encoder model and returns the resulting hidden size.
-
-        Returns:
-            Tuple[nn.Module, int]: the encoder and the hidden size.
-        """
-        if encoder_name and encoder_name not in self.available_encoders:
-            raise KeyError(
-                f"No encoder with name {encoder_name} found! "
-                f"(available encoders: {list(self.available_encoders.keys())}.")
-            encoder_model = self.available_encoders[encoder_name]
-        else:
-            encoder_model = self.encoder
-        encoder, hidden_size = get_pretrained_encoder(
-            encoder_model=encoder_model,
-            pretrained=not self.train_from_scratch,
-            freeze_pretrained_weights=self.freeze_pretrained_encoder_weights,
-            new_hidden_size=self.new_hidden_size,
-        )
-        return encoder, hidden_size
-

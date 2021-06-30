@@ -24,25 +24,20 @@ logger = get_logger(__file__)
 
 
 class MultiHeadModel(BaseModel[SettingType]):
-    """ Extension of the Model LightningModule aimed at CL settings.
-
-    # TODO: Replace all of this with the logic from the MultiHeadClassifier
-    # example.
+    """ Mixin that adds multi-head prediction to the BaseModel when task labels are
+    available.
     """
-
     @dataclass
     class HParams(BaseModel.HParams):
-        """ Hyperparameters specific to a Continual Learning classifier.
-        TODO: Add any hyperparameters specific to CL here.
+        """ Hyperparameters specific to a multi-head model.
         """
-
         # Wether to create one output head per task.
-        # TODO: Does it make no sense to have multihead=True when the model doesn't
-        # have access to task labels. Need to figure out how to manage this between TaskIncremental and Classifier.
         multihead: Optional[bool] = None
 
-    def __init__(self, setting: ContinualAssumption, hparams: HParams, config: Config):
+    def __init__(self, setting: SettingType, hparams: HParams, config: Config):
         super().__init__(setting=setting, hparams=hparams, config=config)
+
+        # Dictionary of output heads!
         self.output_heads: Dict[str, OutputHead] = nn.ModuleDict()
         self.hp: MultiHeadModel.HParams
         self.setting: SettingType
@@ -90,13 +85,7 @@ class MultiHeadModel(BaseModel[SettingType]):
                 )
                 # TODO: Maybe use the last trained output head, by default?
 
-        # BUG: We get no loss from the output head for the first episode after a task
-        # switch.
-        # NOTE: The problem is that the `done` in the observation isn't necessarily
-        # associated with the task designed by the `task_id` in that observation!
-        # That is because of how vectorized environments work, they reset the env and
-        # give the new initial observation when `done` is True, rather than the last
-        # observation in that env.
+        # TODO: Check if this is still necessary
         if self.previous_task_labels is None:
             self.previous_task_labels = task_labels
 

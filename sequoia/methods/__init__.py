@@ -1,3 +1,24 @@
+""" Methods: solutions to research problems (Settings).
+
+Methods contain the logic related to the training of the algorithm. Methods are
+encouraged to use a model to keep the networks / architecture / engineering code
+separate from the training loop.
+
+Sequoia includes a `BaseMethod`, along with an accompanying `BaseModel`, which can be
+used as a jumping-off point for new users. 
+You're obviously also free to write your own method/model from scratch if you want!
+
+The recommended way to start is by creating a new subclass of the Base
+The best way to do so is to create your new model as a subclass of the `BaseModel`,
+which already has some neat capabilities, and can easily be extended/customized.
+
+This `BaseModel` is an instance of Pytorch-Lightning's `LightningModule` class, and can be
+trained on the environments/dataloaders of Sequoia with a `pl.Trainer`, enabling all the
+goodies associated with Pytorch-Lightning.
+
+You can also easily add callbacks to measure your own metrics and such as you would in
+Pytorch-Lightning.
+"""
 import glob
 import inspect
 import os

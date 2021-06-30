@@ -1,4 +1,4 @@
-from typing import Type
+from typing import Type, ClassVar
 
 import numpy as np
 import pytest
@@ -7,11 +7,11 @@ from pytorch_lightning import Trainer
 from sequoia.common.config import Config, TrainerConfig
 from sequoia.conftest import skip_param, slow
 from sequoia.settings import (ClassIncrementalSetting, IncrementalRLSetting,
-                              RLSetting, Setting)
+                              TraditionalRLSetting, Setting)
 from sequoia.settings.rl.continual.results import ContinualRLResults
 
 from .base_method import BaseMethod, BaselineModel
-
+from .method_test import MethodTests
 
 @pytest.fixture
 def trainer(tmp_path_factory):
@@ -25,53 +25,52 @@ def trainer(tmp_path_factory):
     )
 
 
-@slow
-@pytest.mark.timeout(120)
-def test_cartpole_state(config: Config, trainer: Trainer):
-    """ Test that the baseline method can learn cartpole (state input) """
-    # TODO: Actually remove the trainer_config class from the BaseMethod?
-    method = BaseMethod(config=config)
-    method.trainer = trainer
-    method.hparams.learning_rate = 0.01
-    
-    setting = RLSetting(dataset="cartpole", max_steps=5000)
-    results: ContinualRLResults = setting.apply(method)
+class TestBaseMethod(MethodTests):
+    Method: ClassVar[Type[BaseMethod]] = BaseMethod
 
-    print(results.to_log_dict())
-    # The method should normally get the maximum length (200), but checking with
-    # 100 just to account for randomness.
-    assert results.mean_episode_length > 100.
+    @slow
+    @pytest.mark.timeout(120)
+    def test_cartpole_state(self, config: Config, trainer: Trainer):
+        """ Test that the baseline method can learn cartpole (state input) """
+        # TODO: Actually remove the trainer_config class from the BaseMethod?
+        method = self.Method(config=config)
+        method.trainer = trainer
+        method.hparams.learning_rate = 0.01
+
+        setting = TraditionalRLSetting(dataset="CartPole-v0", train_max_steps=5000, nb_tasks=1, test_max_steps=2_000)
+        results: ContinualRLResults = setting.apply(method)
+
+        print(results.to_log_dict())
+        # The method should normally get the maximum length (200), but checking with
+        # 100 just to account for randomness.
+        assert results.average_metrics.mean_episode_length > 100.
+
+    @slow
+    @pytest.mark.timeout(120)
+    def test_incremental_cartpole_state(self, config: Config, trainer: Trainer):
+        """ Test that the baseline method can learn cartpole (state input) """
+        # TODO: Actually remove the trainer_config class from the BaseMethod?
+        method = self.Method(config=config)
+        method.trainer = trainer
+        method.hparams.learning_rate = 0.01
+        
+        setting = IncrementalRLSetting(dataset="cartpole", train_max_steps=5000, nb_tasks=2, test_max_steps=1000)
+        results: ContinualRLResults = setting.apply(method)
+
+        print(results.to_log_dict())
+        # The method should normally get the maximum length (200), but checking with
+        # 100 just to account for randomness.
+        assert results.mean_episode_length > 100.
+
+    @pytest.mark.timeout(30)
+    @pytest.mark.skipif(not torch.cuda.is_available(), reason="Cuda is required.")
+    def test_device_of_output_head_is_correct(self, short_class_incremental_setting: ClassIncrementalSetting):
+        """ There is a bug happening where the output head is on CPU while the rest of the
+        model is on GPU.
+        """
+        method = self.Method(max_epochs=1, no_wandb=True)
+        results = short_class_incremental_setting.apply(method)
+        assert 0.10 <= results.objective <= 0.30
 
 
-
-@slow
-@pytest.mark.timeout(120)
-def test_incremental_cartpole_state(config: Config, trainer: Trainer):
-    """ Test that the baseline method can learn cartpole (state input) """
-    # TODO: Actually remove the trainer_config class from the BaseMethod?
-    method = BaseMethod(config=config)
-    method.trainer = trainer
-    method.hparams.learning_rate = 0.01
-    
-    setting = IncrementalRLSetting(dataset="cartpole", max_steps=5000, nb_tasks=2)
-    results: ContinualRLResults = setting.apply(method)
-
-    print(results.to_log_dict())
-    # The method should normally get the maximum length (200), but checking with
-    # 100 just to account for randomness.
-    assert results.mean_episode_length > 100.
-
-
-
-
-@pytest.mark.timeout(120)
-@pytest.mark.skipif(not torch.cuda.is_available(), reason="Cuda is required.")
-def test_device_of_output_head_is_correct():
-    """ There is a bug happening where the output head is on CPU while the rest of the
-    model is on GPU.
-    """
-    setting = ClassIncrementalSetting(dataset="mnist")
-    method = BaseMethod(max_epochs=1, no_wandb=True)
-
-    results = setting.apply(method)
-    assert 0.10 <= results.objective <= 0.30
+BaseMethodTests = TestBaseMethod
