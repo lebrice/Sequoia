@@ -129,6 +129,7 @@ class IncrementalRLSetting(IncrementalAssumption, DiscreteTaskAgnosticRLSetting)
     def __post_init__(self):
         if self.dataset in ["MT10", "MT50", "CW10", "CW20"]:
             from metaworld import MT10, MT50, Task, MetaWorldEnv
+
             benchmarks = {
                 "MT10": MT10,
                 "MT50": MT50,
@@ -258,17 +259,12 @@ class IncrementalRLSetting(IncrementalAssumption, DiscreteTaskAgnosticRLSetting)
             self._using_custom_envs_foreach_task = True
             # TODO: Raise a warning if we're going to overwrite a non-default nb_tasks?
             self.nb_tasks = len(self.train_envs)
-            # TODO: Not sure what to do with the `self.dataset` field, because
-            # ContinualRLSetting expects to have a single env, while we have more than
-            # one, the __post_init__ tries to create the rest of the fields based on
-            # `self.dataset`
-            self.dataset = self.train_envs[0]
 
             if not self.val_envs:
-                # TODO: Use a wrapper that sets a different random seed
+                # TODO: Use a wrapper that sets a different random seed?
                 self.val_envs = self.train_envs.copy()
             if not self.test_envs:
-                # TODO: Use a wrapper that sets a different random seed
+                # TODO: Use a wrapper that sets a different random seed?
                 self.test_envs = self.train_envs.copy()
             if (
                 self.train_task_schedule
@@ -279,6 +275,10 @@ class IncrementalRLSetting(IncrementalAssumption, DiscreteTaskAgnosticRLSetting)
                     "You can either pass `train/valid/test_envs`, or a task schedule, "
                     "but not both!"
                 )
+
+            self.train_dataset: Union[str, Callable[[], gym.Env]] = self.train_envs[0]
+            self.val_dataset: Union[str, Callable[[], gym.Env]] = self.val_envs[0]
+            self.test_dataset: Union[str, Callable[[], gym.Env]] = self.test_envs[0]
         else:
             if self.val_envs or self.test_envs:
                 raise RuntimeError(

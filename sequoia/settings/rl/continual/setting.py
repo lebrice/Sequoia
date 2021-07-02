@@ -357,9 +357,9 @@ class ContinualRLSetting(RLSetting, ContinualAssumption):
         logger.info(f"Chosen dataset: {textwrap.shorten(str(self.dataset), 50)}")
 
         # The ids of the train/valid/test environments.
-        self.train_dataset: str = self.train_dataset or self.dataset
-        self.val_dataset: str = self.val_dataset or self.dataset
-        self.test_dataset: str = self.test_dataset or self.dataset
+        self.train_dataset: Union[str, Callable[[], gym.Env]] = self.train_dataset or self.dataset
+        self.val_dataset: Union[str, Callable[[], gym.Env]] = self.val_dataset or self.dataset
+        self.test_dataset: Union[str, Callable[[], gym.Env]] = self.test_dataset or self.dataset
 
         # # The environment 'ID' associated with each 'simple name'.
         # self.train_dataset_id: str = self._get_dataset_id(self.train_dataset)
