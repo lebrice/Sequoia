@@ -177,6 +177,10 @@ class IncrementalRLSetting(IncrementalAssumption, DiscreteTaskAgnosticRLSetting)
                 assert val_env_tasks[env_name]
                 assert test_env_tasks[env_name]
 
+            max_train_steps_per_task = 1_000_000
+            if self.train_steps_per_task is None:
+                self.train_steps_per_task = max_train_steps_per_task
+
             if self.dataset in ["CW10", "CW20"]:
                 # TODO: Raise a warning if the number of tasks is non-default and set to
                 # something different than in the benchmark
@@ -194,11 +198,7 @@ class IncrementalRLSetting(IncrementalAssumption, DiscreteTaskAgnosticRLSetting)
                     f"window-close-v{version}",
                     f"peg-unplug-side-v{version}",
                 ]
-                # TODO: Raise warning if the number of steps per task exceeds this
-                max_train_steps_per_task = 1_000_000
-                if self.train_steps_per_task is None:
-                    self.train_steps_per_task = max_train_steps_per_task
-                elif self.train_steps_per_task > max_train_steps_per_task:
+                if self.train_steps_per_task > max_train_steps_per_task:
                     raise RuntimeError(
                         f"Can't use more than {max_train_steps_per_task} steps per "
                         f"task in the {self.dataset} benchmark!"
