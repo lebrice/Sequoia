@@ -21,7 +21,7 @@ extras_require = {
         "gym[atari] @ git+https://www.github.com/lebrice/gym@easier_custom_spaces#egg=gym"
     ],
     "hpo": [
-        "orion", "orion.algo.skopt>=0.1.6"
+        "orion>=0.1.15", "orion.algo.skopt>=0.1.6"
     ],
     "avalanche": [
         "gdown",  # BUG: Avalanche needs this to download cub200 dataset.
