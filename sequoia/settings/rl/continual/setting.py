@@ -860,7 +860,7 @@ class ContinualRLSetting(RLSetting, ContinualAssumption):
         
         env_factory = partial(
             self._make_env,
-            base_env=self.dataset,
+            base_env=self.train_dataset,
             wrappers=self.train_wrappers,
             **self.base_env_kwargs,
         )
@@ -1166,7 +1166,7 @@ class ContinualRLSetting(RLSetting, ContinualAssumption):
         # previous or future tasks.
         # TODO: This assumes that tasks all have the same length.
         return self._make_wrappers(
-            base_env=self.dataset,
+            base_env=self.train_dataset,
             task_schedule=self.train_task_schedule,
             # TODO: Removing this, but we have to check that it doesn't change when/how
             # the task boundaries are given to the Method.
