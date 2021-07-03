@@ -403,11 +403,34 @@ class IncrementalRLSetting(IncrementalAssumption, DiscreteTaskAgnosticRLSetting)
             # NOTE: Here is how this supports passing custom envs for each task: We just
             # switch out the value of this property, and let the
             # `train/val/test_dataloader` methods work as usual!
-            self.dataset = self.train_envs[self.current_task_id]
-            self.val_dataset = self.val_envs[self.current_task_id]
-            # TODO: The test loop goes through all the envs, hence this doesn't really
-            # work.
-            self.test_dataset = self.test_envs[self.current_task_id]
+            # TODO: Instantiate the envs if needed.
+            # TODO: Add support for batching these environments:
+            def instantiate_all_envs(envs: List[Union[Callable[[], gym.Env], gym.Env]]) -> List[gym.Env]:
+                return [
+                    env() if not isinstance(env, gym.Env) else env for env in envs
+                ]
+            self.train_envs = instantiate_all_envs(self.train_envs)
+            self.val_envs = instantiate_all_envs(self.val_envs)
+            self.test_envs = instantiate_all_envs(self.test_envs)
+
+            
+            if self.stationary_context:
+                from sequoia.settings.rl.discrete.multienv_wrappers import RandomMultiEnvWrapper, ConcatEnvsWrapper
+                
+               
+                self.train_dataset = RandomMultiEnvWrapper(self.train_envs, add_task_ids=self.task_labels_at_train_time)
+                self.val_dataset = RandomMultiEnvWrapper(self.val_envs, add_task_ids=self.task_labels_at_train_time)
+                self.test_dataset = ConcatEnvsWrapper(self.test_envs, add_task_ids=self.task_labels_at_test_time)
+            elif self.known_task_boundaries_at_train_time:
+                self.train_dataset = self.train_envs[self.current_task_id]
+                self.val_dataset = self.val_envs[self.current_task_id]
+                # TODO: The test loop goes through all the envs, hence this doesn't really
+                # work.
+                self.test_dataset = self.test_envs[self.current_task_id]
+            else:
+                self.train_dataset = ConcatEnvsWrapper(self.train_envs, add_task_ids=self.task_labels_at_train_time)
+                self.val_dataset = ConcatEnvsWrapper(self.val_envs, add_task_ids=self.task_labels_at_train_time)
+                self.test_dataset = ConcatEnvsWrapper(self.test_envs, add_task_ids=self.task_labels_at_test_time)
             # Check that the observation/action spaces are all the same for all
             # the train/valid/test envs
             # NOTE: Skipping this check for now.
@@ -806,25 +829,26 @@ class IncrementalRLSetting(IncrementalAssumption, DiscreteTaskAgnosticRLSetting)
             # `new_random_task_on_reset` which are still passed to the super() call, but
             # just unused.
             if new_random_task_on_reset:
-                raise NotImplementedError(
-                    "TODO: Add a MultiTaskEnv wrapper of some sort that alternates "
-                    " between the source envs."
-                )
+                pass
+                # raise NotImplementedError(
+                #     "TODO: Add a MultiTaskEnv wrapper of some sort that alternates "
+                #     " between the source envs."
+                # )
+            else:
+                assert not task_schedule
+                task_label = self.current_task_id
+                task_label_space = spaces.Discrete(self.nb_tasks)
+                if not task_labels_available:
+                    task_label = None
+                    task_label_space = Sparse(task_label_space, sparsity=1.0)
 
-            assert not task_schedule
-            task_label = self.current_task_id
-            task_label_space = spaces.Discrete(self.nb_tasks)
-            if not task_labels_available:
-                task_label = None
-                task_label_space = Sparse(task_label_space, sparsity=1.0)
-
-            wrappers.append(
-                partial(
-                    AddTaskIDWrapper,
-                    task_label=task_label,
-                    task_label_space=task_label_space,
+                wrappers.append(
+                    partial(
+                        AddTaskIDWrapper,
+                        task_label=task_label,
+                        task_label_space=task_label_space,
+                    )
                 )
-            )
 
         if is_monsterkong_env(base_env):
             # TODO: Need to register a MetaMonsterKong-State-v0 or something like that!
