@@ -25,7 +25,7 @@ extras_require = {
     ],
     "avalanche": [
         "gdown",  # BUG: Avalanche needs this to download cub200 dataset.
-        "avalanche @ git+https://github.com/ContinualAI/avalanche.git#egg=avalanche",
+        "avalanche-lib @ git+https://github.com/ContinualAI/avalanche.git#egg=avalanche-lib",
     ],
     # NOTE: Removing this for now, because it has very strict requirements, and includes
     # a lot of copy-pasted code, and doesn't really add anything compared to metaworld.
