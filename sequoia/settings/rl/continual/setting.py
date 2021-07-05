@@ -284,11 +284,11 @@ class ContinualRLSetting(RLSetting, ContinualAssumption):
     # Maximum number of training steps per task.
     # NOTE: In this particular setting, since there aren't clear 'tasks' to speak of, we
     # don't expose this option on the command-line.
-    train_steps_per_task: Optional[int] = field(default=None, to_dict=False, cmd=False)
+    train_steps_per_task: Optional[int] = None
     # Number of test steps per task.
     # NOTE: In this particular setting, since there aren't clear 'tasks' to speak of, we
     # don't expose this option on the command-line.
-    test_steps_per_task: Optional[int] = field(default=None, to_dict=False, cmd=False)
+    test_steps_per_task: Optional[int] = None
 
     # Deprecated: use `train_max_steps` instead.
     max_steps: Optional[int] = deprecated_property("max_steps", "train_max_steps")
@@ -589,9 +589,8 @@ class ContinualRLSetting(RLSetting, ContinualAssumption):
         # Ex: nb_tasks == 5, train_max_steps = 10_000:
         # change_steps = [0, 2_000, 4_000, 6_000, 8_000, 10_000]
         if self.train_steps_per_task is not None:
-            # TODO: a bit ugly, essentially need to check if this is for the  for subclasses, only for this setting.
             if self.smooth_task_boundaries:
-                train_max_steps = self.train_steps_per_task * (self.nb_tasks + 1)
+                train_max_steps = self.train_steps_per_task * self.nb_tasks
             else:
                 train_max_steps = self.train_steps_per_task * self.nb_tasks
         else:
@@ -603,7 +602,7 @@ class ContinualRLSetting(RLSetting, ContinualAssumption):
             temp_env=self._temp_train_env,
             change_steps=task_schedule_keys,
             # # TODO: Add properties for the train/valid/test seeds?
-            # seed=self.train_seed,
+            seed=self.config.seed if self.config else 123,
         )
 
     def create_val_task_schedule(self) -> TaskSchedule:
@@ -659,7 +658,7 @@ class ContinualRLSetting(RLSetting, ContinualAssumption):
                 temp_env,
                 step=step,
                 change_steps=change_steps,
-                seed=self.config.seed if self.config else None,
+                seed=seed,
             )
             task_schedule[step] = task
 
