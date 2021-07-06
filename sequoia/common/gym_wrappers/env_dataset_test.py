@@ -143,7 +143,9 @@ class TestEnvDataset:
                 rewards = env.send(env.action_space.sample())
                 all_rewards.append(rewards)
             assert len(all_rewards) == max_steps
-            env.reset()
+            
+            with pytest.raises(gym.error.ClosedEnvironmentError):
+                env.reset()
 
             with pytest.raises(gym.error.ClosedEnvironmentError):
                 for i in range(10):

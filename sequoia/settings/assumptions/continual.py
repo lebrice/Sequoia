@@ -290,12 +290,9 @@ class ContinualAssumption(AssumptionBase):
         run: Run = self.wandb.wandb_init()
         run.config["setting"] = setting_name
         run.config["method"] = method_name
-        if hasattr(self, "to_dict"):
-            for k, value in self.to_dict().items():
-                if not k.startswith("_"):
-                    run.config[f"setting/{k}"] = value
-
         run.summary["setting"] = self.get_name()
+        if isinstance(self.dataset, str):
+            run.summary["dataset"] = self.dataset
         run.summary["method"] = method.get_name()
         assert wandb.run is run
         return run

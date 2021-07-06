@@ -720,6 +720,7 @@ class Method(Generic[SettingType], Parseable, ABC):
         experiment_id: str = None,
         database_path: Union[str, Path] = None,
         max_runs: int = None,
+        hpo_algorithm: Union[str, Dict] = "BayesianOptimizer",
         debug: bool = False,
     ) -> Tuple[Dict, float]:
         """ Performs a Hyper-Parameter Optimization sweep using orion.
@@ -748,6 +749,9 @@ class Method(Generic[SettingType], Parseable, ABC):
         max_runs : int, optional
             Maximum number of runs to perform. Defaults to `None`, in which case the run
             lasts until the search space is exhausted.
+
+        hpo_algorithm : Union[str, Dict], optional
+            The hyper-parameter optimization algorithms to use.
 
         debug : bool, optional
             Wether to run Orion in debug-mode, where the database is an EphemeralDb,
@@ -778,7 +782,7 @@ class Method(Generic[SettingType], Parseable, ABC):
             name=experiment_name,
             space=search_space,
             debug=debug,
-            algorithms="BayesianOptimizer",
+            algorithms=hpo_algorithm,
             max_trials=max_runs,
             storage={
                 "type": "legacy",

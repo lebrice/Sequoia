@@ -4,7 +4,7 @@ These wrappers can be used to get different kinds of multi-task environments, or
 concatenate environments.
 """
 from abc import ABC, abstractmethod
-from typing import Any, Callable, List, Optional, Sequence
+from typing import Any, Callable, List, Optional, Sequence, Union
 
 import gym
 import numpy as np
@@ -16,6 +16,15 @@ from sequoia.utils.generic_functions import concatenate
 from sequoia.utils.logging_utils import get_logger
 
 logger = get_logger(__file__)
+
+
+def instantiate_env(env: Union[str, gym.Env, Callable[[], gym.Env]]) -> gym.Env:
+    if isinstance(env, gym.Env):
+        return env
+    if isinstance(env, str):
+        return gym.make(env)
+    assert callable(env)
+    return env()
 
 
 class MultiEnvWrapper(IterableWrapper, ABC):
@@ -32,12 +41,17 @@ class MultiEnvWrapper(IterableWrapper, ABC):
         self._envs_is_closed: Sequence[bool] = np.zeros([self.nb_tasks], dtype=bool)
         self._add_task_labels = add_task_ids
         self.rng: np.random.Generator = np.random.default_rng()
+
+        self._instantiate_env(self._current_task_id)
         super().__init__(env=self._envs[self._current_task_id])
         self.task_label_space = spaces.Discrete(self.nb_tasks)
         if self._add_task_labels:
             self.observation_space = add_task_labels(
                 self.env.observation_space, self.task_label_space
             )
+
+    def _instantiate_env(self, index: int) -> None:
+        self._envs[index] = instantiate_env(self._envs[index])
 
     def set_task(self, task_id: int) -> None:
         if self.is_closed(env_index=None):
@@ -49,6 +63,7 @@ class MultiEnvWrapper(IterableWrapper, ABC):
         # TODO: This also resets the '_is_closed' on self.
         # TODO: This resets the 'observation_' and 'action_' etc objects that are saved
         # in the constructor of the 'IterableWrapper'
+        self._instantiate_env(self._current_task_id)
         gym.Wrapper.__init__(self, env=self._envs[self._current_task_id])
         if self._add_task_labels:
             self.observation_space = add_task_labels(
@@ -135,9 +150,12 @@ class MultiEnvWrapper(IterableWrapper, ABC):
             this won't be true if seed=None, for example.
         """
         self.rng = np.random.default_rng(seed)
-        seeds = [seed]
-        for index, env in enumerate(self._envs):
-            env_seeds: Optional[List[int]] = env.seed(seed + index)
+        env_seeds = self.rng.integers(0, 1e8, size=len(self._envs)).tolist()
+        seeds = env_seeds.copy()
+        for index, env_seed in enumerate(env_seeds):
+            self._instantiate_env(index)
+            env = self._envs[index]
+            env_seeds: Optional[List[int]] = env.seed(env_seed)
             seeds.extend(env_seeds or [])
         return seeds
 

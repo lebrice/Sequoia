@@ -1,6 +1,7 @@
 from pathlib import Path
 from dataclasses import dataclass
 import json
+from simple_parsing.helpers import choice
 from typing import Optional, Dict, Union, List, Tuple, Type
 from sequoia.settings import Setting, Method, Results
 from sequoia.common.config import Config
@@ -29,6 +30,10 @@ class HPOSweep(Experiment):
 
     # Maximum number of runs to perform.
     max_runs: Optional[int] = 10
+
+    hpo_algorithm: str = choice(
+        {"random": "random", "bayesian": "BayesianOptimizer",}, default="bayesian"
+    )  # TODO: BayesianOptimizer does not support num > 1
 
     def __post_init__(self):
         super().__post_init__()
@@ -76,6 +81,7 @@ class HPOSweep(Experiment):
             database_path=self.database_path,
             experiment_id=self.experiment_id,
             max_runs=self.max_runs,
+            hpo_algorithm=self.hpo_algorithm,
         )
         print(
             "Best params:\n"

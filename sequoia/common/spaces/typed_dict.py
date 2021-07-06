@@ -44,6 +44,7 @@ class TypedDictSpace(spaces.Dict, Mapping[str, Space], Generic[M]):
         spaces = spaces or spaces_kwargs
         if spaces is not None and not isinstance(spaces, OrderedDict):
             spaces = OrderedDict(list(spaces.items()))
+        assert all(isinstance(s, gym.Space) for s in spaces.values()), spaces
         super().__init__(spaces=spaces)
         self.spaces = dict(self.spaces)  # Get rid of the OrderedDict.
 

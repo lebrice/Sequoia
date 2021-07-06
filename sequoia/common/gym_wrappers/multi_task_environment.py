@@ -137,12 +137,13 @@ def _add_task_labels_to_dict_space(
 def _add_task_labels_to_typed_dict_space(
     observation: TypedDictSpace, task_labels: T
 ) -> TypedDictSpace:
-    assert "task_labels" not in observation.spaces
+    # TODO: Raise a warning instead?
+    # assert "task_labels" not in observation.spaces, observation
     d_spaces = observation.spaces.copy()
     d_spaces["task_labels"] = task_labels
     # NOTE: We assume here that the `dtype` of the typed dict space (e.g. the
     # `Observations` class, usually) can handle having a `task_labels` field.
-    return type(observation)(**d_spaces, type=observation.dtype)
+    return type(observation)(**d_spaces, dtype=observation.dtype)
 
 
 @add_task_labels.register(dict)
@@ -150,7 +151,8 @@ def _add_task_labels_to_dict(
     observation: Dict[str, V], task_labels: T
 ) -> Dict[str, Union[V, T]]:
     new: Dict[str, Union[V, T]] = {key: value for key, value in observation.items()}
-    assert "task_labels" not in new
+    # TODO: Raise a warning instead?
+    # assert "task_labels" not in new
     new["task_labels"] = task_labels
     return type(observation)(**new)  # type: ignore
 

@@ -1,7 +1,9 @@
 dataset: MountainCarContinuous-v0
 monitor_training_performance: true
 nb_tasks: 8
-steps_per_task: 20_000
+train_max_steps: 160_000
+train_steps_per_task: 20_000
+test_max_steps: 80_000
 test_steps_per_task: 10_000
 train_task_schedule:
   0:

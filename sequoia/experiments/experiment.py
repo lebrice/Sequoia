@@ -146,7 +146,7 @@ class Experiment(Parseable, Serializable):
             # up by the Setting, just to prevent any ambiguities.
             try:
                 _, unused_args = self.setting.from_known_args()
-            except ImportError as exc:
+            except (ImportError, AssertionError) as exc:
                 # NOTE: An ImportError can occur here because of a missing OpenGL
                 # dependency, since when no arguments are passed, the default RL setting
                 # is created (cartpole with pixel observations), which requires a render
@@ -285,14 +285,17 @@ class Experiment(Parseable, Serializable):
         assert self.config is not None
 
         if not (isinstance(self.setting, Setting) and isinstance(self.method, Method)):
-            setting, method = parse_setting_and_method_instances(
+            self.setting, self.method = parse_setting_and_method_instances(
                 setting=self.setting, method=self.method, argv=argv, strict_args=strict_args
             )
 
-        setting.wandb = self.wandb
-        setting.config = self.config
+        assert isinstance(self.setting, Setting)
+        assert isinstance(self.method, Method)
 
-        return setting.apply(method, config=self.config)
+        self.setting.wandb = self.wandb
+        self.setting.config = self.config
+
+        return self.setting.apply(self.method, config=self.config)
 
 
     @classmethod
@@ -320,7 +323,7 @@ class Experiment(Parseable, Serializable):
             will be a dictionary mapping from
             (setting_type, method_type) tuples to Results.
         """
-
+        # TODO: Clean this up with the new command-line API.
         if argv is None:
             argv = sys.argv[1:]
         if isinstance(argv, str):
@@ -339,25 +342,17 @@ class Experiment(Parseable, Serializable):
 
         if setting and method:
             # One 'job': Launch it directly.
-            setting, method = parse_setting_and_method_instances(
-                setting=setting, method=method, argv=argv, strict_args=strict_args
-            )
-            assert isinstance(setting, Setting)
-            assert isinstance(method, Method)
-            setting.wandb = experiment.wandb
-
             results = experiment.launch(argv, strict_args=strict_args)
             print("\n\n EXPERIMENT IS DONE \n\n")
             print(f"Results: {results}")
             return results
 
-        else:
-            # TODO: Test out this other case. Haven't used it in a while.
-            # TODO: Move this to something like a BatchExperiment?
-            all_results = launch_batch_of_runs(
-                setting=setting, method=method, argv=argv
-            )
-            return all_results
+        # TODO: Test out this other case. Haven't used it in a while.
+        # TODO: Move this to something like a BatchExperiment?
+        all_results = launch_batch_of_runs(
+            setting=setting, method=method, argv=argv
+        )
+        return all_results
 
 
 def launch_batch_of_runs(

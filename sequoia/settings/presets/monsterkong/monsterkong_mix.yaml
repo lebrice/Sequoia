@@ -1,8 +1,11 @@
 dataset: monsterkong
 monitor_training_performance: true
 force_pixel_observations: true
-steps_per_task: 200_000
+nb_tasks: 8
+train_max_steps: 1_600_000
+train_steps_per_task: 200_000
 test_steps_per_task: 10_000
+test_max_steps: 80_000
 train_task_schedule:
   0:
     level: 0

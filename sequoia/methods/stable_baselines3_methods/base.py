@@ -147,10 +147,12 @@ class SB3BaseHParams(HyperParameters):
     # # Sample a new noise matrix every n steps when using gSDE Default: -1
     # (only sample at the beginning of the rollout)
     # sde_sample_freq: int = -1
-    
+
     # Wether to clear the experience buffer at the beginning of a new task.
     # NOTE: We use to_dict here so that it doesn't get passed do the Policy class.
-    clear_buffers_between_tasks: bool = categorical(True, False, default=False, to_dict=False)
+    clear_buffers_between_tasks: bool = categorical(
+        True, False, default=False, to_dict=False
+    )
 
 
 @dataclass
@@ -158,6 +160,7 @@ class StableBaselines3Method(Method, ABC, target_setting=ContinualRLSetting):
     """ Base class for the methods that use models from the stable_baselines3
     repo.
     """
+
     family: ClassVar[str] = "sb3"
 
     # Class variable that represents what kind of Model will be used.
@@ -176,10 +179,8 @@ class StableBaselines3Method(Method, ABC, target_setting=ContinualRLSetting):
     # non-stationarity only lasts for 10_000 steps, we'd have seen an almost
     # stationary distribution, since the environment would have stopped changing after
     # 10_000 steps.
-    train_steps_per_task: int = 10_000
+    # train_steps_per_task: int = 10_000
 
-    # Evaluate the agent every ``eval_freq`` timesteps (this may vary a little)
-    eval_freq: int = -1
     # callback(s) called at every step with state of the algorithm.
     callback: MaybeCallback = None
     # The number of timesteps before logging.
@@ -187,7 +188,8 @@ class StableBaselines3Method(Method, ABC, target_setting=ContinualRLSetting):
     # the name of the run for TensorBoard logging
     tb_log_name: str = "run"
     # Evaluate the agent every ``eval_freq`` timesteps (this may vary a little)
-    eval_freq: int = -1
+    # TODO: Log the evaluations to wandb.
+    eval_freq: int = 5_000
     # Number of episode to evaluate the agent
     n_eval_episodes = 5
     # Path to a folder where the evaluations will be saved
@@ -197,9 +199,14 @@ class StableBaselines3Method(Method, ABC, target_setting=ContinualRLSetting):
         self.model: Optional[BaseAlgorithm] = None
         # Extra wrappers to add to the train_env and valid_env before passing
         # them to the `learn` method from stable-baselines3.
-        from sequoia.common.gym_wrappers import TransformObservation, TransformAction, TransformReward
+        from sequoia.common.gym_wrappers import (
+            TransformObservation,
+            TransformAction,
+            TransformReward,
+        )
         import operator
         from functools import partial
+
         self.extra_train_wrappers: List[Callable[[gym.Env], gym.Env]] = [
             partial(TransformObservation, f=operator.itemgetter("x")),
             # partial(TransformAction, f=operator.itemgetter("y_pred"),
@@ -211,6 +218,9 @@ class StableBaselines3Method(Method, ABC, target_setting=ContinualRLSetting):
         ]
         # Number of timesteps to train on for each task.
         self.total_timesteps_per_task: int = 0
+
+        self.train_env: gym.Env = None
+        self.valid_env: gym.Env = None
 
     def configure(self, setting: ContinualRLSetting):
         # Delete the model, if present.
@@ -248,14 +258,14 @@ class StableBaselines3Method(Method, ABC, target_setting=ContinualRLSetting):
         # TODO: Double check that some settings might not impose a limit on
         # number of training steps per environment (e.g. task-incremental RL?)
         if setting.steps_per_phase:
-            if self.train_steps_per_task > setting.steps_per_phase:
-                warnings.warn(
-                    RuntimeWarning(
-                        f"Can't train for the requested {self.train_steps_per_task} "
-                        f"steps, since we're (currently) only allowed a maximum of "
-                        f"{setting.steps_per_phase} steps.)"
-                    )
-                )
+            # if self.train_steps_per_task > setting.steps_per_phase:
+            #     warnings.warn(
+            #         RuntimeWarning(
+            #             f"Can't train for the requested {self.train_steps_per_task} "
+            #             f"steps, since we're (currently) only allowed a maximum of "
+            #             f"{setting.steps_per_phase} steps.)"
+            #         )
+            #     )
             # Use as many training steps as possible.
             self.train_steps_per_task = setting.steps_per_phase - 1
         # Otherwise, we can train basically as long as we want on each task.
@@ -278,10 +288,39 @@ class StableBaselines3Method(Method, ABC, target_setting=ContinualRLSetting):
             self.model = self.create_model(train_env, valid_env)
         else:
             # TODO: "Adapt"/re-train the model on the new environment.
+            # BUG: In the MT10 benchmark, the last entry in the observation space is
+            # very slightly different, which prevents us from doing this:
+            """
+            >>> env.observation_space.low
+            array([-0.525 ,  0.348 , -0.0525, -1.    ,    -inf,    -inf,    -inf,
+                    -inf,    -inf,    -inf,    -inf,    -inf,    -inf,    -inf,
+                    -inf,    -inf,    -inf,    -inf, -0.525 ,  0.348 , -0.0525,
+                    -1.,    -inf,    -inf,    -inf,    -inf,    -inf,    -inf,
+                    -inf,    -inf,    -inf,    -inf,    -inf,    -inf,    -inf,
+                    -inf, -0.1   ,  0.8   ,  0.01  ], dtype=float32)
+            >>> observation_space.low
+            array([-0.525 ,  0.348 , -0.0525, -1.    ,    -inf,    -inf,    -inf,
+                    -inf,    -inf,    -inf,    -inf,    -inf,    -inf,    -inf,
+                    -inf,    -inf,    -inf,    -inf, -0.525 ,  0.348 , -0.0525,
+                    -1.,    -inf,    -inf,    -inf,    -inf,    -inf,    -inf,
+                    -inf,    -inf,    -inf,    -inf,    -inf,    -inf,    -inf,
+                    -inf, -0.1   ,  0.8   ,  0.05  ], dtype=float32)
+            """
+            if self.train_env is not None:
+                # BUG: MT10 has *slightly* different values in 'low' between tasks!
+                if (
+                    isinstance(train_env.observation_space, spaces.Box)
+                    and train_env.observation_space.shape[-1] == 39
+                ):
+                    train_env.observation_space = self.train_env.observation_space
             self.model.set_env(train_env)
+        self.train_env = train_env
+        self.valid_env = valid_env
 
         # Decide how many steps to train on.
         total_timesteps = self.train_steps_per_task
+        # TODO: Get the max number of steps directly from the env, rather than from the
+        # setting's fields.
         logger.info(f"Starting training, for a maximum of {total_timesteps} steps.")
         # todo: Customize the parametrers of the model and/or of this "learn"
         # method if needed.
@@ -380,8 +419,9 @@ class StableBaselines3Method(Method, ABC, target_setting=ContinualRLSetting):
             # TODO: These are really interesting methods!
             # self.model.save_replay_buffer
             # self.model.load_replay_buffer
-            
+
             self.model.replay_buffer.reset()
+
 
 # We do this just to prevent errors when trying to decode the hparams class above, and
 # also to silence the related warnings from simple-parsing's decoding.py module.

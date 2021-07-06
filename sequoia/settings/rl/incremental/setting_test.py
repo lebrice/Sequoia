@@ -7,6 +7,7 @@ import gym
 import numpy as np
 import pytest
 from gym import spaces
+from sequoia.conftest import slow
 from sequoia.methods import Method
 from sequoia.common.config import Config
 from sequoia.common.spaces import Image, Sparse
@@ -313,56 +314,44 @@ def test_metaworld_support(config: Config):
     method = DummyMethod()
     results = setting.apply(method, config=config)
     assert results.summary()
-    # benchmark = metaworld.ML10()  # Construct the benchmark, sampling tasks
 
-    # env_name = "reach-v2"
-    # env_type: Type[MetaWorldEnv] = benchmark.train_classes[env_name]
-    # env = env_type()
 
-    # training_tasks = [
-    #     task for task in benchmark.train_tasks if task.env_name == env_name
-    # ]
-    # setting = TaskIncrementalRLSetting(
-    #     dataset=env,
-    #     train_task_schedule={
-    #         i* 1000: operator.methodcaller("set_task", task)
-    #         for i, task in enumerate(training_tasks)
-    #     },
-    #     transforms=[],
-    # )
-    # assert setting.nb_tasks == 50
-    # assert setting.steps_per_task == 1000
-    # assert sorted(setting.train_task_schedule.keys()) == list(range(0, 50_000, 1000))
+@slow
+@metaworld_required
+@pytest.mark.timeout(180)
+@pytest.mark.parametrize("dataset", ["CW10", "CW20"])
+def test_continual_world_support(dataset: str, config: Config):
+    """ Test using CW10 and CW20 benchmarks as the dataset of an RL Setting.
 
-    # # TODO: Clear the transforms by default, and add it back if needed?
-    # assert setting.train_transforms == []
-    # assert setting.val_transforms == []
-    # assert setting.test_transforms == []
+    TODO: This test is quite long to run, in part because metaworld takes like 20
+    seconds to load, and there being 20 tasks in CW20
+    """
+    # TODO: Add option of passing a benchmark instance? That might make it quicker to
+    # run tests?
+    setting = IncrementalRLSetting(
+        dataset=dataset,
+        config=config,
+        max_episode_steps=10,
+        train_steps_per_task=50,
+        test_steps_per_task=50,
+    )
+    assert setting.nb_tasks == 10 if dataset == "CW10" else 20
+    assert setting.train_steps_per_task == 50
+    assert setting.test_steps_per_task == 50
+    assert setting.train_max_steps == setting.train_steps_per_task * setting.nb_tasks
+    assert setting.test_steps_per_task == setting.test_steps_per_task
+    assert setting.test_max_steps == setting.test_steps_per_task * setting.nb_tasks
 
-    # assert setting.observation_space.x == env.observation_space
-
-    # # Only test out the first 3 tasks for now.
-    # # TODO: Also try out the valid and test environments.
-    # for task_id in range(3):
-    #     setting.current_task_id = task_id
-
-    #     train_env = setting.train_dataloader()
-    #     assert train_env.observation_space.x == env.observation_space
-    #     assert train_env.observation_space.task_labels == spaces.Discrete(
-    #         setting.nb_tasks
-    #     )
-
-    #     n_episodes = 1
-    #     for episode in range(n_episodes):
-    #         obs = train_env.reset()
-    #         done = False
-    #         steps = 0
-    #         while not done and steps < env.max_path_length:
-    #             obs, reward, done, info = train_env.step(
-    #                 train_env.action_space.sample()
-    #             )
-    #             # train_env.render()
-    #             steps += 1
+    assert (
+        setting.nb_tasks
+        == len(setting.train_envs)
+        == len(setting.val_envs)
+        == len(setting.test_envs)
+    )
+    method = DummyMethod()
+    results = setting.apply(method, config=config)
+    assert method.train_episodes_per_task == [5 for _ in range(setting.nb_tasks)]
+    assert results.summary()
 
 
 @pytest.mark.xfail(reason="Metaworld integration isn't done yet")

@@ -78,8 +78,13 @@ class DiscreteTaskAgnosticRLSetting(DiscreteContextAssumption, ContinualRLSettin
     # (something like 5).
     nb_tasks: int = field(5, alias=["n_tasks", "num_tasks"])
 
-    # train_max_steps_per_task: int = 20_000
+    # Maximum number of training steps per task.
+    train_steps_per_task: Optional[int] = None
+    # Number of test steps per task.
+    test_steps_per_task: Optional[int] = None
+
     # # Maximum number of episodes in total.
+    # train_max_episodes: Optional[int] = None
     # # TODO: Add tests for this 'max episodes' and 'episodes_per_task'.
     # train_max_episodes_per_task: Optional[int] = None
     # # Total number of steps in the test loop. (Also acts as the "length" of the testing
