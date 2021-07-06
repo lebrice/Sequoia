@@ -32,7 +32,7 @@ class TrainerConfig(HyperParameters):
 
     # Number of nodes to use.
     num_nodes: int = 1
-    distributed_backend: Optional[str] = "dp" if gpus != 0 else None
+    accelerator: Optional[str] = "dp" if gpus != 0 else None
     log_gpu_memory: bool = False
 
     val_check_interval: Union[int, float] = 1.0
@@ -77,7 +77,7 @@ class TrainerConfig(HyperParameters):
             gpus=self.gpus,
             num_nodes=self.num_nodes,
             max_epochs=self.max_epochs,
-            distributed_backend=self.distributed_backend,
+            accelerator=self.accelerator,
             log_gpu_memory=self.log_gpu_memory,
             overfit_batches=self.overfit_batches,
             fast_dev_run=self.fast_dev_run,
