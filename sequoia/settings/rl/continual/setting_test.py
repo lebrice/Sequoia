@@ -75,11 +75,13 @@ def make_dataset_fixture(setting_type) -> pytest.fixture:
     def dataset(self, request):
         dataset = request.param
         return dataset
-    datasets = list(set(setting_type.available_datasets.values()))
-    # FIXME: Temporarily removing this MT10 from the datasets, because it isn't the same
-    # as a gym ID
-    if "MT10" in datasets:
-        datasets.remove("MT10")
+    datasets = set(setting_type.available_datasets.values())
+    # FIXME: Temporarily removing these datasets because they take quite a long time to
+    # run. Also: not sure if we can use a `slow_param` on these only, because we're
+    # parameterizing a fixture rather than a test.
+    datasets_to_remove = set(["MT10", "MT50", "CW10", "CW20"])
+    datasets = list(datasets - datasets_to_remove)
+    
     return pytest.fixture(
         params=datasets, scope="module",
     )(dataset)

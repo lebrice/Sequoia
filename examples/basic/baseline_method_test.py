@@ -13,7 +13,7 @@ from sequoia.settings.sl import MultiTaskSLSetting
 @pytest.mark.xfail(reason="WIP")
 @pytest.mark.timeout(120)
 def test_class_incremental_setting():
-    method = BaseMethod(no_wandb=True, max_epochs=1)
+    method = BaseMethod(max_epochs=1)
     setting = ClassIncrementalSetting()
     results = setting.apply(method)
     print(results.summary())
@@ -35,7 +35,7 @@ def test_class_incremental_setting():
 
 @pytest.mark.timeout(300)
 def test_multi_task_setting():
-    method = BaseMethod(no_wandb=True, max_epochs=1)
+    method = BaseMethod(max_epochs=1)
     setting = MultiTaskSLSetting(dataset="mnist")
     results = setting.apply(method)
     print(results.summary())

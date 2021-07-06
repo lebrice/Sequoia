@@ -2,13 +2,132 @@ from dataclasses import dataclass
 
 import pytest
 
-from sequoia.settings import Setting
+from sequoia.settings import Setting, SLSetting, RLSetting
 
 from sequoia.settings.base import Method
+from typing import ClassVar, Type
+from sequoia.common.config import Config
+from typing import Dict
 
 
-class MethodTests:
+def make_setting_type_fixture(method_type: Type[Method]) -> pytest.fixture:
+    """ Create a parametrized fixture that will go through all the applicable settings
+    for a given method.
+    """
+
+    def setting_type(self, request):
+        setting_type = request.param
+        return setting_type
+
+    setting_types = set(method_type.get_applicable_settings())
+    settings_to_remove = set([
+        Setting, SLSetting, RLSetting
+    ])
+    setting_types = list(setting_types - settings_to_remove)
+    
+    return pytest.fixture(params=setting_types, scope="module",)(setting_type)
+
+from typing import TypeVar, Generic
+from abc import abstractmethod, ABC
+from sequoia.settings.sl.continual.setting import random_subset
+
+MethodType = TypeVar("MethodType", bound=Method)
+
+
+class MethodTests(ABC):
     """ Base class that can be extended to generate tests for a method. """
+
+    Method: ClassVar[Type[MethodType]]
+    setting_type: pytest.fixture
+    method_debug_kwargs: ClassVar[Dict] = {}
+
+    def __init_subclass__(cls, method: Type[MethodType] = None):
+        super().__init_subclass__()
+        if not method and not hasattr(cls, "Method"):
+            raise RuntimeError(
+                "Need to either pass `method` when subclassing or set "
+                "a 'Method' class attribute."
+            )
+        cls.Method = cls.Method or method
+        cls.setting_type: pytest.fixture = make_setting_type_fixture(cls.Method)
+
+    @pytest.fixture(scope="module")
+    def setting(self, setting_type: Type[Setting], session_config: Config):
+        # TODO: Fix this test setup, nb_tasks should be something low like 2, and
+        # perhaps use max_episode_steps to limit episode length
+        if issubclass(setting_type, SLSetting):
+            setting = setting_type(
+                # TODO: Do we also want to parameterize the dataset? or is it too much?
+                # dataset=self.debug_dataset,
+                nb_tasks=5,
+                config=session_config,
+            )
+            setting.config = session_config
+            setting.prepare_data()
+            setting.setup()
+            nb_tasks = 5
+            samples_per_task = 50
+            # Testing this out: Shortening the train datasets:
+            setting.train_datasets = [
+                random_subset(task_dataset, samples_per_task) for task_dataset in setting.train_datasets
+            ]
+            setting.val_datasets = [
+                random_subset(task_dataset, samples_per_task) for task_dataset in setting.val_datasets
+            ]
+            setting.test_datasets = [
+                random_subset(task_dataset, samples_per_task) for task_dataset in setting.test_datasets
+            ]
+            assert len(setting.train_datasets) == nb_tasks
+            assert len(setting.val_datasets) == nb_tasks
+            assert len(setting.test_datasets) == nb_tasks
+            assert all(len(dataset) == samples_per_task for dataset in setting.train_datasets)
+            assert all(len(dataset) == samples_per_task for dataset in setting.val_datasets)
+            assert all(len(dataset) == samples_per_task for dataset in setting.test_datasets)
+
+            # Assert that calling setup doesn't overwrite the datasets.
+            setting.setup()
+            assert len(setting.train_datasets) == nb_tasks
+            assert len(setting.val_datasets) == nb_tasks
+            assert len(setting.test_datasets) == nb_tasks
+            assert all(len(dataset) == samples_per_task for dataset in setting.train_datasets)
+            assert all(len(dataset) == samples_per_task for dataset in setting.val_datasets)
+            assert all(len(dataset) == samples_per_task for dataset in setting.test_datasets)
+        else:
+            setting = setting_type(
+                # TODO: Do we also want to parameterize the dataset? or is it too much?
+                # dataset=self.debug_dataset, 
+                nb_tasks=2,
+                train_max_steps=1_000,
+                test_max_steps=1_000,
+                # steps_per_task=2_000,
+                # test_steps_per_task=1_000,
+                config=session_config,
+            )
+   
+        yield setting
+
+    @classmethod
+    @abstractmethod
+    @pytest.fixture
+    def method(cls, config: Config) -> MethodType:
+        """ Fixture that returns the Method instance to use when testing/debugging.
+        """
+        return cls.Method()
+
+    def test_debug(self, method: MethodType, setting: Setting, config: Config):
+        results: Setting.Results = setting.apply(method)
+        assert results.objective is not None
+        print(results.summary())
+        self.validate_results(setting=setting, method=method, results=results)
+
+    def validate_results(
+        self,
+        setting: Setting,
+        method: MethodType,
+        results: Setting.Results,
+    ) -> None:
+        assert results
+        assert results.objective
 
 
 @dataclass

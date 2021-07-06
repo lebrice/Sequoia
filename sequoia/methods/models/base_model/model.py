@@ -472,7 +472,7 @@ class Model(LightningModule, Generic[SettingType]):
                 environment.render("human")
                 # import matplotlib.pyplot as plt
                 # plt.waitforbuttonpress(10)
-
+            assert isinstance(actions, Actions), actions
             rewards = environment.send(actions)
             assert rewards is not None
 

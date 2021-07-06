@@ -120,7 +120,7 @@ sequoia --setting <some_setting> --method <some_method>  (arguments)
 For example:
 - Run the BaseMethod on task-incremental MNIST, with one epoch per task, and without wandb:
     ```console
-    sequoia --setting task_incremental --dataset mnist --method baseline --max_epochs 1 --no_wandb
+    sequoia --setting task_incremental --dataset mnist --method baseline --max_epochs 1
     ```
 - Run the PPO Method from stable-baselines3 on an incremental RL setting, with the default dataset (CartPole) and 5 tasks: 
     ```console

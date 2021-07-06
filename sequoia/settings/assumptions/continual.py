@@ -226,13 +226,6 @@ class ContinualAssumption(AssumptionBase):
 
                 action = method.get_actions(obs, action_space)
 
-                # logger.debug(f"action: {action}")
-                # TODO: Remove this:
-                if isinstance(action, Actions):
-                    action = action.y_pred
-                if isinstance(action, Tensor):
-                    action = action.detach().cpu().numpy()
-
                 if test_env.is_closed():
                     break
 

@@ -50,6 +50,11 @@ class TrainerConfig(HyperParameters):
     # How much of test dataset to check (floats = percent, int = num_batches)
     limit_test_batches: Union[int, float] = 1.0
 
+    # If ``True``, enable checkpointing.
+    # It will configure a default ModelCheckpoint callback if there is no user-defined
+    # ModelCheckpoint in the `callbacks`.
+    checkpoint_callback: bool = True
+
     def make_trainer(
         self,
         config: Config,
@@ -64,6 +69,7 @@ class TrainerConfig(HyperParameters):
         # lightning.
         from pytorch_lightning.trainer.connectors.data_connector import DataConnector
         import pytorch_lightning.trainer.trainer
+
         setattr(pytorch_lightning.trainer.trainer, "DataConnector", DataConnector)
         trainer = Trainer(
             logger=loggers,
@@ -84,5 +90,6 @@ class TrainerConfig(HyperParameters):
             limit_train_batches=self.limit_train_batches,
             limit_val_batches=self.limit_val_batches,
             limit_test_batches=self.limit_train_batches,
+            checkpoint_callback=self.checkpoint_callback,
         )
         return trainer
