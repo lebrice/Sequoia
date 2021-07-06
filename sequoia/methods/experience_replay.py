@@ -1,6 +1,7 @@
-"""A random baseline Method that gives random predictions for any input.
+""" Method that uses a replay buffer to prevent forgetting.
 
-Should be applicable to any Setting.
+TODO: Refactor this to be based on the BaseMethod, possibly using an auxiliary task for
+the Replay.
 """
 from collections.abc import Iterable
 from dataclasses import dataclass
