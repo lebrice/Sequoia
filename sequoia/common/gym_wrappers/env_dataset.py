@@ -61,6 +61,19 @@ class EnvDataset(
         max_episodes: Optional[int] = None,
         max_steps_per_episode: Optional[int] = None,
     ):
+        # TODO: Add an ActionLimit wrapper for max_steps and the EpisodeLimit wrapper
+        # for max_episodes.
+        if max_steps:
+            from .action_limit import ActionLimit
+            env = ActionLimit(env, max_steps=max_steps)
+        else:
+            self.max_steps = getattr(env, "max_steps", None)
+        if max_episodes:
+            from .episode_limit import EpisodeLimit
+            env = EpisodeLimit(env, max_episodes=max_episodes)
+        else:
+            self.max_episodes = getattr(env, "max_episodes", None)
+
         super().__init__(env=env)
         if isinstance(env.unwrapped, VectorEnv):
             if not max_steps_per_episode:
@@ -72,11 +85,11 @@ class EnvDataset(
                     )
                 )
 
-        # Maximum number of episodes per iteration.
-        self.max_episodes = max_episodes
+        # Maximum number of episodes
+        # self.max_episodes = None
         # Maximum number of steps per iteration.
-        self.max_steps = max_steps
-        self.max_steps_per_episode = max_steps_per_episode
+        # self.max_steps = None
+        self.max_steps_per_episode = None
 
         # Number of steps performed in the current episode.
         self.n_steps_in_episode_: int = 0

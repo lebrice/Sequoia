@@ -319,6 +319,8 @@ class StableBaselines3Method(Method, ABC, target_setting=ContinualRLSetting):
 
         # Decide how many steps to train on.
         total_timesteps = self.train_steps_per_task
+        # TODO: Get the max number of steps directly from the env, rather than from the
+        # setting's fields.
         logger.info(f"Starting training, for a maximum of {total_timesteps} steps.")
         # todo: Customize the parametrers of the model and/or of this "learn"
         # method if needed.
