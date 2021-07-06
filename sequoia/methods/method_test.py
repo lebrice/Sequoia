@@ -39,6 +39,8 @@ class MethodTests(ABC):
 
     Method: ClassVar[Type[MethodType]]
     setting_type: pytest.fixture
+    # Kwargs to pass when contructing the Settings.
+    setting_kwargs: ClassVar[Dict] = {}
     method_debug_kwargs: ClassVar[Dict] = {}
 
     def __init_subclass__(cls, method: Type[MethodType] = None):
@@ -51,16 +53,30 @@ class MethodTests(ABC):
         cls.Method = cls.Method or method
         cls.setting_type: pytest.fixture = make_setting_type_fixture(cls.Method)
 
+    @classmethod
+    @abstractmethod
+    @pytest.fixture
+    def method(cls, config: Config) -> MethodType:
+        """ Fixture that returns the Method instance to use when testing/debugging.
+
+        Needs to be implemented when creating a new test class (to generate tests for a
+        new method).
+        """
+        return cls.Method()
+
     @pytest.fixture(scope="module")
     def setting(self, setting_type: Type[Setting], session_config: Config):
         # TODO: Fix this test setup, nb_tasks should be something low like 2, and
         # perhaps use max_episode_steps to limit episode length
         if issubclass(setting_type, SLSetting):
-            setting = setting_type(
-                # TODO: Do we also want to parameterize the dataset? or is it too much?
-                # dataset=self.debug_dataset,
+            setting_kwargs = dict(
                 nb_tasks=5,
                 config=session_config,
+            )
+            # TODO: Do we also want to parameterize the dataset? or is it too much?
+            setting_kwargs.update(self.setting_kwargs)
+            setting = setting_type(
+                **setting_kwargs,
             )
             setting.config = session_config
             setting.prepare_data()
@@ -93,9 +109,7 @@ class MethodTests(ABC):
             assert all(len(dataset) == samples_per_task for dataset in setting.val_datasets)
             assert all(len(dataset) == samples_per_task for dataset in setting.test_datasets)
         else:
-            setting = setting_type(
-                # TODO: Do we also want to parameterize the dataset? or is it too much?
-                # dataset=self.debug_dataset, 
+            setting_kwargs = dict(
                 nb_tasks=2,
                 train_max_steps=1_000,
                 test_max_steps=1_000,
@@ -103,23 +117,22 @@ class MethodTests(ABC):
                 # test_steps_per_task=1_000,
                 config=session_config,
             )
-   
+            # TODO: Do we also want to parameterize the dataset? or is it too much?
+            setting_kwargs.update(self.setting_kwargs)
+            setting = setting_type(
+                **setting_kwargs,
+            )
+
         yield setting
 
-    @classmethod
-    @abstractmethod
-    @pytest.fixture
-    def method(cls, config: Config) -> MethodType:
-        """ Fixture that returns the Method instance to use when testing/debugging.
-        """
-        return cls.Method()
 
     def test_debug(self, method: MethodType, setting: Setting, config: Config):
-        results: Setting.Results = setting.apply(method)
+        results: Setting.Results = setting.apply(method, config=config)
         assert results.objective is not None
         print(results.summary())
         self.validate_results(setting=setting, method=method, results=results)
 
+    @abstractmethod
     def validate_results(
         self,
         setting: Setting,

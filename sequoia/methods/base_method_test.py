@@ -48,6 +48,18 @@ class TestBaseMethod(MethodTests):
         trainer_options.max_epochs = 1
         return cls.Method(trainer_options=trainer_options, config=config)
 
+    def validate_results(
+        self,
+        setting: Setting,
+        method: BaseMethod,
+        results: Setting.Results,
+    ) -> None:
+        assert results
+        assert results.objective
+        # TODO: Set some 'reasonable' bounds on the performance here, depending on the
+        # setting/dataset.
+
+    
     @slow
     @pytest.mark.timeout(120)
     def test_cartpole_state(self, config: Config, trainer_options: TrainerConfig):
