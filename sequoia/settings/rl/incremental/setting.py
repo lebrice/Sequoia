@@ -613,7 +613,7 @@ class IncrementalRLSetting(IncrementalAssumption, DiscreteTaskAgnosticRLSetting)
         )
 
     def create_task_schedule(
-        self, temp_env: gym.Env, change_steps: List[int]
+        self, temp_env: gym.Env, change_steps: List[int], seed: int = None,
     ) -> Dict[int, Dict]:
         task_schedule: Dict[int, Dict] = {}
         if self._using_custom_envs_foreach_task:
@@ -641,7 +641,7 @@ class IncrementalRLSetting(IncrementalAssumption, DiscreteTaskAgnosticRLSetting)
                 temp_env,
                 step=step,
                 change_steps=change_steps,
-                seed=self.config.seed if self.config else None,
+                seed=seed,
             )
             task_schedule[step] = task
 
