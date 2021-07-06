@@ -146,7 +146,7 @@ class Experiment(Parseable, Serializable):
             # up by the Setting, just to prevent any ambiguities.
             try:
                 _, unused_args = self.setting.from_known_args()
-            except ImportError as exc:
+            except (ImportError, AssertionError) as exc:
                 # NOTE: An ImportError can occur here because of a missing OpenGL
                 # dependency, since when no arguments are passed, the default RL setting
                 # is created (cartpole with pixel observations), which requires a render
