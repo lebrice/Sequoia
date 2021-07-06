@@ -181,8 +181,6 @@ class StableBaselines3Method(Method, ABC, target_setting=ContinualRLSetting):
     # 10_000 steps.
     # train_steps_per_task: int = 10_000
 
-    # Evaluate the agent every ``eval_freq`` timesteps (this may vary a little)
-    eval_freq: int = -1
     # callback(s) called at every step with state of the algorithm.
     callback: MaybeCallback = None
     # The number of timesteps before logging.
@@ -190,7 +188,8 @@ class StableBaselines3Method(Method, ABC, target_setting=ContinualRLSetting):
     # the name of the run for TensorBoard logging
     tb_log_name: str = "run"
     # Evaluate the agent every ``eval_freq`` timesteps (this may vary a little)
-    eval_freq: int = -1
+    # TODO: Log the evaluations to wandb.
+    eval_freq: int = 5_000
     # Number of episode to evaluate the agent
     n_eval_episodes = 5
     # Path to a folder where the evaluations will be saved
