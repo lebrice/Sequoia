@@ -398,10 +398,7 @@ class ContinualRLSetting(RLSetting, ContinualAssumption):
             if max(self.train_task_schedule) == len(self.train_task_schedule) - 1:
                 # If the keys correspond to the task ids rather than the transition steps:
                 nb_tasks = len(self.train_task_schedule) - 1
-                if self.train_steps_per_task is not None:
-                    steps_per_task = self.train_steps_per_task
-                else:
-                    steps_per_task = self.train_max_steps // nb_tasks
+                steps_per_task = self.train_steps_per_task or self.train_max_steps // nb_tasks
                 self.train_task_schedule = type(self.train_task_schedule)(
                     {
                         i * steps_per_task: self.train_task_schedule[step]
