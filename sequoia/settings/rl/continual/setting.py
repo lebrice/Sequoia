@@ -392,27 +392,57 @@ class ContinualRLSetting(RLSetting, ContinualAssumption):
         self._temp_test_env: Optional[gym.Env] = None
         # Create the task schedules, using the 'task sampling' function from `tasks.py`.
 
+        defaults = {f.name: f.default for f in fields(self)}
+
         if not self.train_task_schedule:
             self.train_task_schedule = self.create_train_task_schedule()
-        else:
-            if max(self.train_task_schedule) == len(self.train_task_schedule) - 1:
-                # If the keys correspond to the task ids rather than the transition steps:
-                nb_tasks = len(self.train_task_schedule) - 1
-                steps_per_task = self.train_steps_per_task or self.train_max_steps // nb_tasks
-                self.train_task_schedule = type(self.train_task_schedule)(
-                    {
-                        i * steps_per_task: self.train_task_schedule[step]
-                        for i, step in enumerate(
-                            sorted(self.train_task_schedule.keys())
-                        )
-                    }
+        elif max(self.train_task_schedule) == len(self.train_task_schedule) - 1:
+            # If the keys correspond to the task ids rather than the transition steps:
+            if self.nb_tasks == defaults["nb_tasks"]:
+                self.nb_tasks = len(self.train_task_schedule)
+                if self.smooth_task_boundaries:
+                    # Remove 1 because the last key shows the final state.
+                    self.nb_tasks -= 1
+                logger.info(
+                    f"Setting the number of tasks to {self.nb_tasks} based on the task "
+                    f"schedule."
                 )
-            nb_tasks = len(self.train_task_schedule) - 1
-            logger.info(
-                f"Setting the number of tasks to {nb_tasks} based on the task schedule."
+            self.train_steps_per_task = self.train_steps_per_task or self.train_max_steps // self.nb_tasks
+            self.train_task_schedule = type(self.train_task_schedule)(
+                {
+                    i * self.train_steps_per_task: self.train_task_schedule[step]
+                    for i, step in enumerate(
+                        sorted(self.train_task_schedule.keys())
+                    )
+                }
             )
-            self.nb_tasks = nb_tasks
-            # self.train_max_steps = max(self.train_task_schedule)
+
+        if self.smooth_task_boundaries:
+            # NOTE: Need to have an entry at the final step  
+            last_task_step = max(self.train_task_schedule.keys())
+            last_task = self.train_task_schedule[last_task_step]
+            if self.train_max_steps not in self.train_task_schedule:
+                #FIXME Duplicating the last task for now?
+                self.train_task_schedule[self.train_max_steps] = last_task
+
+        if 0 not in self.train_task_schedule.keys():
+            raise RuntimeError(
+                "`train_task_schedule` needs an entry at key 0, as the initial state"
+            )
+        if self.train_max_steps != max(self.train_task_schedule):
+            if self.train_max_steps == defaults["train_max_steps"]:
+                self.train_max_steps = max(self.train_task_schedule)
+                logger.info(f"Setting `train_max_steps` to {self.train_max_steps}")
+            elif self.smooth_task_boundaries:
+                raise RuntimeError(
+                    f"For now, the train task schedule needs to have a value at key "
+                    f"`train_max_steps` ({self.train_max_steps})."
+                )
+            else:
+                last_task_step = max(self.train_task_schedule)
+                last_task = self.train_task_schedule[last_task_step]
+                logger.debug("Using the last task as the final state.")
+                self.train_task_schedule[self.train_max_steps] = last_task
 
         if not self.val_task_schedule:
             # Avoid creating an additional env, just reuse the train_temp_env.
@@ -440,21 +470,32 @@ class ContinualRLSetting(RLSetting, ContinualAssumption):
                 else self._make_env(self.val_dataset)
             )
             self.test_task_schedule = self.create_test_task_schedule()
-        else:
-            if max(self.test_task_schedule) == len(self.test_task_schedule) - 1:
-                # If the keys correspond to the task ids rather than the transition steps
-                nb_tasks = len(self.test_task_schedule)
-                if self.test_steps_per_task is not None:
-                    steps_per_task = self.test_steps_per_task
-                else:
-                    steps_per_task = self.test_max_steps // nb_tasks
-                self.test_task_schedule = type(self.test_task_schedule)(
-                    **{
-                        i * steps_per_task: self.test_task_schedule[step]
-                        for i, step in enumerate(sorted(self.test_task_schedule.keys()))
-                    }
+        elif max(self.test_task_schedule) == len(self.test_task_schedule) - 1:
+            # If the keys correspond to the task ids rather than the transition steps
+            nb_tasks = len(self.test_task_schedule)
+            if self.test_steps_per_task is not None:
+                steps_per_task = self.test_steps_per_task
+            else:
+                steps_per_task = self.test_max_steps // nb_tasks
+            self.test_task_schedule = type(self.test_task_schedule)(
+                **{
+                    i * steps_per_task: self.test_task_schedule[step]
+                    for i, step in enumerate(sorted(self.test_task_schedule.keys()))
+                }
+            )
+        if 0 not in self.test_task_schedule.keys():
+            raise RuntimeError(
+                "`test_task_schedule` needs an entry at key 0, as the initial state"
+            )
+        if self.test_max_steps != max(self.test_task_schedule):
+            if self.test_max_steps == defaults["test_max_steps"]:
+                self.test_max_steps = max(self.test_task_schedule)
+                logger.info(f"Setting `test_max_steps` to {self.test_max_steps}")
+            elif self.smooth_task_boundaries:
+                raise RuntimeError(
+                    f"For now, the test task schedule needs to have a value at key "
+                    f"`test_max_steps` ({self.test_max_steps}). "
                 )
-            # self.test_max_steps = max(self.test_task_schedule)
 
         if self._temp_train_env:
             self._temp_train_env.close()
@@ -463,7 +504,6 @@ class ContinualRLSetting(RLSetting, ContinualAssumption):
         if self._temp_test_env and self._temp_test_env is not self._temp_train_env:
             self._temp_test_env.close()
 
-        defaults = {f.name: f.default for f in fields(self)}
         train_task_lengths: List[int] = [
             task_b_step - task_a_step
             for task_a_step, task_b_step in pairwise(
@@ -478,33 +518,7 @@ class ContinualRLSetting(RLSetting, ContinualAssumption):
                 sorted(self.test_task_schedule.keys())
             )
         ]
-        if 0 not in self.train_task_schedule.keys():
-            raise RuntimeError(
-                "`train_task_schedule` needs an entry at key 0, as the initial state"
-            )
-        if 0 not in self.test_task_schedule.keys():
-            raise RuntimeError(
-                "`test_task_schedule` needs an entry at key 0, as the initial state"
-            )
-        if self.train_max_steps != max(self.train_task_schedule):
-            if self.train_max_steps == defaults["train_max_steps"]:
-                self.train_max_steps = max(self.train_task_schedule)
-                logger.info(f"Setting `train_max_steps` to {self.train_max_steps}")
-            else:
-                raise RuntimeError(
-                    f"For now, the train task schedule needs to have a value at key "
-                    f"`train_max_steps` ({self.train_max_steps})."
-                )
-        if self.test_max_steps != max(self.test_task_schedule):
-            if self.test_max_steps == defaults["test_max_steps"]:
-                logger.info(f"Setting `test_max_steps` to {self.train_max_steps}")
-                self.test_max_steps = max(self.test_task_schedule)
 
-        if self.test_max_steps != max(self.test_task_schedule):
-            raise RuntimeError(
-                f"For now, the test task schedule needs to have a value at key "
-                f"`test_max_steps` ({self.test_max_steps}). "
-            )
         if not (
             len(self.train_task_schedule)
             == len(self.test_task_schedule)
@@ -515,21 +529,21 @@ class ContinualRLSetting(RLSetting, ContinualAssumption):
                 "number of items for now."
             )
 
-        # Expected value for self.nb_tasks
-        nb_tasks = len(self.train_task_schedule) - 1
-        # if self.nb_tasks != nb_tasks:
-        #     raise RuntimeError(
-        #         f"Expected `nb_tasks` to be {nb_tasks}, since there are "
-        #         f"{len(train_task_schedule)} tasks in the task schedule, but got value "
-        #         f"of {self.nb_tasks} instead!"
-        #     )
-
         train_last_boundary = max(
             set(self.train_task_schedule.keys()) - {self.train_max_steps}
         )
         test_last_boundary = max(
             set(self.test_task_schedule.keys()) - {self.test_max_steps}
         )
+        
+        # Expected value for self.nb_tasks
+        # if self.nb_tasks != nb_tasks:
+        #     raise RuntimeError(
+        #         f"Expected `nb_tasks` to be {nb_tasks}, since there are "
+        #         f"{len(train_task_schedule)} tasks in the task schedule, but got value "
+        #         f"of {self.nb_tasks} instead!"
+        #     )
+        nb_tasks = len(self.train_task_schedule) - 1
         if self.nb_tasks != nb_tasks:
             if self.nb_tasks == defaults["nb_tasks"]:
                 assert len(self.train_task_schedule) == len(self.test_task_schedule)
