@@ -18,27 +18,20 @@ from .base_method import BaseMethod, BaseModel
 from .method_test import MethodTests
 
 
-@pytest.fixture(scope="module")
-def trainer_options(tmp_path_factory) -> TrainerConfig:
-    tmp_path = tmp_path_factory.mktemp("log_dir")
-    return TrainerConfig(
-        # logger=False,
-        max_epochs=1,
-        checkpoint_callback=False,
-        default_root_dir=tmp_path,
-    )
-
-
-@pytest.fixture(scope="module")
-def trainer(trainer_options: TrainerConfig, config: Config):
-    """ Fixture that produces a pl.Trainer to be used during testing. """
-    # TODO: Parametrize with the accelerator to use, skip param if no GPU?
-    return trainer_options.make_trainer(config=config, loggers=None)
-
-
 class TestBaseMethod(MethodTests):
     Method: ClassVar[Type[BaseMethod]] = BaseMethod
     method_debug_kwargs: Dict = {"max_epochs": 1}
+
+    @classmethod
+    @pytest.fixture(scope="module")
+    def trainer_options(cls, tmp_path_factory) -> TrainerConfig:
+        tmp_path = tmp_path_factory.mktemp("log_dir")
+        return TrainerConfig(
+            # logger=False,
+            max_epochs=1,
+            checkpoint_callback=False,
+            default_root_dir=tmp_path,
+        )
 
     @classmethod
     @pytest.fixture
