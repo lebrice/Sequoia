@@ -434,7 +434,7 @@ def test_buffers_are_stacked_correctly(monkeypatch):
         actions = output_head(observations.float(), representations.float())
 
         # Wrap things up to pretend like the output head is being used in the
-        # BaselineModel:
+        # BaseModel:
 
         forward_pass = ForwardPass(
             observations=observations, representations=representations, actions=actions,

@@ -24,7 +24,7 @@ from torch.utils.data import DataLoader, Dataset
 from simple_parsing import field, mutable_field
 
 from sequoia.common.loss import Loss
-# from sequoia.methods.models.baseline_model.base_model import LightningModule
+# from sequoia.methods.models.base_model.model import LightningModule
 from sequoia.settings import Setting
 from sequoia.settings.sl import ClassIncrementalSetting
 from sequoia.utils.logging_utils import get_logger, pbar

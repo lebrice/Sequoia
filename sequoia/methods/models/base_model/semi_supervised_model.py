@@ -17,15 +17,15 @@ from sequoia.common.loss import Loss
 from sequoia.settings import Actions, Observations, Rewards, SettingType
 from sequoia.utils.logging_utils import get_logger
 
-from .base_model import BaseModel
+from .model import Model
 
 logger = get_logger(__file__)
 
 
 
-class SemiSupervisedModel(BaseModel[SettingType]):
+class SemiSupervisedModel(Model[SettingType]):
     @dataclass
-    class HParams(BaseModel.HParams):
+    class HParams(Model.HParams):
         """Hyperparameters of a Self-Supervised method. """
         # Adds Options for a KNN classifier callback, which is used to evaluate
         # the quality of the representations on each task after each training

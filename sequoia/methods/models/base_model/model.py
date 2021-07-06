@@ -4,33 +4,37 @@ This model is basically just an encoder and an output head. Both of these can be
 switched out/customized as needed.
 """
 from dataclasses import dataclass
-from typing import Any, Dict, Generic, Optional, Tuple, Type, TypeVar
+from typing import Any, ClassVar, Dict, Generic, List, Optional, Tuple, Type, TypeVar
 
-from sequoia.utils.pretrained_utils import get_pretrained_encoder
 import gym
 import numpy as np
 import torch
+import torchvision.models as tv_models
 from gym import Space, spaces
 from gym.spaces.utils import flatdim
 from pytorch_lightning import LightningModule
 from pytorch_lightning.core.decorators import auto_move_data
 from pytorch_lightning.core.lightning import ModelSummary, log
-from simple_parsing import choice
-from simple_parsing.helpers.serialization import register_decoding_fn
-from torch import Tensor, nn
-from torch.optim.optimizer import Optimizer
-
 from sequoia.common.config import Config
 from sequoia.common.gym_wrappers.convert_tensors import add_tensor_support
+from sequoia.common.hparams import HyperParameters, categorical, log_uniform, uniform
 from sequoia.common.loss import Loss
 from sequoia.common.spaces import Image
 from sequoia.common.transforms import SplitBatch
-from sequoia.settings.rl import RLSetting, ContinualRLSetting
+from sequoia.methods.models.output_heads import OutputHead
 from sequoia.settings.assumptions.incremental import IncrementalAssumption
 from sequoia.settings.base import Environment
 from sequoia.settings.base.setting import Actions, Observations, Rewards
+from sequoia.settings.rl import ContinualRLSetting, RLSetting
 from sequoia.settings.sl import SLSetting
+from sequoia.utils import Parseable, Serializable
 from sequoia.utils.logging_utils import get_logger
+from sequoia.utils.pretrained_utils import get_pretrained_encoder
+from simple_parsing import choice, mutable_field
+from simple_parsing.helpers.hparams import HyperParameters
+from simple_parsing.helpers.serialization import register_decoding_fn
+from torch import Tensor, nn, optim
+from torch.optim.optimizer import Optimizer  # type: ignore
 
 from ..fcnet import FCNet
 from ..forward_pass import ForwardPass
@@ -42,15 +46,36 @@ from ..output_heads import (
     RegressionHead,
 )
 from ..output_heads.rl.episodic_a2c import EpisodicA2C
-from .base_hparams import BaseHParams
+from ..simple_convnet import SimpleConvNet
+
 
 logger = get_logger(__file__)
 SettingType = TypeVar("SettingType", bound=IncrementalAssumption)
 
+available_optimizers: Dict[str, Type[Optimizer]] = {
+    "sgd": optim.SGD,
+    "adam": optim.Adam,
+    "rmsprop": optim.RMSprop,
+}
+available_encoders: Dict[str, Type[nn.Module]] = {
+    "vgg16": tv_models.vgg16,
+    "resnet18": tv_models.resnet18,
+    "resnet34": tv_models.resnet34,
+    "resnet50": tv_models.resnet50,
+    "resnet101": tv_models.resnet101,
+    "resnet152": tv_models.resnet152,
+    "alexnet": tv_models.alexnet,
+    "densenet": tv_models.densenet161,
+    # TODO: Add the self-supervised pl modules here!
+    "simple_convnet": SimpleConvNet,
+}
 
-class BaseModel(LightningModule, Generic[SettingType]):
-    """LightningModule (nn.Module extended by pytorch-lightning) which can be trained
-    on either Supervised or Reinforcement Learning environments.
+
+class Model(LightningModule, Generic[SettingType]):
+    """ Basic Model to be used by a Method.
+    
+    Based on the `LightningModule` (nn.Module extended by pytorch-lightning).
+    This Model can be trained on either Supervised or Reinforcement Learning environments.
 
     This model splits the learning task into a representation-learning problem
     and a downstream task (output head) applied on top of it.
@@ -61,8 +86,58 @@ class BaseModel(LightningModule, Generic[SettingType]):
     """
 
     @dataclass
-    class HParams(BaseHParams):
+    class HParams(HyperParameters):
         """ HParams of the Model. """
+
+        # Class variable versions of the above dicts, for easier subclassing.
+        # NOTE: These don't get parsed from the command-line.
+        available_optimizers: ClassVar[
+            Dict[str, Type[Optimizer]]
+        ] = available_optimizers.copy()
+        available_encoders: ClassVar[
+            Dict[str, Type[nn.Module]]
+        ] = available_encoders.copy()
+
+        # Learning rate of the optimizer.
+        learning_rate: float = log_uniform(1e-6, 1e-2, default=1e-3)
+        # L2 regularization term for the model weights.
+        weight_decay: float = log_uniform(1e-12, 1e-3, default=1e-6)
+        # Which optimizer to use.
+        optimizer: Type[Optimizer] = categorical(
+            available_optimizers, default=optim.Adam
+        )
+        # Use an encoder architecture from the torchvision.models package.
+        encoder: Type[nn.Module] = categorical(
+            available_encoders,
+            default=tv_models.resnet18,
+            # TODO: Only using these two by default when performing a sweep.
+            probabilities={"resnet18": 0.5, "simple_convnet": 0.5},
+        )
+
+        # Batch size to use during training and evaluation.
+        batch_size: Optional[int] = None
+
+        # Number of hidden units (before the output head).
+        # When left to None (default), the hidden size from the pretrained
+        # encoder model will be used. When set to an integer value, an
+        # additional Linear layer will be placed between the outputs of the
+        # encoder in order to map from the pretrained encoder's output size H_e
+        # to this new hidden size `new_hidden_size`.
+        new_hidden_size: Optional[int] = None
+        # Retrain the encoder from scratch.
+        train_from_scratch: bool = False
+        # Wether we should keep the weights of the pretrained encoder frozen.
+        freeze_pretrained_encoder_weights: bool = False
+
+        # Settings for the output head.
+        # TODO: This could be overwritten in a subclass to do classification or
+        # regression or RL, etc.
+        output_head: OutputHead.HParams = mutable_field(OutputHead.HParams)
+
+        # Wether the output head should be detached from the representations.
+        # In other words, if the gradients from the downstream task should be
+        # allowed to affect the representations.
+        detach_output_head: bool = False
 
         # Which algorithm to use for the output head when in an RL setting.
         # TODO: Run the PolicyHead in the following conditions:
@@ -82,7 +157,7 @@ class BaseModel(LightningModule, Generic[SettingType]):
     def __init__(self, setting: SettingType, hparams: HParams, config: Config):
         super().__init__()
         self.setting: SettingType = setting
-        self.hp: BaseModel.HParams = hparams
+        self.hp: Model.HParams = hparams
 
         self.Observations: Type[Observations] = setting.Observations
         self.Actions: Type[Actions] = setting.Actions
@@ -99,13 +174,9 @@ class BaseModel(LightningModule, Generic[SettingType]):
         self.input_shape = self.observation_space.x.shape
         self.reward_shape = self.reward_space.shape
 
-        # TODO: Remove this:
-        self.split_batch_transform = SplitBatch(
-            observation_type=self.Observations, reward_type=self.Rewards
-        )
         self.config: Config = config
-        # TODO: Decided to Not set this property, so the trainer doesn't
-        # fallback to using it instead of the passed dataloaders/environments.
+        # NOTE: do NOT set the `datamodule` property, otherwise the trainer will ignore
+        # the passed train/val/test dataloader from the Setting.
         # self.datamodule: LightningDataModule = setting
 
         # (Testing) Setting this attribute is supposed to help with ddp/etc
@@ -174,12 +245,11 @@ class BaseModel(LightningModule, Generic[SettingType]):
         # 3. Remove the output fully-connected layer, if present.
         encoder, hidden_size = get_pretrained_encoder(
             encoder_model=encoder_type,
-            pretrained=not self.train_from_scratch,
-            freeze_pretrained_weights=self.freeze_pretrained_encoder_weights,
-            new_hidden_size=self.new_hidden_size,
+            pretrained=not self.hp.train_from_scratch,
+            freeze_pretrained_weights=self.hp.freeze_pretrained_encoder_weights,
+            new_hidden_size=self.hp.new_hidden_size,
         )
         return encoder, hidden_size
-
 
     @auto_move_data
     def forward(self, observations: IncrementalAssumption.Observations) -> ForwardPass:

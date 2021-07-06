@@ -16,7 +16,7 @@ from sequoia.methods.aux_tasks.auxiliary_task import AuxiliaryTask
 from sequoia.settings import Rewards, Setting, SettingType
 from sequoia.utils.logging_utils import get_logger
 from sequoia.utils.utils import flatten_dict
-from .base_model import BaseModel
+from .model import Model
 
 # from sequoia.utils.module_dict import ModuleDict
 
@@ -25,7 +25,7 @@ logger = get_logger(__file__)
 HParamsType = TypeVar("HParamsType", bound="SelfSupervisedModel.HParams")
 
 
-class SelfSupervisedModel(BaseModel[SettingType]):
+class SelfSupervisedModel(Model[SettingType]):
     """
     Model 'mixin' that adds support for modular, configurable "auxiliary tasks".
 
@@ -34,7 +34,7 @@ class SelfSupervisedModel(BaseModel[SettingType]):
     """
 
     @dataclass
-    class HParams(BaseModel.HParams):
+    class HParams(Model.HParams):
         """Hyperparameters of a Self-Supervised method. """
 
         # simclr: Optional[SimCLRTask.Options] = None

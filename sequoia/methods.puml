@@ -13,7 +13,7 @@
 package methods {
     package base_method {
         class BaseMethod implements Method {
-            + hparams: BaselineModel.HParams
+            + hparams: BaseModel.HParams
             + config: Config
             + trainer_options: TrainerConfig
             + trainer: Trainer

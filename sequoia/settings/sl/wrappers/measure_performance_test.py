@@ -258,7 +258,7 @@ def test_last_batch():
     assert perf.n_samples == 110
 
 
-from sequoia.methods.models.baseline_model import BaselineModel
+from sequoia.methods.models.base_model import BaseModel
 
 
 def test_last_batch_baseline_model():
@@ -286,8 +286,8 @@ def test_last_batch_baseline_model():
     env = MeasureSLPerformanceWrapper(env, first_epoch_only=True)
     setting = ClassIncrementalSetting()
     setting.train_env = env
-    model = BaselineModel(
-        setting=setting, hparams=BaselineModel.HParams(), config=Config(debug=True)
+    model = BaseModel(
+        setting=setting, hparams=BaseModel.HParams(), config=Config(debug=True)
     )
 
     for i, (obs, rew) in enumerate(env):

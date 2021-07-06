@@ -24,7 +24,7 @@ from sequoia.settings import Observations, Rewards
 from sequoia.settings.assumptions.incremental import IncrementalAssumption
 from sequoia.methods.models.simple_convnet import SimpleConvNet
 
-from .base_model import ForwardPass
+from .model import ForwardPass
 from .multihead_model import MultiHeadModel
 from .self_supervised_model import SelfSupervisedModel
 from .semi_supervised_model import SemiSupervisedModel
@@ -35,7 +35,7 @@ logger = get_logger(__file__)
 SettingType = TypeVar("SettingType", bound=IncrementalAssumption)
 
 
-class BaselineModel(
+class BaseModel(
     SemiSupervisedModel, MultiHeadModel, SelfSupervisedModel, Generic[SettingType]
 ):
     """ Base model LightningModule (nn.Module extended by pytorch-lightning)
@@ -164,7 +164,7 @@ class BaselineModel(
         For the given observations, creates a `ForwardPass`, a dict-like object which
         will hold the observations, the representations and the output head predictions.
 
-        NOTE: Base implementation is in `base_model.py`.
+        NOTE: Base implementation is in `model.py`.
 
         Parameters
         ----------
@@ -213,14 +213,14 @@ class BaselineModel(
         OutputHead
             The new output head for the given task.
         """
-        # NOTE: Actual implementation is in `base_model.py`. This is added here just for
+        # NOTE: Actual implementation is in `model.py`. This is added here just for
         # convenience when extending the baseline model.
         return super().create_output_head(task_id=task_id)
 
     def output_head_type(self, setting: SettingType) -> Type[OutputHead]:
         """ Return the type of output head we should use in a given setting.
         """
-        # NOTE: Implementation is in `base_model.py`.
+        # NOTE: Implementation is in `model.py`.
         return super().output_head_type(setting)
 
     def training_step(

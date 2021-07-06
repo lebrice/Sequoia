@@ -12,7 +12,7 @@ from sequoia.common.loss import Loss
 from sequoia.common.task import Task
 from sequoia.utils import cuda_available
 from sequoia.utils.serialization import Serializable
-from sequoia.methods.models.baseline_model import BaseModel
+from sequoia.methods.models.base_model import Model
 
 class AuxiliaryTask(nn.Module):
     """ Represents an additional loss to apply to a `Classifier`.
@@ -28,7 +28,7 @@ class AuxiliaryTask(nn.Module):
     input_shape: ClassVar[Tuple[int, ...]] = ()
     hidden_size: ClassVar[int] = -1
 
-    _model: ClassVar[BaseModel]
+    _model: ClassVar[Model]
     # Class variables for holding the Modules shared with the classifier. 
     encoder: ClassVar[nn.Module]
     output_head: ClassVar[nn.Module]  # type: ignore
@@ -156,7 +156,7 @@ class AuxiliaryTask(nn.Module):
         return type(self)._model
 
     @staticmethod
-    def set_model(model: BaseModel) -> None:
+    def set_model(model: Model) -> None:
         AuxiliaryTask._model = model
 
     def shared_modules(self) -> Dict[str, nn.Module]:

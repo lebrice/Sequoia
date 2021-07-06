@@ -1,9 +1,9 @@
-""" This module defines the model used by the `BaseMethod`.
+""" This module defines the `BaseModel` used by the `BaseMethod`.
 
 Output heads are available for both Supervised and Reinforcement Learning, and can be
 found in `sequoia.methods.models.output_heads`.
 
-Instead of defining the `BaseModel` in one large file, it is instead split into a base
+Instead of defining the `Model` in one large file, it is instead split into a base
 class (`Model`, defined in `model.py`) on top of which a few "mixins" are added, each
 of which adds additional functionality:
 
@@ -23,12 +23,12 @@ of which adds additional functionality:
 - [SelfSupervisedModel](self_supervised_model.py):
     Adds methods for adding self-supervised losses to the model using different
     Auxiliary Tasks.
+    
+The `BaseModel` is then formed by inheriting from each of these mixins.
 """
-# TODO: Rework this a bit, Use the BaseModel by default, and then switch to using the
-# `MultiheadModel` when task labels are available, etc. 
-from .base_hparams import BaseHParams, available_encoders, available_optimizers
-from .base_model import BaseModel
+# TODO: Maybe the naming of these could be a bit better: Model seems more 'general' than BaseModel.
+from .model import Model, available_encoders, available_optimizers
 from .multihead_model import MultiHeadModel
 from .self_supervised_model import SelfSupervisedModel
 from .semi_supervised_model import SemiSupervisedModel
-from .baseline_model import BaselineModel
+from .base_model import BaseModel

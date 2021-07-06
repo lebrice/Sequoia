@@ -18,17 +18,17 @@ import torch.nn.functional as F
 from ..forward_pass import ForwardPass
 from ..output_heads import OutputHead
 
-from .base_model import BaseModel, SettingType
+from .model import Model, SettingType
 
 logger = get_logger(__file__)
 
 
-class MultiHeadModel(BaseModel[SettingType]):
-    """ Mixin that adds multi-head prediction to the BaseModel when task labels are
+class MultiHeadModel(Model[SettingType]):
+    """ Mixin that adds multi-head prediction to the Model when task labels are
     available.
     """
     @dataclass
-    class HParams(BaseModel.HParams):
+    class HParams(Model.HParams):
         """ Hyperparameters specific to a multi-head model.
         """
         # Wether to create one output head per task.
@@ -162,7 +162,7 @@ class MultiHeadModel(BaseModel[SettingType]):
                 )
             else:
                 raise NotImplementedError(
-                    "TODO: The BaselineModel doesn't yet support having multiple "
+                    "TODO: The BaseModel doesn't yet support having multiple "
                     "different tasks within the same batch in RL. "
                 )
                 # IDEA: Need to somehow pass the indices of which env to take care of to
@@ -266,7 +266,7 @@ class MultiHeadModel(BaseModel[SettingType]):
         logger.info(f"Switching from task {self.current_task} -> {task_id}.")
 
         # TODO: Move these to the base model perhaps? (In case there is ever a
-        # re-ordering of the mixins that make up the BaselineModel)
+        # re-ordering of the mixins that make up the BaseModel)
         super().on_task_switch(task_id)
 
         self.previous_task = self.current_task

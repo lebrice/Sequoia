@@ -292,7 +292,7 @@ class PolicyHead(ClassificationHead):
         if self.batch_size != forward_pass.batch_size:
             raise NotImplementedError(
                 "TODO: The batch size changed, because the batch contains different "
-                "tasks. The BaselineModel isn't yet applicable in the setup where "
+                "tasks. The BaseModel isn't yet applicable in the setup where "
                 "there are multiple different tasks in the same batch in RL. "
             )
             # IDEA: Need to get access to the 'original' env indices (before slicing),

@@ -759,7 +759,7 @@ class Method(Generic[SettingType], Parseable, ABC):
 
         Returns
         -------
-        Tuple[BaselineModel.HParams, float]
+        Tuple[BaseModel.HParams, float]
             Best HParams, and the corresponding performance.
         """
         try:

@@ -119,7 +119,7 @@
 
 	Uses pytorch-lightning's Trainer for training and a LightningModule as a model.
 
-	Uses a [BaselineModel](methods/models/baseline_model/baseline_model.py), which
+	Uses a [BaseModel](methods/models/base_model/base_model.py), which
 	can be used for:
 	- Self-Supervised training with modular auxiliary tasks;
 	- Semi-Supervised training on partially labeled batches;
@@ -285,7 +285,7 @@
 
 	 - Target setting: [IncrementalAssumption](sequoia/settings/assumptions/incremental.py)
 
-	Subclass of the BaseMethod, which adds the EWCTask to the `BaselineModel`.
+	Subclass of the BaseMethod, which adds the EWCTask to the `BaseModel`.
 
 	This Method is applicable to any CL setting (RL or SL) where there are clear task
 	boundaries, regardless of if the task labels are given or not.

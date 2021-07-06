@@ -29,7 +29,7 @@ from sequoia.settings.base import Environment
 from sequoia.settings.rl import IncrementalRLSetting
 from sequoia.utils import take
 
-from .baseline_model import BaselineModel
+from .base_model import BaseModel
 from .multihead_model import MultiHeadModel, OutputHead, get_task_indices
 
 
@@ -161,7 +161,7 @@ def test_multitask_rl_bug_without_PL(monkeypatch):
     # setting = RLSetting.load_benchmark("monsterkong")
     config = Config(debug=True, verbose=True, seed=123)
     config.seed_everything()
-    model = BaselineModel(
+    model = BaseModel(
         setting=setting,
         hparams=MultiHeadModel.HParams(
             multihead=True,
@@ -269,7 +269,7 @@ def test_multitask_rl_bug_with_PL(monkeypatch, config: Config):
 
     # setting = RLSetting.load_benchmark("monsterkong")
     cpu_config.seed_everything()
-    model = BaselineModel(
+    model = BaseModel(
         setting=setting,
         hparams=MultiHeadModel.HParams(
             multihead=True,

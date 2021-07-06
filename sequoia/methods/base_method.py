@@ -38,7 +38,7 @@ from sequoia.utils import Parseable, Serializable, compute_identity, get_logger
 from sequoia.methods import register_method
 from sequoia.settings.sl.continual import ContinualSLSetting
 
-from .models import BaselineModel, ForwardPass
+from .models import BaseModel, ForwardPass
 
 logger = get_logger(__file__)
 
@@ -84,7 +84,7 @@ import pytorch_lightning.trainer.connectors.data_connector
 setattr(pytorch_lightning.trainer.connectors.data_connector, "DataConnector", PatchedDataConnector)
 pytorch_lightning.trainer.connectors.data_connector.DataConnector = PatchedDataConnector
 
-    
+
 @register_method
 @dataclass
 class BaseMethod(Method, Serializable, Parseable, target_setting=Setting):
@@ -92,7 +92,7 @@ class BaseMethod(Method, Serializable, Parseable, target_setting=Setting):
 
     Uses pytorch-lightning's Trainer for training and LightningModule as model.
 
-    Uses a [BaselineModel](methods/models/baseline_model/baseline_model.py), which
+    Uses a [BaseModel](methods/models/base_model/base_model.py), which
     can be used for:
     - Self-Supervised training with modular auxiliary tasks;
     - Semi-Supervised training on partially labeled batches;
@@ -101,7 +101,7 @@ class BaseMethod(Method, Serializable, Parseable, target_setting=Setting):
 
     # NOTE: these two fields are also used to create the command-line arguments.
     # HyperParameters of the method.
-    hparams: BaselineModel.HParams = mutable_field(BaselineModel.HParams)
+    hparams: BaseModel.HParams = mutable_field(BaseModel.HParams)
     # Configuration options.
     config: Config = mutable_field(Config)
     # Options for the Trainer object.
@@ -109,7 +109,7 @@ class BaseMethod(Method, Serializable, Parseable, target_setting=Setting):
 
     def __init__(
         self,
-        hparams: BaselineModel.HParams = None,
+        hparams: BaseModel.HParams = None,
         config: Config = None,
         trainer_options: TrainerConfig = None,
         **kwargs,
@@ -118,8 +118,8 @@ class BaseMethod(Method, Serializable, Parseable, target_setting=Setting):
 
         Parameters
         ----------
-        hparams : BaselineModel.HParams, optional
-            Hyper-parameters of the BaselineModel used by this Method. Defaults to None.
+        hparams : BaseModel.HParams, optional
+            Hyper-parameters of the BaseModel used by this Method. Defaults to None.
 
         config : Config, optional
             Configuration dataclass with options like log_dir, device, etc. Defaults to
@@ -135,13 +135,13 @@ class BaseMethod(Method, Serializable, Parseable, target_setting=Setting):
 
         ## Examples:
         ```
-        method = BaseMethod(hparams=BaselineModel.HParams(learning_rate=0.01))
+        method = BaseMethod(hparams=BaseModel.HParams(learning_rate=0.01))
         method = BaseMethod(learning_rate=0.01) # Same as above
 
         method = BaseMethod(config=Config(debug=True))
         method = BaseMethod(debug=True) # Same as above
 
-        method = BaseMethod(hparams=BaselineModel.HParams(learning_rate=0.01),
+        method = BaseMethod(hparams=BaseModel.HParams(learning_rate=0.01),
                                 config=Config(debug=True))
         method = BaseMethod(learning_rate=0.01, debug=True) # Same as above
         ```
@@ -199,7 +199,7 @@ class BaseMethod(Method, Serializable, Parseable, target_setting=Setting):
         # NOTE: This right here doesn't create the fields, it just gives some
         # type information for static type checking.
         self.trainer: Trainer
-        self.model: BaselineModel
+        self.model: BaseModel
 
         self.additional_train_wrappers: List[Callable] = []
         self.additional_valid_wrappers: List[Callable] = []
@@ -372,8 +372,8 @@ class BaseMethod(Method, Serializable, Parseable, target_setting=Setting):
         assert action_numpy in action_space, (action_numpy, action_space)
         return actions
 
-    def create_model(self, setting: SettingType) -> BaselineModel[SettingType]:
-        """Creates the BaselineModel (a LightningModule) for the given Setting.
+    def create_model(self, setting: SettingType) -> BaseModel[SettingType]:
+        """Creates the BaseModel (a LightningModule) for the given Setting.
 
         You could extend this to customize which model is used depending on the
         setting.
@@ -386,11 +386,11 @@ class BaseMethod(Method, Serializable, Parseable, target_setting=Setting):
             setting (SettingType): An experimental setting.
 
         Returns:
-            BaselineModel[SettingType]: The BaselineModel that is to be applied
+            BaseModel[SettingType]: The BaseModel that is to be applied
             to that setting.
         """
         # Create the model, passing the setting, hparams and config.
-        return BaselineModel(setting=setting, hparams=self.hparams, config=self.config)
+        return BaseModel(setting=setting, hparams=self.hparams, config=self.config)
 
     def create_trainer(self, setting: SettingType) -> Trainer:
         """Creates a Trainer object from pytorch-lightning for the given setting.
@@ -495,8 +495,9 @@ class BaseMethod(Method, Serializable, Parseable, target_setting=Setting):
         experiment_id: str = None,
         database_path: Union[str, Path] = None,
         max_runs: int = None,
+        hpo_algorithm: Union[str, Dict] = "BayesianOptimizer",
         debug: bool = False,
-    ) -> Tuple[BaselineModel.HParams, float]:
+    ) -> Tuple[BaseModel.HParams, float]:
         # Setting max epochs to 1, just to keep runs somewhat short.
         # NOTE: Now we're actually going to have the max_epochs as a tunable
         # hyper-parameter, so we're not hard-setting this value anymore. 
@@ -515,6 +516,7 @@ class BaseMethod(Method, Serializable, Parseable, target_setting=Setting):
             database_path=database_path,
             max_runs=max_runs,
             debug = debug or self.config.debug,
+            hpo_algorithm=hpo_algorithm,
         )
 
     def receive_results(self, setting: Setting, results: Results):

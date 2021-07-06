@@ -69,7 +69,7 @@ if __name__ == "__main__":
 
     # Search space for the Hyper-Parameter optimization algorithm.
     # NOTE: This is just a copy of the spaces that are auto-generated from the fields of
-    # the `BaselineModel.HParams` class. You can change those as you wish though.
+    # the `BaseModel.HParams` class. You can change those as you wish though.
     search_space = {
         "learning_rate": "loguniform(1e-06, 1e-02, default_value=0.001)",
         "weight_decay": "loguniform(1e-12, 1e-03, default_value=1e-06)",

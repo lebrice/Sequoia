@@ -10,7 +10,7 @@ from sequoia.settings import (ClassIncrementalSetting, IncrementalRLSetting,
                               TraditionalRLSetting, Setting)
 from sequoia.settings.rl.continual.results import ContinualRLResults
 
-from .base_method import BaseMethod, BaselineModel
+from .base_method import BaseMethod, BaseModel
 from .method_test import MethodTests
 
 @pytest.fixture
@@ -70,7 +70,7 @@ class TestBaseMethod(MethodTests):
         """
         method = self.Method(max_epochs=1, no_wandb=True)
         results = short_class_incremental_setting.apply(method)
-        assert 0.10 <= results.objective <= 0.30
+        assert 0.25 <= results.objective
 
 
 BaseMethodTests = TestBaseMethod

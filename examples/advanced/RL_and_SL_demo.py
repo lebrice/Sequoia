@@ -22,7 +22,7 @@ from sequoia.common.config import Config, TrainerConfig
 from sequoia.common.loss import Loss
 from sequoia.methods import BaseMethod
 from sequoia.methods.aux_tasks import AuxiliaryTask, SimCLRTask
-from sequoia.methods.models import BaselineModel, ForwardPass
+from sequoia.methods.models import BaseModel, ForwardPass
 from sequoia.settings import Setting, Environment, RLSetting
 from sequoia.utils import camel_case, dict_intersection, get_logger
 
@@ -31,10 +31,10 @@ logger = get_logger(__file__)
 
 class SimpleRegularizationAuxTask(AuxiliaryTask):
     """ Same regularization loss as in the previous examples, this time
-    implemented as an `AuxiliaryTask`, which gets added to the BaselineModel,
+    implemented as an `AuxiliaryTask`, which gets added to the BaseModel,
     making it applicable to both RL and SL.
     
-    This adds a CL regularizaiton loss to the BaselineModel.
+    This adds a CL regularizaiton loss to the BaseModel.
     
     The most important methods of `AuxiliaryTask` is `get_loss`, which should
     return a `Loss` for the given forward pass and resulting rewards/labels.
@@ -118,9 +118,9 @@ class SimpleRegularizationAuxTask(AuxiliaryTask):
         self.n_switches += 1
 
 
-class CustomizedBaselineModel(BaselineModel):
+class CustomizedBaselineModel(BaseModel):
     @dataclass
-    class HParams(BaselineModel.HParams):
+    class HParams(BaseModel.HParams):
         """ Hyper-parameters of our customized baseline model.
         """
 
@@ -154,7 +154,7 @@ class CustomMethod(BaseMethod, target_setting=Setting):
     """ Example methods which adds regularization to the baseline in RL and SL.
     
     This extends the `BaseMethod` by adding the simple regularization
-    auxiliary task defined above to the `BaselineModel`.
+    auxiliary task defined above to the `BaseModel`.
     
     NOTE: Since this class inherits from `BaseMethod`, which targets the
     `Setting` setting, i.e. the "root" node, it is applicable to all settings,
@@ -251,7 +251,7 @@ def demo_manual():
     ## Create the BaseMethod:
     config = Config(debug=True)
     trainer_options = TrainerConfig(max_epochs=1)
-    hparams = BaselineModel.HParams()
+    hparams = BaseModel.HParams()
     base_method = BaseMethod(
         hparams=hparams, config=config, trainer_options=trainer_options
     )

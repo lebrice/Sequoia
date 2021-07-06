@@ -1,4 +1,4 @@
-""" Abstract base class for an output head of the BaselineModel. """
+""" Abstract base class for an output head of the BaseModel. """
 import dataclasses
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
@@ -35,7 +35,7 @@ class OutputHead(nn.Module, ABC):
     # RegressionHead, ValueHead, etc. subclasses with the corresponding names.
     name: ClassVar[str] = "classification"
     
-    # Reference to the optimizer of the BaselineModel.
+    # Reference to the optimizer of the BaseModel.
     base_model_optimizer: ClassVar[Optimizer]
 
     @dataclass
@@ -123,7 +123,7 @@ class OutputHead(nn.Module, ABC):
         """
         # NOTE: This (getting the wrong hparams class) could happen for
         # instance when parsing a BaseMethod from the command-line, the
-        # default type of hparams on the method is BaselineModel.HParams,
+        # default type of hparams on the method is BaseModel.HParams,
         # whose `output_head` field doesn't have the right type exactly.
         current_hparams = self.hparams.to_dict()
         # TODO: If a value is not at its current default, keep it.

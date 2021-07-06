@@ -8,6 +8,6 @@ package models {
     ' TODO: Idk why, but this doesn't work if placed inside the 'models' package
     ' above.
     !include ./models/output_heads.puml
-    !include ./models/baseline_model.puml
+    !include ./models/base_model.puml
 }
 @enduml

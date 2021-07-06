@@ -11,7 +11,7 @@ from torch.utils.data import DataLoader
 from torchvision.utils import save_image
 
 from sequoia.common.loss import Loss
-from sequoia.methods.models import BaselineModel
+from sequoia.methods.models import BaseModel
 from sequoia.methods.aux_tasks.reconstruction import AEReconstructionTask, VAEReconstructionTask
 from sequoia.utils.logging_utils import get_logger
 
@@ -29,7 +29,7 @@ class SaveVaeSamplesCallback(Callback):
         self.reconstruction_task: Optional[AEReconstructionTask] = None
         self.generation_task: Optional[VAEReconstructionTask] = None
         self.latents_batch: Optional[Tensor] = None
-        self.model: BaselineModel
+        self.model: BaseModel
         self.trainer: Trainer
     
     def setup(self, trainer, pl_module, stage: str):
@@ -40,7 +40,7 @@ class SaveVaeSamplesCallback(Callback):
         """Called when the train begins."""
         self.trainer = trainer
         self.model = pl_module
-        from sequoia.methods.models.baseline_model.self_supervised_model import SelfSupervisedModel        
+        from sequoia.methods.models.base_model.self_supervised_model import SelfSupervisedModel        
         if isinstance(pl_module, SelfSupervisedModel):
             # if our model has auxiliary tasks (i.e., if it's a self-supervised model.)
             if VAEReconstructionTask.name in self.model.tasks:
@@ -52,7 +52,7 @@ class SaveVaeSamplesCallback(Callback):
                 self.reconstruction_task = self.model.tasks[AEReconstructionTask.name]
                 self.generation_task = None
 
-    def on_train_epoch_end(self, trainer: Trainer, pl_module: BaselineModel):
+    def on_train_epoch_end(self, trainer: Trainer, pl_module: BaseModel):
         # do something
         if self.generation_task:    
             # Save a batch of fake images after each epoch.
