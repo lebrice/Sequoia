@@ -145,9 +145,10 @@ class BaseTests:
             TraditionalRLSetting,
         ],
     )
-    # @pytest.mark.parametrize("observe_state", [True, False])
     def test_debug(self, setting_type: Type[ContinualRLSetting], config: Config):
         method = self.Method(**self.debug_kwargs)
+        # TODO: Fix this test setup, nb_tasks should be something low like 2, and
+        # perhaps use max_episode_steps to limit episode length
         setting: ContinualRLSetting = setting_type(
             dataset=self.debug_dataset,
             # nb_tasks=2,
