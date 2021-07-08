@@ -45,8 +45,9 @@ RegressionMetrics(n_samples=4, mse=tensor(1.), l1_error=tensor(0.5000))
 
 See the `Loss` constructor for more info on which tensors are accepted.
 """
-from dataclasses import InitVar, dataclass
-from typing import Any, Dict, List, Optional, Union
+from dataclasses import InitVar, dataclass, fields
+from typing import Any, Dict, List, Optional, Union, Mapping, Iterable, ClassVar, Tuple, Type
+from collections.abc import Mapping as MappingABC
 
 import torch
 from torch import Tensor
@@ -64,7 +65,7 @@ logger = get_logger(__file__)
 
 
 @dataclass
-class Loss(Serializable):
+class Loss(Serializable, MappingABC):
     """ Object used to store the losses and metrics. 
 
     Used to simplify the return type of the different `get_loss` functions and
@@ -84,6 +85,8 @@ class Loss(Serializable):
     # pytorch-lightning during training? Is there a case where that would be
     # useful?
     tensors: Dict[str, Tensor] = dict_field(repr=False, to_dict=False)
+    # Dictionary of metrics related to this loss. For example, could be the Accuracy.
+    # TODO: Test out using this with metrics from `torchmetrics`.
     metrics: Dict[str, Union[Metrics, Tensor]] = dict_field()
     # When multiplying the Loss by a value, this keep track of the coefficients
     # used, so that if we wanted to we could recover the 'unscaled' loss.
@@ -94,11 +97,28 @@ class Loss(Serializable):
     y_pred: InitVar[Optional[Tensor]] = None
     y: InitVar[Optional[Tensor]] = None
 
+    _field_names: ClassVar[Tuple[str, ...]]
+
     def __post_init__(self,
                       x: Tensor = None,
                       h_x: Tensor = None,
                       y_pred: Tensor = None,
                       y: Tensor = None):
+        if isinstance(self.name, dict):
+            # TODO: ugly-ish 'hack', we need to do this because of the infamous
+            # 'apply_to_collection' function, which does a Loss({k: v for k, v in loss.items()})
+            # Check that all other fields are empty, so we're not overwriting anything.
+            assert (isinstance(self.loss, float) or not self.loss.shape) and self.loss == 0.
+            assert not self.metrics
+            assert not self.losses
+            assert not self.tensors
+            assert self._coefficient == 1.
+
+            field_values = self.name
+            self.name = field_values.pop("name")
+            for k, v in field_values.items():
+                setattr(self, k, v)
+        
         assert self.name, "Loss objects should be given a name!"
         if self.name not in self.metrics:
             # Create a Metrics object if given the necessary tensors.
@@ -113,36 +133,24 @@ class Loss(Serializable):
             elif self._device is None:
                 self._device = tensor.device
 
-    def to_pl_dict(self, verbose: bool = False) -> Dict:
-        """Creates a pytorch-lightning-style dict from this Loss object.
+        if "_field_names" not in type(self).__dict__:
+            type(self)._field_names = tuple(f.name for f in fields(self))
 
-        Can be used as a return value to the `[training/validation/test]_step'
-        methods of a `LightningModule`, like so:
-        ```python
-        # (inside some LightningModule)
-        def training_step(self, batch, ...) -> Dict:
-            x, y = batch
-            y_pred = self.forward(x)
-            nce = self.loss_fn(y_pred, y)
-            loss: Loss = Loss("train", loss=nce, y_pred=y_pred, y=y)
-            return loss.to_pl_dict()
-        ```
+    def __contains__(self, key: str) -> bool:
+        if isinstance(key, str):
+            return key in type(self)._field_names
+        return NotImplemented
 
-        Args:
-            verbose (bool, optional): Wether to keep things short or to include
-                everything into the log dictionary. Defaults to False.
+    def __getitem__(self, key: str) -> Any:
+        if key not in self:
+            raise KeyError(key)
+        return getattr(self, key)
 
-        Returns:
-            Dict: A dictionary with the usual 'loss', 'log' and 'progress_bar'
-                keys, and additionally with a copy of 'self' at the key
-                'loss_object'
-        """
-        return {
-            "loss": self.loss,
-            "log": self.to_log_dict(verbose=verbose),
-            "progress_bar": self.to_pbar_message(),
-            "loss_object": self,
-        }
+    def __iter__(self) -> Iterable[str]:
+        return type(self)._field_names
+
+    def __len__(self) -> int:
+        return len(type(self)._field_names)
 
     @property
     def total_loss(self) -> Tensor:
@@ -332,7 +340,9 @@ class Loss(Serializable):
         """
         # TODO: Could also produce some wandb plots and stuff here when verbose?
         log_dict: Dict[str, Union[str, float, Dict, Tensor]] = {}
-        log_dict["loss"] = round(float(self.loss), 6)
+        # log_dict["loss"] = round(float(self.loss), 6)
+        # Preserving the Torch Dtype, if present.
+        log_dict["loss"] = self.loss
 
         for name, metric in self.metrics.items():
             if isinstance(metric, Serializable):

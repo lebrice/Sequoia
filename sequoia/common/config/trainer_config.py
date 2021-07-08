@@ -12,10 +12,10 @@ from simple_parsing import choice, field
 
 from sequoia.common.hparams import HyperParameters, uniform
 from .config import Config
-
+from sequoia.utils.parseable import Parseable
 
 @dataclass
-class TrainerConfig(HyperParameters):
+class TrainerConfig(HyperParameters, Parseable):
     """ Configuration options for the pytorch-lightning Trainer.
     
     TODO: Pytorch Lightning already has a mechanism for adding argparse
@@ -32,7 +32,7 @@ class TrainerConfig(HyperParameters):
 
     # Number of nodes to use.
     num_nodes: int = 1
-    accelerator: Optional[str] = "dp" if gpus != 0 else None
+    accelerator: Optional[str] = None
     log_gpu_memory: bool = False
 
     val_check_interval: Union[int, float] = 1.0
@@ -91,5 +91,6 @@ class TrainerConfig(HyperParameters):
             limit_val_batches=self.limit_val_batches,
             limit_test_batches=self.limit_train_batches,
             checkpoint_callback=self.checkpoint_callback,
+            profiler=None,
         )
         return trainer

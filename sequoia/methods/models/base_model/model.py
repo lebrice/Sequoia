@@ -4,7 +4,19 @@ This model is basically just an encoder and an output head. Both of these can be
 switched out/customized as needed.
 """
 from dataclasses import dataclass
-from typing import Any, ClassVar, Dict, Generic, List, Optional, Tuple, Type, TypeVar
+from typing import (
+    Any,
+    ClassVar,
+    Dict,
+    Generic,
+    List,
+    Optional,
+    Tuple,
+    Type,
+    TypeVar,
+    Union,
+)
+import dataclasses
 
 import gym
 import numpy as np
@@ -13,7 +25,6 @@ import torchvision.models as tv_models
 from gym import Space, spaces
 from gym.spaces.utils import flatdim
 from pytorch_lightning import LightningModule
-from pytorch_lightning.core.decorators import auto_move_data
 from pytorch_lightning.core.lightning import ModelSummary, log
 from sequoia.common.config import Config
 from sequoia.common.gym_wrappers.convert_tensors import add_tensor_support
@@ -251,7 +262,6 @@ class Model(LightningModule, Generic[SettingType]):
         )
         return encoder, hidden_size
 
-    @auto_move_data
     def forward(self, observations: IncrementalAssumption.Observations) -> ForwardPass:
         """ Forward pass of the Model.
 
@@ -274,8 +284,13 @@ class Model(LightningModule, Generic[SettingType]):
         actions = self.output_head(
             observations=observations, representations=representations
         )
+        # NOTE: Need to put a `rewards` field in this forward_pass, so we can pass it
+        # to the training_step_end method, which will calculate and aggregate the loss
         forward_pass = ForwardPass(
-            observations=observations, representations=representations, actions=actions,
+            observations=observations,
+            representations=representations,
+            actions=actions,
+            rewards=None,
         )
         return forward_pass
 
@@ -398,73 +413,157 @@ class Model(LightningModule, Generic[SettingType]):
         raise NotImplementedError(f"Unsupported action space: {setting.action_space}")
 
     def training_step(
-        self, batch: Tuple[Observations, Optional[Rewards]], batch_idx: int, **kwargs
-    ):
+        self,
+        batch: Tuple[Observations, Optional[Rewards]],
+        batch_idx: int,
+        environment: Environment = None,
+        dataloader_idx: int = None,
+        optimizer_idx: int = None,
+    ) -> ForwardPass:
         return self.shared_step(
             batch,
-            batch_idx,
-            environment=self.setting.train_env,
-            loss_name="train",
-            **kwargs,
+            batch_idx=batch_idx,
+            environment=environment or self.setting.train_env,
+            phase="train",
+            dataloader_idx=dataloader_idx,
+            optimizer_idx=optimizer_idx,
         )
 
     def validation_step(
-        self, batch: Tuple[Observations, Optional[Rewards]], batch_idx: int, **kwargs
-    ):
+        self,
+        batch: Tuple[Observations, Optional[Rewards]],
+        batch_idx: int,
+        environment: Environment = None,
+        dataloader_idx: int = None,
+    ) -> ForwardPass:
         return self.shared_step(
             batch,
             batch_idx=batch_idx,
-            environment=self.setting.val_env,
-            loss_name="val",
-            **kwargs,
+            environment=environment or self.setting.val_env,
+            phase="val",
+            dataloader_idx=dataloader_idx,
         )
 
     def test_step(
-        self, batch: Tuple[Observations, Optional[Rewards]], batch_idx: int, **kwargs
-    ):
+        self,
+        batch: Tuple[Observations, Optional[Rewards]],
+        batch_idx: int,
+        environment: Environment = None,
+        dataloader_idx: int = None,
+    ) -> ForwardPass:
         return self.shared_step(
             batch,
             batch_idx=batch_idx,
-            environment=self.setting.test_env,
-            loss_name="test",
-            **kwargs,
+            environment=environment or self.setting.test_env,
+            phase="test",
+            dataloader_idx=dataloader_idx,
         )
 
     def shared_step(
         self,
-        batch: Tuple[Observations, Rewards],
+        batch: Tuple[Observations, Optional[Rewards]],
         batch_idx: int,
         environment: Environment,
-        loss_name: str,
+        phase: str,
         dataloader_idx: int = None,
         optimizer_idx: int = None,
-    ) -> Dict:
-        """
-        This is the shared step for this 'example' LightningModule.
-        Feel free to customize/change it if you want!
-        """
-        if dataloader_idx is not None:
-            assert isinstance(dataloader_idx, int)
-            loss_name += f"/{dataloader_idx}"
+    ) -> ForwardPass:
+        """ Main logic of the "forward pass".
 
-        # Split the batch into observations and rewards.
-        # NOTE: Only in the case of the Supervised settings do we ever get the
-        # Rewards at the same time as the Observations.
-        # TODO: It would be nice if we could actually do the same things for
-        # both sides of the tree here..
-        observations, rewards = self.split_batch(batch)
+        This is used as part of `training_step`, `validation_step` and `test_step`.
+        See the PL docs for `training_step` for more info. 
 
-        # FIXME: Remove this, debugging:
-        assert isinstance(observations, Observations), observations
-        assert isinstance(observations.x, Tensor), observations.shapes
+        NOTE: The prediction / environment interaction / loss calculation has been
+        moved into the `shared_step_end` method for DP to also work.
+        """
+
+        # Split the batch into observations and (maybe) rewards.
+        observations: Observations
+        rewards: Optional[Rewards]
+        if isinstance(batch, tuple) and len(batch) == 2:
+            observations, rewards = batch
+        else:
+            assert isinstance(batch, self.Observations), batch
+            observations, rewards = batch, None
+
         # Get the forward pass results, containing:
         # - "observation": the augmented/transformed/processed observation.
         # - "representations": the representations for the observations.
         # - "actions": The actions (predictions)
         forward_pass: ForwardPass = self(observations)
+        if rewards is not None:
+            forward_pass = dataclasses.replace(forward_pass, rewards=rewards)
+        return forward_pass
+
+    def training_step_end(self, step_outputs: Union[Loss, List[Loss]]) -> Loss:
+        loss_object: Loss = self.shared_step_end(
+            step_outputs=step_outputs, phase="train", environment=self.setting.train_env
+        )
+        loss = loss_object.loss
+        if not isinstance(loss, Tensor) or not loss.requires_grad:
+            # NOTE: There might be no loss at some steps, because for instance
+            # we haven't reached the end of an episode in an RL setting.
+            return None
+
+        # NOTE In RL, we can only update the model's weights on steps where the output
+        # head has as loss, because the output head has buffers of tensors whose grads
+        # would become invalidated if we performed the optimizer step.
+        if loss.requires_grad and not self.automatic_optimization:
+            output_head_loss = loss_object.losses.get(self.output_head.name)
+            update_model = (
+                output_head_loss is not None and output_head_loss.requires_grad
+            )
+            optimizer = self.optimizers()
+
+            self.manual_backward(loss, optimizer, retain_graph=not update_model)
+            if update_model:
+                optimizer.step()
+                optimizer.zero_grad()
+        # BUG: Need to return this dict, otherwise the optimizer closure in the DP
+        # accelerator fails (it only expects to get `dict` or `Tensor` values for
+        # `training_step_output` in `_process_training_step_output`)
+        # return loss
+        # NOTE: the 'hidden' key isn't currently used, but it could be in the future if
+        # we added support for BBPT, i.e. recurrent policies or output heads, etc.
+        return {"loss": loss, "hidden": loss_object.tensors.get("hidden")}
+
+    def validation_step_end(
+        self, step_outputs: Union[ForwardPass, List[ForwardPass]]
+    ) -> Loss:
+        return self.shared_step_end(
+            step_outputs=step_outputs, phase="val", environment=self.setting.val_env
+        )
+
+    def test_step_end(
+        self, step_outputs: Union[ForwardPass, List[ForwardPass]]
+    ) -> Loss:
+        return self.shared_step_end(
+            step_outputs=step_outputs, phase="test", environment=self.setting.test_env
+        )
+
+    def shared_step_end(
+        self,
+        step_outputs: Union[ForwardPass, List[ForwardPass]],
+        phase: str,
+        environment: Environment,
+    ) -> Loss:
+        """ Called with the outputs of each replica's `[train/validation/test]_step`:
+
+        - Sends the Actions from each worker to the environment to obtain rewards, if
+          necessary;
+        - Calculates the loss, given the merged forward pass and the rewards/labels; 
+        - Aggregates the losses/metrics from each replica, logs the relevant values, and
+          returns the aggregated losses and metrics (a single Loss object).
+        """
+        forward_pass: ForwardPass
+        if isinstance(step_outputs, list):
+            forward_pass = ForwardPass.stack(step_outputs)
+        else:
+            forward_pass = step_outputs
 
         # get the actions from the forward pass:
         actions = forward_pass.actions
+        rewards: Optional[Rewards] = forward_pass.rewards
 
         if rewards is None:
             # Get the reward from the environment (the dataloader).
@@ -476,11 +575,22 @@ class Model(LightningModule, Generic[SettingType]):
             rewards = environment.send(actions)
             assert rewards is not None
 
-        loss: Loss = self.get_loss(forward_pass, rewards, loss_name=loss_name)
-        return {
-            "loss": loss.loss,
-            "loss_object": loss,
-        }
+        # Now that we have the rewards, we calculate the loss.
+        
+        loss: Loss = self.get_loss(forward_pass, rewards, loss_name=phase)
+        loss_tensor: Tensor = loss.loss
+
+        loss_pbar_dict = loss.to_pbar_message()
+        for key, value in loss_pbar_dict.items():
+            assert not isinstance(value, dict), "shouldn't be nested at this point!"
+            self.log(key, value, prog_bar=self.config.debug, logger=False)
+            logger.debug(f"{key}: {value}")
+
+        loss_log_dict = loss.to_log_dict(verbose=self.config.verbose)
+        for key, value in loss_log_dict.items():
+            assert not isinstance(value, dict), "shouldn't be nested at this point!"
+            self.log(key, value, prog_bar=False, logger=True)
+        return loss
 
     def split_batch(self, batch: Any) -> Tuple[Observations, Optional[Rewards]]:
         """ Splits the batch into the observations and the rewards.

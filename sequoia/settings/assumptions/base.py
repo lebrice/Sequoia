@@ -4,8 +4,6 @@ from sequoia.utils.logging_utils import get_logger
 
 logger = get_logger(__file__)
 
-from pytorch_lightning.core.datamodule import _DataModuleWrapper
-
 # IDEA:  (@lebrice) Exploring the idea of using metaclasses to customize the isinstance
 # and subclass checks, so that it could be property-based. This is probably not worth it
 # though.

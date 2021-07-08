@@ -9,7 +9,7 @@ from abc import ABC
 from collections import abc as collections_abc
 from collections import namedtuple
 from dataclasses import dataclass
-from functools import singledispatch
+from functools import partial, singledispatch
 from typing import (Any, Callable, ClassVar, Dict, Generic, Iterable, Iterator,
                     KeysView, List, Mapping, NamedTuple, Optional, Sequence,
                     Set, Tuple, Type, TypeVar, Union)
@@ -286,7 +286,14 @@ class Batch(ABC, Mapping[str, T]):
         """
         if not isinstance(index, (int, slice, np.ndarray, Tensor)):
             raise NotImplementedError(f"can't slice with index {index}")
-        sliced_value = self._map(operator.itemgetter(index), recursive=True)
+
+        # BUG: By putting a 'None' value in the ForwardPass
+        def getitem_if_val_is_not_none(val, index):
+            if val is None:
+                return None
+            return val[index]
+
+        sliced_value = self._map(partial(getitem_if_val_is_not_none, index=index), recursive=True)
         if isinstance(index, int):
             sliced_value = sliced_value.with_batch_dimension()
         return sliced_value

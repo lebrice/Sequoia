@@ -114,4 +114,33 @@ class TestBaseMethod(MethodTests):
         assert 0.20 <= results.objective
 
 
+def test_weird_pl_bug():
+    replica_device = None
+
+    def find_tensor_with_device(tensor: torch.Tensor) -> torch.Tensor:
+        nonlocal replica_device
+        if replica_device is None and tensor.device != torch.device("cpu"):
+            replica_device = tensor.device
+        return tensor
+    
+    from pytorch_lightning.utilities.apply_func import apply_to_collection
+    from sequoia.settings.sl.incremental.objects import IncrementalSLObservations, IncrementalSLRewards 
+    # TODO: Not quite sure why there is also a `0` in there.
+    input_device = "cuda"
+    inputs = (
+        (
+            IncrementalSLObservations(
+                x=torch.rand([32, 3, 28, 28], device=input_device),
+                task_labels=torch.zeros([32], device=input_device)
+            ),
+            IncrementalSLRewards(y=torch.randint(10, [32], device=input_device)),
+        ),
+        0,
+    )
+    
+    # from collections.abc import Mapping, Sequence        
+    apply_to_collection(inputs, dtype=torch.Tensor, function=find_tensor_with_device)
+
+    assert replica_device is not None
+
 BaseMethodTests = TestBaseMethod

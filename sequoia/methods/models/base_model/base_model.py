@@ -4,10 +4,9 @@ You can use this as a base class when creating your own models, or you can
 start from scratch, whatever you like best.
 """
 from dataclasses import dataclass
-from typing import TypeVar, Generic, ClassVar, Dict, Type, Tuple, Optional
+from typing import TypeVar, Generic, ClassVar, Dict, Type, Tuple, Optional, List, Union
 import numpy as np
 import torch
-from pytorch_lightning.core.decorators import auto_move_data
 from simple_parsing import choice, mutable_field
 from torch import Tensor, nn, optim
 from torch.optim.optimizer import Optimizer
@@ -157,7 +156,6 @@ class BaseModel(
         # NOTE: We could use this to log stuff to wandb.
         # NOTE: The Setting already logs itself in the `wandb.config` dict.
 
-    @auto_move_data
     def forward(self, observations: Setting.Observations) -> ForwardPass:  # type: ignore
         """Forward pass of the model.
 
@@ -223,82 +221,71 @@ class BaseModel(
         # NOTE: Implementation is in `model.py`.
         return super().output_head_type(setting)
 
-    def training_step(
-        self, batch: Tuple[Observations, Optional[Rewards]], batch_idx: int, **kwargs
-    ):
-        step_result = super().training_step(batch, batch_idx=batch_idx, **kwargs)
-        loss: Tensor = step_result["loss"]
-        loss_object: Loss = step_result["loss_object"]
-
-        if not isinstance(loss, Tensor) or not loss.requires_grad:
-            # NOTE: There might be no loss at some steps, because for instance
-            # we haven't reached the end of an episode in an RL setting.
-            return None
-
-        # NOTE In RL, we can only update the model's weights on steps where the output
-        # head has as loss, because the output head has buffers of tensors whose grads
-        # would become invalidated if we performed the optimizer step.
-        if loss.requires_grad and not self.automatic_optimization:
-            output_head_loss = loss_object.losses.get(self.output_head.name)
-            update_model = (
-                output_head_loss is not None and output_head_loss.requires_grad
-            )
-            optimizer = self.optimizers()
-
-            self.manual_backward(loss, optimizer, retain_graph=not update_model)
-            if update_model:
-                optimizer.step()
-                optimizer.zero_grad()
-        return step_result
-
     @property
     def automatic_optimization(self) -> bool:
         return not isinstance(self.output_head, PolicyHead)
+    
+    def training_step(
+        self, 
+        batch: Tuple[Observations, Optional[Rewards]],
+        batch_idx: int,
+        environment: Environment = None,
+        dataloader_idx: int = None,
+        optimizer_idx: int = None,
+    ) -> ForwardPass:
+        return super().training_step(
+            batch,
+            batch_idx=batch_idx,
+            environment=environment or self.setting.train_env,
+            dataloader_idx=dataloader_idx,
+            optimizer_idx=optimizer_idx,
+        )
 
     def validation_step(
-        self, batch: Tuple[Observations, Optional[Rewards]], batch_idx: int, **kwargs
-    ):
-        return super().validation_step(batch, batch_idx=batch_idx, **kwargs,)
+        self,
+        batch: Tuple[Observations, Optional[Rewards]],
+        batch_idx: int,
+        environment: Environment = None,
+        dataloader_idx: int = None,
+    ) -> ForwardPass:
+        return super().validation_step(
+            batch,
+            batch_idx=batch_idx,
+            environment=environment or self.setting.val_env,
+            dataloader_idx=dataloader_idx,
+        )
 
     def test_step(
-        self, batch: Tuple[Observations, Optional[Rewards]], batch_idx: int, **kwargs
-    ):
-        return super().test_step(batch, batch_idx=batch_idx, **kwargs,)
+        self,
+        batch: Tuple[Observations, Optional[Rewards]],
+        batch_idx: int,
+        environment: Environment = None,
+        dataloader_idx: int = None,
+    ) -> ForwardPass:
+        return super().test_step(
+            batch,
+            batch_idx=batch_idx,
+            environment=environment or self.setting.test_env,
+            dataloader_idx=dataloader_idx,
+        )
 
     def shared_step(
         self,
         batch: Tuple[Observations, Optional[Rewards]],
         batch_idx: int,
         environment: Environment,
-        loss_name: str,
+        phase: str,
         dataloader_idx: int = None,
         optimizer_idx: int = None,
-    ) -> Dict:
-        results = super().shared_step(
+    ) -> ForwardPass:
+        return super().shared_step(
             batch,
-            batch_idx,
-            environment,
-            loss_name,
+            batch_idx=batch_idx,
+            environment=environment,
+            phase=phase,
             dataloader_idx=dataloader_idx,
             optimizer_idx=optimizer_idx,
         )
-        loss_tensor = results["loss"]
-        loss = results["loss_object"]
-
-        if loss_tensor != 0.0:
-            for key, value in loss.to_pbar_message().items():
-                assert not isinstance(
-                    value, (dict, str)
-                ), "shouldn't be nested at this point!"
-                self.log(key, value, prog_bar=True)
-                logger.debug(f"{key}: {value}")
-
-            for key, value in loss.to_log_dict(verbose=self.config.verbose).items():
-                assert not isinstance(
-                    value, (dict, str)
-                ), "shouldn't be nested at this point!"
-                self.log(key, value, logger=True)
-        return results
 
     def on_task_switch(self, task_id: Optional[int]) -> None:
         """Called when switching between tasks.

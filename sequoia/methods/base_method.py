@@ -43,46 +43,8 @@ from .models import BaseModel, ForwardPass
 logger = get_logger(__file__)
 
 from pytorch_lightning import Trainer
-from pytorch_lightning.trainer.connectors.data_connector import DataConnector
 from sequoia.common.gym_wrappers.utils import IterableWrapper, has_wrapper
 from sequoia.settings.rl.continual.environment import GymDataLoader
-
-
-class PatchedDataConnector(DataConnector):
-    def _with_is_last(self, iterable):
-        """ Patch for this 'with_is_last' which messes up iterating over an RL env.
-        """
-        if isinstance(iterable, gym.Env) and has_wrapper(iterable, GymDataLoader):
-            env = iterable
-            assert isinstance(env, IterableWrapper), env
-            while not env.is_closed():
-                for step, obs in enumerate(env):
-                    if env.is_closed():
-                        yield obs, True
-                        break
-                    else:
-                        yield obs, False
-        else:
-            yield from super()._with_is_last(iterable)
-            # it = iter(iterable)
-            # last = next(it)
-            # if hasattr(last, "done"):
-            #     end_of_episode = last["done"]
-            #     yield last, end_of_episode
-            # for val in it:
-            #     # yield last and has next
-            #     if hasattr(last, "done"):
-            #         end_of_episode = last["done"]
-            #         yield last, end_of_episode
-            #     else:
-            #         yield last, False
-            #     last = val
-            # yield last, no longer has next
-            # yield last, True
-
-import pytorch_lightning.trainer.connectors.data_connector
-setattr(pytorch_lightning.trainer.connectors.data_connector, "DataConnector", PatchedDataConnector)
-pytorch_lightning.trainer.connectors.data_connector.DataConnector = PatchedDataConnector
 
 
 @register_method
@@ -214,9 +176,6 @@ class BaseMethod(Method, Serializable, Parseable, target_setting=Setting):
 
         Args:
             setting (SettingType): The setting the method will be evaluated on.
-
-        TODO: For the Challenge, this should be some kind of read-only proxy to the
-        actual Setting.
         """
         # Note: this here is temporary, just tinkering with wandb atm.
         method_name: str = self.get_name()
@@ -303,8 +262,8 @@ class BaseMethod(Method, Serializable, Parseable, target_setting=Setting):
                 # NOTE: This isn't used, since we don't call `trainer.test()`.
                 self.trainer_options.limit_test_batches = setting.max_steps
 
-        self.model = self.create_model(setting)
-        assert self.hparams is self.model.hp
+        # TODO: Debug the multi-GPU setup with DP accelerator and pytorch lightning.
+        self.model = self.create_model(setting).to(self.config.device)
 
         # The PolicyHead actually does its own backward pass, so we disable
         # automatic optimization when using it.
@@ -404,7 +363,8 @@ class BaseMethod(Method, Serializable, Parseable, target_setting=Setting):
             Trainer: the Trainer object.
         """
         # We use this here to create loggers!
-        callbacks = self.create_callbacks(setting)
+        # No need to use this, we can use 
+        callbacks = self.configure_callbacks(setting)
         loggers = []
         if setting.wandb and setting.wandb.project:
             wandb_logger = setting.wandb.make_logger()
@@ -525,7 +485,7 @@ class BaseMethod(Method, Serializable, Parseable, target_setting=Setting):
         """
         super().receive_results(setting, results=results)
 
-    def create_callbacks(self, setting: SettingType) -> List[Callback]:
+    def configure_callbacks(self, setting: SettingType=None) -> List[Callback]:
         """Create the PytorchLightning Callbacks for this Setting.
 
         These callbacks will get added to the Trainer in `create_trainer`.
@@ -540,11 +500,12 @@ class BaseMethod(Method, Serializable, Parseable, target_setting=Setting):
         List[Callback]
             A List of `Callaback` objects to use during training.
         """
+        setting = setting or self.setting
         # TODO: Move this to something like a `configure_callbacks` method in the model,
         # once PL adds it.
         # from sequoia.common.callbacks.vae_callback import SaveVaeSamplesCallback
         return [
-            EarlyStopping(monitor="loss")
+            EarlyStopping(monitor="val/loss"),
             # self.hparams.knn_callback,
             # SaveVaeSamplesCallback(),
         ]
@@ -627,3 +588,115 @@ class BaseMethod(Method, Serializable, Parseable, target_setting=Setting):
         # Need to check wether this causes any issues.
         # run.config["hparams"] = self.hparams.to_dict()
         # run.config["trainer_config"] = self.trainer_options
+
+
+# TODO: Debugging/fixing this buggy method from Pytorch-Lightning.
+# import numbers
+# import warnings
+# from typing import Any
+
+# import torch
+# from torch.nn import DataParallel
+# from torch.nn.parallel import DistributedDataParallel
+
+# from pytorch_lightning.core.lightning import LightningModule
+# from pytorch_lightning.overrides.base import _LightningModuleWrapperBase
+# from pytorch_lightning.overrides.distributed import LightningDistributedModule
+from pytorch_lightning.utilities import rank_zero_warn
+# from pytorch_lightning.utilities.apply_func import apply_to_collection
+from functools import singledispatch
+
+# def _apply_to_collection(
+#     data: Any,
+#     dtype: Union[type, tuple],
+#     function: Callable,
+#     *args,
+#     wrong_dtype: Optional[Union[type, tuple]] = None,
+#     **kwargs
+# ) -> Any:
+
+import pytorch_lightning.utilities.apply_func
+from pytorch_lightning.utilities.apply_func import apply_to_collection
+apply_to_collection = singledispatch(apply_to_collection)
+setattr(pytorch_lightning.utilities.apply_func, "apply_to_collection", apply_to_collection)
+
+import pytorch_lightning.overrides.data_parallel
+setattr(pytorch_lightning.overrides.data_parallel, "apply_to_collection", apply_to_collection)
+
+from sequoia.common import Batch
+from sequoia.methods.models.forward_pass import ForwardPass
+
+@apply_to_collection.register(Batch)
+def _apply_to_batch(
+    data: Batch,
+    dtype: Union[type, tuple],
+    function: Callable,
+    *args,
+    wrong_dtype: Optional[Union[type, tuple]] = None,
+    **kwargs
+) -> Any:
+    # assert False, f"YAY! {type(data)}"
+    # logger.debug(f"{type(data)}, {dtype}, {function}, {args}, {wrong_dtype}, {kwargs}")
+    return type(data)(**{
+        k: apply_to_collection(v, dtype, function, *args, wrong_dtype=wrong_dtype, **kwargs)
+        for k, v in data.items()
+    })
+
+
+from pytorch_lightning.trainer.connectors.data_connector import DataConnector
+class PatchedDataConnector(DataConnector):
+    def _with_is_last(self, iterable):
+        """ Patch for this 'with_is_last' which messes up iterating over an RL env.
+        """
+        if isinstance(iterable, gym.Env) and has_wrapper(iterable, GymDataLoader):
+            env = iterable
+            assert isinstance(env, IterableWrapper), env
+            while not env.is_closed():
+                for step, obs in enumerate(env):
+                    if env.is_closed():
+                        yield obs, True
+                        break
+                    else:
+                        yield obs, False
+        else:
+            yield from super()._with_is_last(iterable)
+            # it = iter(iterable)
+            # last = next(it)
+            # if hasattr(last, "done"):
+            #     end_of_episode = last["done"]
+            #     yield last, end_of_episode
+            # for val in it:
+            #     # yield last and has next
+            #     if hasattr(last, "done"):
+            #         end_of_episode = last["done"]
+            #         yield last, end_of_episode
+            #     else:
+            #         yield last, False
+            #     last = val
+            # yield last, no longer has next
+            # yield last, True
+
+import pytorch_lightning.trainer.connectors.data_connector
+setattr(pytorch_lightning.trainer.connectors.data_connector, "DataConnector", PatchedDataConnector)
+pytorch_lightning.trainer.connectors.data_connector.DataConnector = PatchedDataConnector
+
+
+import pytorch_lightning.trainer.supporters
+from pytorch_lightning.trainer.supporters import prefetch_iterator
+prefetch_iterator = singledispatch(prefetch_iterator)
+setattr(pytorch_lightning.trainer.supporters, "prefetch_iterator", prefetch_iterator)
+from typing import Generator, Iterable
+
+def prefetch_iterator_for_env(iterable: Iterable) -> Generator[Tuple[Any, bool], None, None]:
+    if isinstance(iterable, gym.Env) and has_wrapper(iterable, GymDataLoader):
+        env = iterable
+        assert isinstance(env, IterableWrapper), env
+        while not env.is_closed():
+            for step, obs in enumerate(env):
+                if env.is_closed():
+                    yield obs, True
+                    break
+                else:
+                    yield obs, False
+    else:
+        yield from prefetch_iterator.dispatch(object)(iterable)

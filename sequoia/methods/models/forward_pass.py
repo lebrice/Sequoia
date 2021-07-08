@@ -7,7 +7,7 @@ from simple_parsing.helpers.flatten import FlattenedAccess
 from torch import Tensor
 
 from sequoia.common import Batch
-from sequoia.settings.base.objects import Observations, Actions
+from sequoia.settings.base.objects import Observations, Actions, Rewards
 
 
 @dataclass(frozen=True)
@@ -23,6 +23,7 @@ class ForwardPass(Batch, FlattenedAccess):
     observations: Observations
     representations: Tensor
     actions: Actions
+    rewards: Optional[Rewards]
 
     @property
     def h_x(self) -> Any:

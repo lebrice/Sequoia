@@ -3,7 +3,6 @@ from typing import Any, Dict, List, Optional, Sequence, Tuple, TypeVar, Union
 
 import numpy as np
 import torch
-from pytorch_lightning.core.decorators import auto_move_data
 from torch import Tensor, nn
 
 from dataclasses import replace
@@ -229,11 +228,11 @@ class MultiHeadModel(Model[SettingType]):
         batch: Tuple[Observations, Optional[Rewards]],
         batch_idx: int,
         environment: Environment,
-        loss_name: str,
+        phase: str,
         dataloader_idx: int = None,
         optimizer_idx: int = None,
     ) -> Dict:
-        assert loss_name
+        assert phase
         if dataloader_idx is not None:
             logger.debug(
                 "TODO: We were indirectly given a task id with the "
@@ -247,7 +246,7 @@ class MultiHeadModel(Model[SettingType]):
             batch=batch,
             batch_idx=batch_idx,
             environment=environment,
-            loss_name=loss_name,
+            phase=phase,
             dataloader_idx=dataloader_idx,
             optimizer_idx=optimizer_idx,
         )
@@ -354,7 +353,6 @@ class MultiHeadModel(Model[SettingType]):
             self.output_heads[str(task_id)] = task_output_head
         return task_output_head
 
-    @auto_move_data
     def forward(self, observations: IncrementalAssumption.Observations) -> ForwardPass:
         """Smart forward pass with multi-head predictions and task inference.
 
@@ -386,7 +384,7 @@ class MultiHeadModel(Model[SettingType]):
             All three cases above produce the same kind of outputs.
         """
         # TODO: Shouldn't have to do this here, since we have the @auto_move_data dec...
-        observations = observations.to(self.device)
+        # observations = observations.to(self.device)
         task_ids: Optional[Tensor] = observations.task_labels
 
         if isinstance(task_ids, np.ndarray) and task_ids.dtype == np.object:
@@ -421,7 +419,7 @@ class MultiHeadModel(Model[SettingType]):
             # Setup the model for this task. For now we just switch the output head.
             self.output_head = self.get_or_create_output_head(task_id)
 
-    def split_forward_pass(self, observations: Observations) -> Tensor:
+    def split_forward_pass(self, observations: Observations) -> ForwardPass:
         """Perform a forward pass for a batch of observations from different tasks.
 
         This is called in `forward` when there is more than one unique task label in the
