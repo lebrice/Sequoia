@@ -399,9 +399,14 @@ class AvalancheMethod(
 
         # Stack all the observations into a single `Observations` object:
         stacked_observations: Observations = Observations.concatenate(all_observations)
+        stacked_rewards: Rewards = Rewards.concatenate(all_rewards)
+        # BUG: Cuda errors, probably due to indexing into a tensor on different device
+        # /numpy/etc.
+        stacked_observations = stacked_observations.cpu()
+        stacked_rewards = stacked_rewards.cpu()
+
         x = stacked_observations.x
         task_labels = stacked_observations.task_labels
-        stacked_rewards: Rewards = Rewards.concatenate(all_rewards)
         y = stacked_rewards.y
         return SequoiaExperience(
             env=env, setting=setting, x=x, y=y, task_labels=task_labels
