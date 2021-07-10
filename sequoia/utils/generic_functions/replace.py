@@ -74,3 +74,8 @@ def _replace_dict_items(obj: spaces.Dict, **items) -> Dict:
     """ Handler for Dict spaces. """
     return type(obj)(replace(obj.spaces, **items))
 
+
+from sequoia.common.batch import Batch
+@replace.register(Batch)
+def _replace_batch_items(obj: Batch, **items) -> Batch:
+    return dataclasses.replace(obj, **items)

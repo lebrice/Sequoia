@@ -1,10 +1,12 @@
 import itertools
 from dataclasses import dataclass
+from functools import partial
 from pathlib import Path
 from typing import ClassVar, Dict, List, Optional, Type, TypeVar, Union
 
 import gym
 import numpy as np
+import wandb
 from continuum.datasets import (
     CIFAR10,
     CIFAR100,
@@ -23,27 +25,27 @@ from continuum.datasets import (
 from continuum.scenarios import ClassIncremental, _BaseScenario
 from continuum.tasks import TaskSet, concat, split_train_val
 from gym import Space, spaces
+from simple_parsing import choice, field, list_field
+from torch import Tensor
+from torch.utils.data import ConcatDataset, Dataset, Subset
+
 from sequoia.common.config import Config
-from sequoia.common.gym_wrappers import RenderEnvWrapper, TransformObservation
+from sequoia.common.gym_wrappers import RenderEnvWrapper, TransformObservation, TransformReward
 from sequoia.common.gym_wrappers.convert_tensors import add_tensor_support
 from sequoia.common.gym_wrappers.convert_tensors import (
     add_tensor_support as tensor_space,
 )
-from sequoia.common.spaces import Image, TypedDictSpace, Sparse
-from sequoia.common.transforms import Transforms, Compose
+from sequoia.common.spaces import Image, Sparse, TypedDictSpace
+from sequoia.common.transforms import Compose, Transforms
 from sequoia.settings.assumptions.continual import ContinualAssumption
 from sequoia.settings.base import Method, SettingABC
 from sequoia.settings.sl import SLSetting
 from sequoia.settings.sl.environment import PassiveEnvironment
-
-# TODO: When we add other kinds of datasets, then add the obs/action/reward spaces to
-# these dicts.
-from sequoia.utils.logging_utils import get_logger
-from simple_parsing import choice, field, list_field
-from torch import Tensor
-from torch.utils.data import ConcatDataset, Dataset, Subset
 from sequoia.settings.sl.wrappers import MeasureSLPerformanceWrapper
+from sequoia.utils.generic_functions import move
+from sequoia.utils.logging_utils import get_logger
 from sequoia.utils.utils import flag
+
 from .environment import (
     ContinualSLEnvironment,
     ContinualSLTestEnvironment,
@@ -61,8 +63,6 @@ from .objects import (
 )
 from .results import ContinualSLResults
 from .wrappers import relabel
-from continuum.tasks import concat
-import wandb
 
 logger = get_logger(__file__)
 
@@ -81,6 +81,7 @@ class ContinualSLSetting(SLSetting, ContinualAssumption):
     - No information about task boundaries or task identity (no task IDs)
     - Maximum of one 'epoch' through the environment.
     """
+
     # Class variables that hold the 'base' observation/action/reward spaces for the
     # available datasets.
     base_observation_spaces: ClassVar[Dict[str, gym.Space]] = base_observation_spaces
@@ -170,6 +171,12 @@ class ContinualSLSetting(SLSetting, ContinualAssumption):
     # TODO: Need to put num_workers in only one place.
     batch_size: int = field(default=32, cmd=False)
     num_workers: int = field(default=4, cmd=False)
+    
+    # When True, a Monitor-like wrapper will be applied to the training environment
+    # and monitor the 'online' performance during training. Note that in SL, this will
+    # also cause the Rewards (y) to be withheld until actions are passed to the `send`
+    # method of the Environment.
+    monitor_training_performance: bool = flag(False)
 
     def __post_init__(self):
         super().__post_init__()
@@ -286,6 +293,10 @@ class ContinualSLSetting(SLSetting, ContinualAssumption):
             shuffle=False,
             one_epoch_only=(not self.known_task_boundaries_at_train_time),
         )
+        if self.config.device:
+            # TODO: Put this before or after the image transforms?
+            env = TransformObservation(env, f=partial(move, device=self.config.device))
+            env = TransformReward(env, f=partial(move, device=self.config.device))
 
         if self.config.render:
             # Add a wrapper that calls 'env.render' at each step?
@@ -341,6 +352,10 @@ class ContinualSLSetting(SLSetting, ContinualAssumption):
             one_epoch_only=(not self.known_task_boundaries_at_train_time),
         )
 
+        if self.config.device:
+            # TODO: Put this before or after the image transforms?
+            env = TransformObservation(env, f=partial(move, device=self.config.device))
+            env = TransformReward(env, f=partial(move, device=self.config.device))
         # TODO: If wandb is enabled, then add customized Monitor wrapper (with
         # IterableWrapper as an additional subclass). There would then be a lot of
         # overlap between such a Monitor and the current TestEnvironment.
@@ -397,6 +412,11 @@ class ContinualSLSetting(SLSetting, ContinualAssumption):
             shuffle=False,
             one_epoch_only=True,
         )
+        
+        if self.config.device:
+            # TODO: Put this before or after the image transforms?
+            env = TransformObservation(env, f=partial(move, device=self.config.device))
+            env = TransformReward(env, f=partial(move, device=self.config.device))
 
         # NOTE: The transforms from `self.transforms` (the 'base' transforms) were
         # already added when creating the datasets and the CL scenario.
@@ -599,7 +619,7 @@ class ContinualSLSetting(SLSetting, ContinualAssumption):
         if not self.task_labels_at_train_time:
             task_label_space = Sparse(task_label_space, 1.0)
         task_label_space = add_tensor_support(task_label_space)
- 
+
         return TypedDictSpace(
             x=x_space, task_labels=task_label_space, dtype=self.Observations,
         )
@@ -778,10 +798,11 @@ def smooth_task_boundaries_concat(
     return shuffled_indices
 
 
-from .wrappers import replace_taskset_attributes
-from typing import Sequence
-from typing import overload
 from functools import singledispatch
+from typing import Sequence, overload
+
+from .wrappers import replace_taskset_attributes
+
 DatasetType = TypeVar("DatasetType", bound=Dataset)
 
 
@@ -789,10 +810,12 @@ DatasetType = TypeVar("DatasetType", bound=Dataset)
 def subset(dataset: TaskSet, indices: Sequence[int]) -> TaskSet:
     ...
 
+
 @singledispatch
 def subset(dataset: DatasetType, indices: Sequence[int]) -> Union[Subset, DatasetType]:
     raise NotImplementedError(f"Don't know how to take a subset of dataset {dataset}")
     return Subset(dataset, indices)
+
 
 @subset.register
 def taskset_subset(taskset: TaskSet, indices: np.ndarray) -> TaskSet:
@@ -825,8 +848,8 @@ def random_subset(
     return subset(taskset, indices)
 
 
-
 DatasetType = TypeVar("DatasetType", bound=Dataset)
+
 
 def shuffle(dataset: DatasetType, seed: int = None) -> DatasetType:
     length = len(dataset)

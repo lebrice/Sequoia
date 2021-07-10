@@ -107,12 +107,6 @@ class ContinualAssumption(AssumptionBase):
 
     Results: ClassVar[Type[ContinualResults]] = ContinualResults
 
-    # WIP: When True, a Monitor-like wrapper will be applied to the training environment
-    # and monitor the 'online' performance during training. Note that in SL, this will
-    # also cause the Rewards (y) to be withheld until actions are passed to the `send`
-    # method of the Environment.
-    monitor_training_performance: bool = flag(False)
-
     # Options related to Weights & Biases (wandb). Turned Off by default. Passing any of
     # its arguments will enable wandb.
     # NOTE: Adding `cmd=False` here, so we only create the args in `Experiment`.
