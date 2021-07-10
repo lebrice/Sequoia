@@ -5,25 +5,28 @@ import warnings
 from contextlib import redirect_stdout
 from dataclasses import dataclass
 from functools import partial
-from itertools import islice
 from io import StringIO
+from itertools import islice
 from pathlib import Path
 from typing import Any, Callable, ClassVar, Dict, List, Optional, Type, Union
 
 import gym
 from gym import spaces
-from sequoia.settings.base import Method
+from simple_parsing import field, list_field
+from simple_parsing.helpers import choice
+from typing_extensions import Final
+
 from sequoia.common.gym_wrappers import MultiTaskEnvironment, TransformObservation
 from sequoia.common.gym_wrappers.utils import is_monsterkong_env
-from sequoia.common.spaces import Sparse
 from sequoia.common.metrics import EpisodeMetrics
+from sequoia.common.spaces import Sparse
 from sequoia.common.transforms import Transforms
 from sequoia.settings.assumptions.incremental import (
     IncrementalAssumption,
-    TaskSequenceResults,
     TaskResults,
+    TaskSequenceResults,
 )
-from sequoia.settings.base import Results
+from sequoia.settings.base import Method, Results
 from sequoia.settings.rl.continual import ContinualRLSetting
 from sequoia.settings.rl.envs import (
     ATARI_PY_INSTALLED,
@@ -41,9 +44,6 @@ from sequoia.settings.rl.envs import (
 from sequoia.settings.rl.wrappers.task_labels import FixedTaskLabelWrapper
 from sequoia.utils import constant, deprecated_property, dict_union, pairwise
 from sequoia.utils.logging_utils import get_logger
-from simple_parsing import field, list_field
-from simple_parsing.helpers import choice
-from typing_extensions import Final
 
 from ..discrete.setting import DiscreteTaskAgnosticRLSetting
 from ..discrete.setting import supported_envs as _parent_supported_envs
@@ -129,7 +129,7 @@ class IncrementalRLSetting(IncrementalAssumption, DiscreteTaskAgnosticRLSetting)
 
     def __post_init__(self):
         if self.dataset in ["MT10", "MT50", "CW10", "CW20"]:
-            from metaworld import MT10, MT50, Task, MetaWorldEnv
+            from metaworld import MT10, MT50, MetaWorldEnv, Task
 
             benchmarks = {
                 "MT10": MT10,
@@ -406,22 +406,30 @@ class IncrementalRLSetting(IncrementalAssumption, DiscreteTaskAgnosticRLSetting)
             # `train/val/test_dataloader` methods work as usual!
             # TODO: Instantiate the envs if needed.
             # TODO: Add support for batching these environments:
-            def instantiate_all_envs(envs: List[Union[Callable[[], gym.Env], gym.Env]]) -> List[gym.Env]:
-                return [
-                    env() if not isinstance(env, gym.Env) else env for env in envs
-                ]
+            def instantiate_all_envs(
+                envs: List[Union[Callable[[], gym.Env], gym.Env]]
+            ) -> List[gym.Env]:
+                return [env() if not isinstance(env, gym.Env) else env for env in envs]
+
             self.train_envs = instantiate_all_envs(self.train_envs)
             self.val_envs = instantiate_all_envs(self.val_envs)
             self.test_envs = instantiate_all_envs(self.test_envs)
 
-            
             if self.stationary_context:
-                from sequoia.settings.rl.discrete.multienv_wrappers import RandomMultiEnvWrapper, ConcatEnvsWrapper
-                
-               
-                self.train_dataset = RandomMultiEnvWrapper(self.train_envs, add_task_ids=self.task_labels_at_train_time)
-                self.val_dataset = RandomMultiEnvWrapper(self.val_envs, add_task_ids=self.task_labels_at_train_time)
-                self.test_dataset = ConcatEnvsWrapper(self.test_envs, add_task_ids=self.task_labels_at_test_time)
+                from sequoia.settings.rl.discrete.multienv_wrappers import (
+                    ConcatEnvsWrapper,
+                    RandomMultiEnvWrapper,
+                )
+
+                self.train_dataset = RandomMultiEnvWrapper(
+                    self.train_envs, add_task_ids=self.task_labels_at_train_time
+                )
+                self.val_dataset = RandomMultiEnvWrapper(
+                    self.val_envs, add_task_ids=self.task_labels_at_train_time
+                )
+                self.test_dataset = ConcatEnvsWrapper(
+                    self.test_envs, add_task_ids=self.task_labels_at_test_time
+                )
             elif self.known_task_boundaries_at_train_time:
                 self.train_dataset = self.train_envs[self.current_task_id]
                 self.val_dataset = self.val_envs[self.current_task_id]
@@ -429,9 +437,15 @@ class IncrementalRLSetting(IncrementalAssumption, DiscreteTaskAgnosticRLSetting)
                 # work.
                 self.test_dataset = self.test_envs[self.current_task_id]
             else:
-                self.train_dataset = ConcatEnvsWrapper(self.train_envs, add_task_ids=self.task_labels_at_train_time)
-                self.val_dataset = ConcatEnvsWrapper(self.val_envs, add_task_ids=self.task_labels_at_train_time)
-                self.test_dataset = ConcatEnvsWrapper(self.test_envs, add_task_ids=self.task_labels_at_test_time)
+                self.train_dataset = ConcatEnvsWrapper(
+                    self.train_envs, add_task_ids=self.task_labels_at_train_time
+                )
+                self.val_dataset = ConcatEnvsWrapper(
+                    self.val_envs, add_task_ids=self.task_labels_at_train_time
+                )
+                self.test_dataset = ConcatEnvsWrapper(
+                    self.test_envs, add_task_ids=self.task_labels_at_test_time
+                )
             # Check that the observation/action spaces are all the same for all
             # the train/valid/test envs
             # NOTE: Skipping this check for now.
@@ -639,10 +653,7 @@ class IncrementalRLSetting(IncrementalAssumption, DiscreteTaskAgnosticRLSetting)
             # at train vs test time, allow the test task schedule to have different
             # ordering than train / valid.
             task = type(self)._task_sampling_function(
-                temp_env,
-                step=step,
-                change_steps=change_steps,
-                seed=seed,
+                temp_env, step=step, change_steps=change_steps, seed=seed,
             )
             task_schedule[step] = task
 

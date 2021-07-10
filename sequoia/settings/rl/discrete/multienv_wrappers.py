@@ -153,6 +153,9 @@ class MultiEnvWrapper(IterableWrapper, ABC):
         env_seeds = self.rng.integers(0, 1e8, size=len(self._envs)).tolist()
         seeds = env_seeds.copy()
         for index, env_seed in enumerate(env_seeds):
+            # NOTE: Would be nice to be able to NOT instantiate all the envs and just
+            # seed them when they get created, but then we wouldn't be able to return
+            # the seeds from all envs here (which I'm not 100% sure its thaaat useful..)
             self._instantiate_env(index)
             env = self._envs[index]
             env_seeds: Optional[List[int]] = env.seed(env_seed)
@@ -185,7 +188,7 @@ class ConcatEnvsWrapper(MultiEnvWrapper):
         old_task = self._current_task_id
         observation = super().reset()
         new_task = self._current_task_id
-        if old_task != new_task and self.on_task_switch_callback:
+        if self.on_task_switch_callback and old_task != new_task:
             self.on_task_switch_callback(new_task if self._add_task_labels else None)
         return observation
 

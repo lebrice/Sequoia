@@ -43,7 +43,7 @@ def get_logger(name: str, level: int=None) -> logging.Logger:
     from sys import argv
     logger = root_logger.getChild(name)
 
-    debug_flags: List[str] = ["-d", "--debug", "-v", "-vv", "-vvv" "--verbose"]
+    debug_flags: List[str] = ["-d", "--debug", "-vv", "-vvv" "--verbose"]
 
     if level is None and any(v in argv for v in debug_flags):
         level = logging.DEBUG

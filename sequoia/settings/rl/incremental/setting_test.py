@@ -39,11 +39,6 @@ class TestIncrementalRLSetting(DiscreteTaskAgnosticRLSettingTests):
     Setting: ClassVar[Type[Setting]] = IncrementalRLSetting
     dataset: pytest.fixture = make_dataset_fixture(IncrementalRLSetting)
 
-    @pytest.fixture(params=[1, 2])
-    def nb_tasks(self, request):
-        n = request.param
-        return n
-
     @pytest.fixture()
     def setting_kwargs(self, dataset: str, nb_tasks: int):
         """ Fixture used to pass keyword arguments when creating a Setting. """

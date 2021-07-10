@@ -213,6 +213,7 @@ class TestContinualRLSetting:
         """ Check that the values of the given attributes do change at each step during
         training.
         """
+        setting_kwargs.setdefault("nb_tasks", 2)
         setting_kwargs.setdefault("train_max_steps", 1000)
         setting_kwargs.setdefault("max_episode_steps", 50)
         setting_kwargs.setdefault("test_max_steps", 1000)
@@ -290,10 +291,19 @@ class TestContinualRLSetting:
             setting: DiscreteTaskAgnosticRLSetting
             train_tasks = setting.nb_tasks
             unique_attribute_values = set(train_values)
+
+            assert setting.train_task_schedule.keys() == task_schedule_for_attr.keys()
+            for k, v in task_schedule_for_attr.items():
+                task_dict = setting.train_task_schedule[k]
+                assert attribute in task_dict
+                assert task_dict[attribute] == v
+
             assert len(unique_attribute_values) == train_tasks, (
+                type(setting),
                 attribute,
                 unique_attribute_values,
-                setting.train_task_schedule,
+                task_schedule_for_attr,
+                setting.nb_tasks,
             )
 
     def validate_results(

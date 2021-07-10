@@ -298,11 +298,13 @@ class ContinualRLSetting(RLSetting, ContinualAssumption):
     steps_per_task: Optional[int] = field(default=None, to_dict=False, cmd=False)
 
     def __post_init__(self):
-        super().__post_init__()
+        defaults = {f.name: f.default for f in fields(self)}
 
+        super().__post_init__()
+        
         # TODO: Fix nnoying little issues with this trio of fields that are interlinked:
         if self.test_steps_per_task is not None:
-            if self.test_max_steps == 10_000:
+            if self.test_max_steps == defaults["test_max_steps"]:
                 self.test_max_steps = self.nb_tasks * self.test_steps_per_task
             else:
                 self.nb_tasks = self.test_max_steps // self.test_steps_per_task
@@ -392,7 +394,6 @@ class ContinualRLSetting(RLSetting, ContinualAssumption):
         self._temp_test_env: Optional[gym.Env] = None
         # Create the task schedules, using the 'task sampling' function from `tasks.py`.
 
-        defaults = {f.name: f.default for f in fields(self)}
 
         if not self.train_task_schedule:
             self.train_task_schedule = self.create_train_task_schedule()
@@ -547,7 +548,13 @@ class ContinualRLSetting(RLSetting, ContinualAssumption):
         #         f"{len(train_task_schedule)} tasks in the task schedule, but got value "
         #         f"of {self.nb_tasks} instead!"
         #     )
-        nb_tasks = len(self.train_task_schedule) - 1
+        nb_tasks = len(self.train_task_schedule)
+        if (
+            self.train_max_steps != defaults["train_max_steps"] and
+            self.train_max_steps == max(self.train_task_schedule)
+            ) or (not self.smooth_task_boundaries):
+            nb_tasks -= 1
+
         if self.nb_tasks != nb_tasks:
             if self.nb_tasks == defaults["nb_tasks"]:
                 assert len(self.train_task_schedule) == len(self.test_task_schedule)
@@ -558,7 +565,10 @@ class ContinualRLSetting(RLSetting, ContinualAssumption):
             else:
                 raise RuntimeError(
                     f"The passed number of tasks ({self.nb_tasks}) is inconsistent "
-                    f"with the passed task schedules, which have {nb_tasks} tasks."
+                    f"with train_max_steps ({self.train_max_steps}) and the "
+                    f"passed task schedule (with keys "
+                    f"{self.train_task_schedule.keys()}): "
+                    f"Expected nb_tasks to be None or {nb_tasks}."
                 )
 
         if not train_task_lengths:
@@ -610,6 +620,7 @@ class ContinualRLSetting(RLSetting, ContinualAssumption):
                 train_max_steps = self.train_steps_per_task * self.nb_tasks
         else:
             train_max_steps = self.train_max_steps
+
         task_schedule_keys = np.linspace(
             0, train_max_steps, self.nb_tasks + 1, endpoint=True, dtype=int
         ).tolist()

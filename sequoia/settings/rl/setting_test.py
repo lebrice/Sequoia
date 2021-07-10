@@ -3,6 +3,10 @@ from sequoia.methods import RandomBaselineMethod
 from typing import List, Optional, Callable, Dict, Any
 from sequoia.settings.base import Environment
 from sequoia.common.gym_wrappers import IterableWrapper
+from sequoia.utils.logging_utils import get_logger
+
+
+logger = get_logger(__file__)
 
 
 class DummyMethod(RandomBaselineMethod):
@@ -44,7 +48,8 @@ class DummyMethod(RandomBaselineMethod):
         self.changing_attributes = list(
             set().union(*[task.keys() for task in setting.train_task_schedule.values()])
         )
-
+        self.train_env = None
+        self.valid_env = None
         # Reset stuff, just so we can reuse this Method between tests maybe.
         # self.n_fit_calls = 0
         # self.train_wrappers.clear()
@@ -74,7 +79,6 @@ class DummyMethod(RandomBaselineMethod):
         valid_env = CheckAttributesWrapper(
             valid_env, attributes=self.changing_attributes
         )
-
         self.train_env = train_env
         self.valid_env = valid_env
         # TODO: Fix any issues with how the RandomBaselineMethod deals with
