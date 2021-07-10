@@ -2,9 +2,9 @@
 """
 import difflib
 import itertools
-import textwrap
 import json
 import math
+import textwrap
 import warnings
 from copy import deepcopy
 from dataclasses import dataclass, fields
@@ -31,8 +31,8 @@ from sequoia.common.gym_wrappers import (
     RenderEnvWrapper,
     SmoothTransitions,
     TransformObservation,
+    TransformReward,
 )
-from sequoia.utils.utils import pairwise, deprecated_property
 from sequoia.common.gym_wrappers.action_limit import ActionLimit
 from sequoia.common.gym_wrappers.batch_env.tile_images import tile_images
 from sequoia.common.gym_wrappers.convert_tensors import add_tensor_support
@@ -64,8 +64,8 @@ from sequoia.settings.rl.wrappers import (
     TypedObjectsWrapper,
 )
 from sequoia.utils import get_logger
-from sequoia.utils.utils import camel_case, flag
-
+from sequoia.utils.generic_functions import move
+from sequoia.utils.utils import camel_case, deprecated_property, flag, pairwise
 
 from .environment import GymDataLoader
 from .make_env import make_batched_env
@@ -326,11 +326,9 @@ class ContinualRLSetting(RLSetting, ContinualAssumption):
         #     warnings.warn(DeprecationWarning("'max_steps' is deprecated, use 'train_max_steps' instead."))
         #     self.train_max_steps = self.max_steps
         # if self.test_steps is not None:
-        #     warnings.warn(DeprecationWarning("'test_steps' is deprecated, use 'test_max_steps' instead."))     
+        #     warnings.warn(DeprecationWarning("'test_steps' is deprecated, use 'test_max_steps' instead."))
 
-        if (
-            self.dataset not in self.available_datasets.values()
-        ):
+        if self.dataset not in self.available_datasets.values():
             try:
                 self.dataset = find_matching_dataset(
                     self.available_datasets, self.dataset
@@ -339,7 +337,9 @@ class ContinualRLSetting(RLSetting, ContinualAssumption):
                 # FIXME: Removing this warning in the case where a custom env is pased
                 # for each task. However, the train_envs field is only created in a
                 # subclass, so this check is ugly.
-                if not (hasattr(self, "train_envs") and self.dataset is self.train_envs[0]):
+                if not (
+                    hasattr(self, "train_envs") and self.dataset is self.train_envs[0]
+                ):
                     warnings.warn(
                         RuntimeWarning(
                             f"Will attempt to use unsupported dataset {textwrap.shorten(str(self.dataset), 100)}!"
@@ -407,22 +407,22 @@ class ContinualRLSetting(RLSetting, ContinualAssumption):
                     f"Setting the number of tasks to {self.nb_tasks} based on the task "
                     f"schedule."
                 )
-            self.train_steps_per_task = self.train_steps_per_task or self.train_max_steps // self.nb_tasks
+            self.train_steps_per_task = (
+                self.train_steps_per_task or self.train_max_steps // self.nb_tasks
+            )
             self.train_task_schedule = type(self.train_task_schedule)(
                 {
                     i * self.train_steps_per_task: self.train_task_schedule[step]
-                    for i, step in enumerate(
-                        sorted(self.train_task_schedule.keys())
-                    )
+                    for i, step in enumerate(sorted(self.train_task_schedule.keys()))
                 }
             )
 
         if self.smooth_task_boundaries:
-            # NOTE: Need to have an entry at the final step  
+            # NOTE: Need to have an entry at the final step
             last_task_step = max(self.train_task_schedule.keys())
             last_task = self.train_task_schedule[last_task_step]
             if self.train_max_steps not in self.train_task_schedule:
-                #FIXME Duplicating the last task for now?
+                # FIXME Duplicating the last task for now?
                 self.train_task_schedule[self.train_max_steps] = last_task
 
         if 0 not in self.train_task_schedule.keys():
@@ -535,7 +535,7 @@ class ContinualRLSetting(RLSetting, ContinualAssumption):
         test_last_boundary = max(
             set(self.test_task_schedule.keys()) - {self.test_max_steps}
         )
-        
+
         # Expected value for self.nb_tasks
         # if self.nb_tasks != nb_tasks:
         #     raise RuntimeError(
@@ -666,10 +666,7 @@ class ContinualRLSetting(RLSetting, ContinualAssumption):
         for step in change_steps:
             # TODO: Pass wether its for training/validation/testing?
             task = type(self)._task_sampling_function(
-                temp_env,
-                step=step,
-                change_steps=change_steps,
-                seed=seed,
+                temp_env, step=step, change_steps=change_steps, seed=seed,
             )
             task_schedule[step] = task
 
@@ -688,7 +685,7 @@ class ContinualRLSetting(RLSetting, ContinualAssumption):
            otherwise the task labels space is `Sparse`, and entries will be `None`.
         """
         # TODO: Is it right that we set the observation space on the Setting to be the
-        # observation space of the current train environment? 
+        # observation space of the current train environment?
         # In what situation could there be any difference between those?
         # - Changing the 'transforms' attributes after training?
         # if self.train_env is not None:
@@ -723,7 +720,10 @@ class ContinualRLSetting(RLSetting, ContinualAssumption):
             # NOTE: This check is a bit too strict, the task label space's sparsity for
             # instance isn't exactly the same.
             # assert observation_space == self.train_env.observation_space
-            assert observation_space.x == self.train_env.observation_space.x, (observation_space, self.train_env.observation_space)
+            assert observation_space.x == self.train_env.observation_space.x, (
+                observation_space,
+                self.train_env.observation_space,
+            )
             # assert observation_space.task_labels.n == self.train_env.observation_space.task_labels.n
         return observation_space
 
@@ -867,7 +867,7 @@ class ContinualRLSetting(RLSetting, ContinualAssumption):
 
         batch_size = batch_size or self.batch_size
         num_workers = num_workers if num_workers is not None else self.num_workers
-        
+
         env_factory = partial(
             self._make_env,
             base_env=self.train_dataset,
@@ -1136,6 +1136,11 @@ class ContinualRLSetting(RLSetting, ContinualAssumption):
         # from the BaseMethod, and leave it 'off' by default.
         if self.add_done_to_observations:
             env = AddDoneToObservation(env)
+
+        if self.prefer_tensors and self.config.device:
+            # TODO: Put this before or after the image transforms?
+            env = TransformObservation(env, f=partial(move, device=self.config.device))
+            env = TransformReward(env, f=partial(move, device=self.config.device))
         # # Convert the samples to tensors and move them to the right device.
         # env = ConvertToFromTensors(env)
         # env = ConvertToFromTensors(env, device=self.config.device)

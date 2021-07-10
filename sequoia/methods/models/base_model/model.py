@@ -579,7 +579,8 @@ class Model(LightningModule, Generic[SettingType]):
         
         loss: Loss = self.get_loss(forward_pass, rewards, loss_name=phase)
         loss_tensor: Tensor = loss.loss
-
+        if loss_tensor == 0.:
+            return loss
         loss_pbar_dict = loss.to_pbar_message()
         for key, value in loss_pbar_dict.items():
             assert not isinstance(value, dict), "shouldn't be nested at this point!"

@@ -6,7 +6,7 @@ nngeometry @ git+https://github.com/oleksost/nngeometry.git#egg=nngeometry
 pyyaml!=5.4.*,>=5.1
 simple_parsing>=0.0.15.post1
 matplotlib==3.2.2
-torch>=1.7
+torch>=1.8
 torchvision>=0.9
 scikit-learn
 tqdm
@@ -18,8 +18,8 @@ pandas
 # Only for python < 3.8
 singledispatchmethod;python_version<'3.8'
 # Temporarily fix the pytorch lightning version (issue #134)
-pytorch-lightning>=1.1.8
-pytorch-lightning-bolts>=0.3.0
+pytorch-lightning>=1.3.8
+pytorch-lightning-bolts>=0.3.2
 # Requirements for running tests:
 pytest-timeout
 pytest-xdist
