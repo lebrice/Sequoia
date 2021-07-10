@@ -14,10 +14,10 @@ from gym.utils import colorize
 from simple_parsing import ArgumentParser, mutable_field
 
 from sequoia.common.config import Config
-from sequoia.common.config.trainer_config import TrainerConfig
 from sequoia.methods import register_method
 from sequoia.methods.aux_tasks.ewc import EWCTask
 from sequoia.methods.base_method import BaseMethod, BaseModel
+from sequoia.methods.trainer import TrainerConfig
 from sequoia.settings import Setting, TaskIncrementalRLSetting
 from sequoia.settings.assumptions.incremental import IncrementalAssumption
 

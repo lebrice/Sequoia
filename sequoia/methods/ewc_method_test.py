@@ -6,9 +6,10 @@ from typing import ClassVar, Type
 import numpy as np
 import pytest
 from sequoia.common import Loss
-from sequoia.common.config import TrainerConfig, Config
+from sequoia.common.config import Config
 from sequoia.conftest import slow
 from sequoia.methods import Method
+from sequoia.methods.trainer import TrainerConfig
 from sequoia.settings.rl import (
     IncrementalRLSetting,
     TaskIncrementalRLSetting,

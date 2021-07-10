@@ -4,7 +4,7 @@ import numpy as np
 import pytest
 import torch
 from pytorch_lightning import Trainer
-from sequoia.common.config import Config, TrainerConfig
+from sequoia.common.config import Config
 from sequoia.conftest import skip_param, slow
 from sequoia.settings import (
     ClassIncrementalSetting,
@@ -12,6 +12,7 @@ from sequoia.settings import (
     TraditionalRLSetting,
     Setting,
 )
+from sequoia.methods.trainer import TrainerConfig
 from sequoia.settings.rl.continual.results import ContinualRLResults
 
 from .base_method import BaseMethod, BaseModel

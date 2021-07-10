@@ -33,17 +33,31 @@ def stack(first_item: Union[T, List[T]], *others: T, **kwargs) -> Any:
     if not others:
         # If this was called like stack(tensor_list), then we just split off
         # the list of items.
-        assert isinstance(first_item, (list, tuple))
+        if first_item is None:
+            # Stacking a list of 'None' items returns None.
+            return None
+        assert isinstance(first_item, (list, tuple)), first_item
         # assert len(first_item) > 1, first_item
         items = first_item
         return stack(items[0], *items[1:], **kwargs)
-    return np.asarray([first_item, *others], **kwargs)
+    np_stack_kwargs = kwargs.copy()
+    if "dim" in np_stack_kwargs:
+        np_stack_kwargs["axis"] = np_stack_kwargs.pop("dim")
+    return np.stack([first_item, *others], **np_stack_kwargs)
+
+
+@stack.register(type(None))
+def _stack_none(
+    first_item: None, *others: None, **kwargs
+) -> None:
+    return None
 
 
 @stack.register(np.ndarray)
 def _stack_ndarrays(
     first_item: np.ndarray, *others: np.ndarray, **kwargs
 ) -> np.ndarray:
+    assert all(v is None for v in others), "Only some values are None"
     return np.stack([first_item, *others], **kwargs)
 
 

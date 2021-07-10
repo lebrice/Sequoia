@@ -199,44 +199,9 @@ class ConcatEnvsWrapper(MultiEnvWrapper):
     def __iter__(self):
         # BUG: iterating over a MultiEnvWrapper
         return super().__iter__()
-        
-        # current_env_id = self._current_task_id
-        # if self.is_closed(current_env_id):
-        #     assert False, "huh?"
-        # self.observation_ = self.reset()
-        # self.done_ = False
-        # self.action_ = None
-        # self.reward_ = None
-
-        # yield self.observation_
-        # if self.action_ is None:
-        #     raise RuntimeError(
-        #         f"You have to send an action using send() after every "
-        #         f"observation. (env = {self})"
-        #     )
-
-        # while not self.done_:
-        #     self.action_ = None
-        #     self.reward_ = None
-        #     yield self.observation_
-        #     if self.action_ is None:
-        #         raise RuntimeError(
-        #             f"You have to send an action using send() between every "
-        #             f"observation. (env = {self})"
-        #         )
-
-        # # return super().__iter__()
-        # if self.is_closed():
-        #     self.close()
-        # elif self.is_closed(current_env_id):
-        #     self.set_task(self.next_task())
-        # self.observation_ = self.reset()
 
     def send(self, action):
-        # return super().send(action)
-        self.action_ = action
-        self.observation_, self.reward_, self.done_, self.info_ = self.step(action)
-        return self.reward_
+        return super().send(action)
 
     #     if not self.is_closed(env_id):
     #         self.observation_ = env.reset()
