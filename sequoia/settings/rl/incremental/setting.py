@@ -38,6 +38,7 @@ from sequoia.settings.rl.envs import (
     metaworld_envs,
     mtenv_envs,
 )
+from sequoia.settings.rl.wrappers.task_labels import FixedTaskLabelWrapper
 from sequoia.utils import constant, deprecated_property, dict_union, pairwise
 from sequoia.utils.logging_utils import get_logger
 from simple_parsing import field, list_field
@@ -844,7 +845,7 @@ class IncrementalRLSetting(IncrementalAssumption, DiscreteTaskAgnosticRLSetting)
 
                 wrappers.append(
                     partial(
-                        AddTaskIDWrapper,
+                        FixedTaskLabelWrapper,
                         task_label=task_label,
                         task_label_space=task_label_space,
                     )
@@ -870,42 +871,13 @@ class MTEnvAdapterWrapper(TransformObservation):
     #     return observation["env_obs"]
 
 
-from typing import Any
-
-from sequoia.common.gym_wrappers.multi_task_environment import add_task_labels
-from sequoia.common.gym_wrappers.utils import IterableWrapper
-
-
-class AddTaskIDWrapper(IterableWrapper):
-    """ Wrapper that adds always the same given task id to the observations.
-
-    Used when the list of envs for each task is passed, so that each env also has the
-    task id as part of their observation space and in their observations.
-    """
-
-    def __init__(
-        self, env: gym.Env, task_label: Optional[int], task_label_space: gym.Space
-    ):
-        super().__init__(env=env)
-        self.task_label = task_label
-        self.task_label_space = task_label_space
-        self.observation_space = add_task_labels(
-            self.env.observation_space, task_labels=task_label_space
-        )
-
-    def observation(self, observation: Union[IncrementalRLSetting.Observations, Any]):
-        return add_task_labels(observation, self.task_label)
-
-    def step(self, action):
-        obs, reward, done, info = super().step(action)
-        return self.observation(obs), reward, done, info
-
-
 def make_metaworld_env(
     env_class: Type[MetaWorldEnv], tasks: List["Task"]
 ) -> MetaWorldEnv:
     env = env_class()
     env.set_task(tasks[0])
+    # TODO: Could maybe replace this with the 'RoundRobin' or 'Random' wrapper from
+    # `multienv_wrappers.py`
     env = MultiTaskEnvironment(
         env,
         task_schedule={
