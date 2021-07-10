@@ -416,6 +416,10 @@ class ContinualRLSetting(RLSetting, ContinualAssumption):
                     for i, step in enumerate(sorted(self.train_task_schedule.keys()))
                 }
             )
+        elif self.smooth_task_boundaries:
+            # We have a task schedule for Continual RL.
+            if self.train_max_steps == defaults["train_max_steps"]:
+                self.train_max_steps = max(self.train_task_schedule)
 
         if self.smooth_task_boundaries:
             # NOTE: Need to have an entry at the final step

@@ -581,10 +581,10 @@ def test_passing_task_schedule_sets_other_attributes_correctly():
             100: {"gravity": 10.0},
             200: {"gravity": 20.0},
         },
-        # test_max_steps=10_000,
+        test_max_steps=10_000,
     )
     assert setting.phases == 1
-    # assert setting.nb_tasks == 2
+    assert setting.nb_tasks == 2
     # assert setting.steps_per_task == 100
     assert setting.test_task_schedule == {
         0: {"gravity": 5.0},
