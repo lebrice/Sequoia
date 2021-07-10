@@ -23,7 +23,8 @@ import gym
 import pytest
 from simple_parsing import Serializable
 
-from sequoia.common.config import Config, TrainerConfig
+from sequoia.methods.trainer import TrainerConfig
+from sequoia.common.config import Config
 from sequoia.settings import Method, Setting
 
 

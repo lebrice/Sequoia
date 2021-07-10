@@ -51,7 +51,7 @@ class TestEWCMethod(BaseMethodTests):
         def wrapped_training_step(
             self: EwcModel, batch, batch_idx: int, *args, **kwargs
         ):
-            step_results = _training_step(self, batch, batch_idx, *args, **kwargs)
+            step_results = _training_step(self, batch, batch_idx=batch_idx, *args, **kwargs)
             loss_object: Loss = step_results["loss_object"]
             if "ewc" in loss_object.losses:
                 ewc_loss_obj = loss_object.losses["ewc"]

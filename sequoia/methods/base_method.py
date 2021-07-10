@@ -24,7 +24,7 @@ from pytorch_lightning.callbacks.early_stopping import EarlyStopping
 from simple_parsing import mutable_field
 from wandb.wandb_run import Run
 
-from sequoia.common import Config, TrainerConfig
+from sequoia.common import Config
 from sequoia.common.spaces import Image
 from sequoia.settings import RLSetting, SLSetting
 from sequoia.settings.rl.continual import ContinualRLSetting
@@ -39,10 +39,10 @@ from sequoia.methods import register_method
 from sequoia.settings.sl.continual import ContinualSLSetting
 
 from .models import BaseModel, ForwardPass
+from .trainer import Trainer, TrainerConfig
 
 logger = get_logger(__file__)
 
-from pytorch_lightning import Trainer
 from sequoia.common.gym_wrappers.utils import IterableWrapper, has_wrapper
 from sequoia.settings.rl.continual.environment import GymDataLoader
 
@@ -230,6 +230,7 @@ class BaseMethod(Method, Serializable, Parseable, target_setting=Setting):
 
         if isinstance(setting, ContinualRLSetting):
             setting.add_done_to_observations = True
+            setting.prefer_tensors = True
             if isinstance(setting.observation_space.x, Image):
                 if self.hparams.encoder is None:
                     self.hparams.encoder = "simple_convnet"
@@ -589,114 +590,3 @@ class BaseMethod(Method, Serializable, Parseable, target_setting=Setting):
         # run.config["hparams"] = self.hparams.to_dict()
         # run.config["trainer_config"] = self.trainer_options
 
-
-# TODO: Debugging/fixing this buggy method from Pytorch-Lightning.
-# import numbers
-# import warnings
-# from typing import Any
-
-# import torch
-# from torch.nn import DataParallel
-# from torch.nn.parallel import DistributedDataParallel
-
-# from pytorch_lightning.core.lightning import LightningModule
-# from pytorch_lightning.overrides.base import _LightningModuleWrapperBase
-# from pytorch_lightning.overrides.distributed import LightningDistributedModule
-from pytorch_lightning.utilities import rank_zero_warn
-# from pytorch_lightning.utilities.apply_func import apply_to_collection
-from functools import singledispatch
-
-# def _apply_to_collection(
-#     data: Any,
-#     dtype: Union[type, tuple],
-#     function: Callable,
-#     *args,
-#     wrong_dtype: Optional[Union[type, tuple]] = None,
-#     **kwargs
-# ) -> Any:
-
-import pytorch_lightning.utilities.apply_func
-from pytorch_lightning.utilities.apply_func import apply_to_collection
-apply_to_collection = singledispatch(apply_to_collection)
-setattr(pytorch_lightning.utilities.apply_func, "apply_to_collection", apply_to_collection)
-
-import pytorch_lightning.overrides.data_parallel
-setattr(pytorch_lightning.overrides.data_parallel, "apply_to_collection", apply_to_collection)
-
-from sequoia.common import Batch
-from sequoia.methods.models.forward_pass import ForwardPass
-
-@apply_to_collection.register(Batch)
-def _apply_to_batch(
-    data: Batch,
-    dtype: Union[type, tuple],
-    function: Callable,
-    *args,
-    wrong_dtype: Optional[Union[type, tuple]] = None,
-    **kwargs
-) -> Any:
-    # assert False, f"YAY! {type(data)}"
-    # logger.debug(f"{type(data)}, {dtype}, {function}, {args}, {wrong_dtype}, {kwargs}")
-    return type(data)(**{
-        k: apply_to_collection(v, dtype, function, *args, wrong_dtype=wrong_dtype, **kwargs)
-        for k, v in data.items()
-    })
-
-
-from pytorch_lightning.trainer.connectors.data_connector import DataConnector
-class PatchedDataConnector(DataConnector):
-    def _with_is_last(self, iterable):
-        """ Patch for this 'with_is_last' which messes up iterating over an RL env.
-        """
-        if isinstance(iterable, gym.Env) and has_wrapper(iterable, GymDataLoader):
-            env = iterable
-            assert isinstance(env, IterableWrapper), env
-            while not env.is_closed():
-                for step, obs in enumerate(env):
-                    if env.is_closed():
-                        yield obs, True
-                        break
-                    else:
-                        yield obs, False
-        else:
-            yield from super()._with_is_last(iterable)
-            # it = iter(iterable)
-            # last = next(it)
-            # if hasattr(last, "done"):
-            #     end_of_episode = last["done"]
-            #     yield last, end_of_episode
-            # for val in it:
-            #     # yield last and has next
-            #     if hasattr(last, "done"):
-            #         end_of_episode = last["done"]
-            #         yield last, end_of_episode
-            #     else:
-            #         yield last, False
-            #     last = val
-            # yield last, no longer has next
-            # yield last, True
-
-import pytorch_lightning.trainer.connectors.data_connector
-setattr(pytorch_lightning.trainer.connectors.data_connector, "DataConnector", PatchedDataConnector)
-pytorch_lightning.trainer.connectors.data_connector.DataConnector = PatchedDataConnector
-
-
-import pytorch_lightning.trainer.supporters
-from pytorch_lightning.trainer.supporters import prefetch_iterator
-prefetch_iterator = singledispatch(prefetch_iterator)
-setattr(pytorch_lightning.trainer.supporters, "prefetch_iterator", prefetch_iterator)
-from typing import Generator, Iterable
-
-def prefetch_iterator_for_env(iterable: Iterable) -> Generator[Tuple[Any, bool], None, None]:
-    if isinstance(iterable, gym.Env) and has_wrapper(iterable, GymDataLoader):
-        env = iterable
-        assert isinstance(env, IterableWrapper), env
-        while not env.is_closed():
-            for step, obs in enumerate(env):
-                if env.is_closed():
-                    yield obs, True
-                    break
-                else:
-                    yield obs, False
-    else:
-        yield from prefetch_iterator.dispatch(object)(iterable)
