@@ -3,7 +3,7 @@ import json
 import operator
 import warnings
 from contextlib import redirect_stdout
-from dataclasses import dataclass
+from dataclasses import dataclass, fields
 from functools import partial
 from io import StringIO
 from itertools import islice
@@ -128,6 +128,8 @@ class IncrementalRLSetting(IncrementalAssumption, DiscreteTaskAgnosticRLSetting)
     test_envs: List[Union[str, Callable[[], gym.Env]]] = list_field()
 
     def __post_init__(self):
+        defaults = {f.name: f.default for f in fields(self)}
+
         if self.dataset in ["MT10", "MT50", "CW10", "CW20"]:
             from metaworld import MT10, MT50, MetaWorldEnv, Task
 
@@ -179,9 +181,6 @@ class IncrementalRLSetting(IncrementalAssumption, DiscreteTaskAgnosticRLSetting)
                 assert test_env_tasks[env_name]
 
             max_train_steps_per_task = 1_000_000
-            if self.train_steps_per_task is None:
-                self.train_steps_per_task = max_train_steps_per_task
-
             if self.dataset in ["CW10", "CW20"]:
                 # TODO: Raise a warning if the number of tasks is non-default and set to
                 # something different than in the benchmark
@@ -209,9 +208,6 @@ class IncrementalRLSetting(IncrementalAssumption, DiscreteTaskAgnosticRLSetting)
                 # NOTE: Should we allow using fewer steps?
                 # NOTE: The default value for this field is 10_000 currently, so this
                 # check doesn't do anything.
-                if self.test_steps_per_task is None:
-                    self.test_steps_per_task = 10_000
-
                 if self.dataset == "CW20":
                     env_names = env_names * 2
                 train_env_names = env_names
@@ -221,6 +217,17 @@ class IncrementalRLSetting(IncrementalAssumption, DiscreteTaskAgnosticRLSetting)
                 train_env_names = list(train_env_tasks.keys())
                 val_env_names = list(val_env_tasks.keys())
                 test_env_names = list(test_env_tasks.keys())
+
+            self.nb_tasks = len(train_env_names)
+            if self.train_max_steps not in [defaults["train_max_steps"], None]:
+                self.train_steps_per_task = self.train_max_steps // self.nb_tasks
+            elif self.train_steps_per_task is None:
+                self.train_steps_per_task = max_train_steps_per_task
+                self.train_max_steps = self.nb_tasks * self.train_steps_per_task
+
+            if self.test_max_steps in [defaults["test_max_steps"], None]:
+                if self.test_steps_per_task is None:
+                    self.test_steps_per_task = 10_000
 
             # TODO: Double-check that the train/val/test wrappers are added to each env.
             self.train_envs = [
@@ -261,6 +268,20 @@ class IncrementalRLSetting(IncrementalAssumption, DiscreteTaskAgnosticRLSetting)
             self._using_custom_envs_foreach_task = True
             # TODO: Raise a warning if we're going to overwrite a non-default nb_tasks?
             self.nb_tasks = len(self.train_envs)
+            assert self.train_steps_per_task
+            # TODO: Should we use the task schedules to tell the length of each task?
+            if self.test_steps_per_task in [defaults["test_steps_per_task"], None]:
+                self.test_steps_per_task = self.test_max_steps // self.nb_tasks
+            assert self.test_steps_per_task
+
+            self.train_task_schedule = self.train_task_schedule or {
+                i * self.train_steps_per_task: {} for i in range(self.nb_tasks + 1)
+            }
+            self.val_task_schedule = self.train_task_schedule.copy()
+            self.test_task_schedule = self.test_task_schedule or {
+                i * (self.test_steps_per_task or 10_000): {}
+                for i in range(self.nb_tasks + 1)
+            }
 
             if not self.val_envs:
                 # TODO: Use a wrapper that sets a different random seed?
@@ -269,13 +290,13 @@ class IncrementalRLSetting(IncrementalAssumption, DiscreteTaskAgnosticRLSetting)
                 # TODO: Use a wrapper that sets a different random seed?
                 self.test_envs = self.train_envs.copy()
             if (
-                self.train_task_schedule
-                or self.val_task_schedule
-                or self.test_task_schedule
+                any(self.train_task_schedule.values())
+                or any(self.val_task_schedule.values())
+                or any(self.test_task_schedule.values())
             ):
                 raise RuntimeError(
-                    "You can either pass `train/valid/test_envs`, or a task schedule, "
-                    "but not both!"
+                    "Can't use a non-empty task schedule when passing the "
+                    "train/valid/test envs."
                 )
 
             self.train_dataset: Union[str, Callable[[], gym.Env]] = self.train_envs[0]
@@ -681,6 +702,7 @@ class IncrementalRLSetting(IncrementalAssumption, DiscreteTaskAgnosticRLSetting)
         if self.stationary_context:
             task_schedule_slice = self.train_task_schedule.copy()
             assert len(task_schedule_slice) >= 2
+            assert self.nb_tasks == len(self.train_task_schedule) - 1
             # Need to pop the last task, so that we don't sample it by accident!
             max_step = max(task_schedule_slice)
             last_task = task_schedule_slice.pop(max_step)
