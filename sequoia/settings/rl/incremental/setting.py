@@ -222,6 +222,7 @@ class IncrementalRLSetting(IncrementalAssumption, DiscreteTaskAgnosticRLSetting)
                 val_env_names = list(val_env_tasks.keys())
                 test_env_names = list(test_env_tasks.keys())
 
+            # TODO: Double-check that the train/val/test wrappers are added to each env.
             self.train_envs = [
                 partial(
                     make_metaworld_env,
@@ -317,6 +318,22 @@ class IncrementalRLSetting(IncrementalAssumption, DiscreteTaskAgnosticRLSetting)
 
         # FIXME: Really annoying little bugs with these three arguments!
         # self.nb_tasks = self.max_steps // self.steps_per_task
+
+    @property
+    def current_task_id(self) -> int:
+        return self._current_task_id
+
+    @current_task_id.setter
+    def current_task_id(self, value: int) -> None:
+        if value != self._current_task_id:
+            # Set those to False so we re-create the wrappers for each task.
+            self._has_setup_fit = False
+            self._has_setup_validate = False
+            self._has_setup_test = False
+            # TODO: No idea what the difference is between `predict` and test.
+            self._has_setup_predict = False
+            # TODO: There are now also teardown hooks, maybe use them?
+        self._current_task_id = value
 
     @property
     def train_task_lengths(self) -> List[int]:
@@ -474,12 +491,6 @@ class IncrementalRLSetting(IncrementalAssumption, DiscreteTaskAgnosticRLSetting)
             # assert False, self.train_task_schedule
             pass
 
-    # def _setup_fields_using_temp_env(self, temp_env: MultiTaskEnvironment):
-    #     """ Setup some of the fields on the Setting using a temporary environment.
-
-    #     This temporary environment only lives during the __post_init__() call.
-    #     """
-    #     super()._setup_fields_using_temp_env(temp_env)
     def test_dataloader(
         self, batch_size: Optional[int] = None, num_workers: Optional[int] = None
     ):
@@ -487,8 +498,6 @@ class IncrementalRLSetting(IncrementalAssumption, DiscreteTaskAgnosticRLSetting)
             return super().test_dataloader(
                 batch_size=batch_size, num_workers=num_workers
             )
-
-        # raise NotImplementedError("TODO:")
 
         # IDEA: Pretty hacky, but might be cleaner than adding fields for the moment.
         test_max_steps = self.test_max_steps
@@ -888,7 +897,8 @@ def make_metaworld_env(
     env = env_class()
     env.set_task(tasks[0])
     # TODO: Could maybe replace this with the 'RoundRobin' or 'Random' wrapper from
-    # `multienv_wrappers.py`
+    # `multienv_wrappers.py` by making it appear like it's multiple envs, but actually
+    # share the env instance
     env = MultiTaskEnvironment(
         env,
         task_schedule={

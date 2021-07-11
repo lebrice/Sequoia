@@ -75,7 +75,7 @@ class Results(Serializable, ABC):
         """
     
     @abstractmethod
-    def to_log_dict(self) -> Dict[str, Any]:
+    def to_log_dict(self, verbose: bool = False) -> Dict[str, Any]:
         """Create a dict version of the results, to be logged to wandb
         """
         return {

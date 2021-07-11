@@ -228,7 +228,7 @@ class TestContinualRLSetting:
         )
 
         method = DummyMethod()
-
+        from gym.wrappers import TimeLimit
         results = setting.apply(method, config=config)
 
         assert results

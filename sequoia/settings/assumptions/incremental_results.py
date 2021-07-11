@@ -243,9 +243,9 @@ class IncrementalResults(Results, Generic[MetricType]):
         )
         return log_dict
 
-    def summary(self):
+    def summary(self, verbose: bool = True):
         s = StringIO()
-        print(json.dumps(self.to_log_dict(), indent="\t"), file=s)
+        print(json.dumps(self.to_log_dict(verbose=verbose), indent="\t"), file=s)
         s.seek(0)
         return s.read()
 

@@ -324,8 +324,8 @@ class ContinualSLSetting(SLSetting, ContinualAssumption):
     ) -> EnvironmentType:
         if not self.has_prepared_data:
             self.prepare_data()
-        if not self.has_setup_fit:
-            self.setup("fit")
+        if not self.has_setup_validate:
+            self.setup("validate")
 
         if self.val_env:
             self.val_env.close()
@@ -471,10 +471,10 @@ class ContinualSLSetting(SLSetting, ContinualAssumption):
             self.prepare_data()
         super().setup(stage=stage)
 
-        if stage not in (None, "fit", "test"):
-            raise RuntimeError(f"`stage` should be 'fit', 'test' or None.")
+        if stage not in (None, "fit", "test", "validate"):
+            raise RuntimeError(f"`stage` should be 'fit', 'test', 'validate' or None.")
 
-        if stage in (None, "fit"):
+        if stage in (None, "fit", "validate"):
             self.train_cl_dataset = self.train_cl_dataset or self.make_dataset(
                 self.config.data_dir, download=False, train=True
             )

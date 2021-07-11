@@ -32,20 +32,18 @@ class RLEnvironment(DataLoader, Environment[ObservationType, ActionType, RewardT
     """ Environment in an RL Setting. 
     
     Extends DataLoader to support sending back actions to the 'dataset'.
-    
-    TODO: Not really used at the moment besides as the base class for the GymDataLoader. 
-    
+
     This could be useful for modeling RL or Active Learning, for instance, where
     the predictions (actions) have an impact on the data generation process.
 
-    When `dataset` isn't an instance of `EnvironmentBase`, i.e. when it is just
-    a regular dataset, this doesn't do anything different than DataLoader.
-
+    TODO: Not really used at the moment besides as the base class for the GymDataLoader. 
     TODO: Maybe add a custom `map` class for generators?
     
-    What's different compared to the usual supervised environment is that
-    the observation (x) and the true label (y) are not given at the same time!
-    The true label `y` is given only after the prediction is sent back to the dataloader
+    Iterating through an RL Environment is different than when iterating on an SL
+    environment:
+        - Batches only contain the observations, rather than (observations, rewards)
+        - The rewards are given back after an action is sent to the environment using
+          `send`.
 
     TODO: maybe change this class into something like a `FakeActiveEnvironment`.
 

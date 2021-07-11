@@ -90,9 +90,9 @@ class EpisodeMetrics(Metrics):
         if verbose:
             log_dict.update(
                 {
-                    "Total steps": self.total_steps,
-                    "Total reward": self.total_reward,
-                    "Mean episode length": self.mean_episode_length,
+                    "Total steps": int(self.total_steps),
+                    "Total reward": int(self.total_reward),
+                    "Mean episode length": float(self.mean_episode_length),
                 }
             )
         return log_dict

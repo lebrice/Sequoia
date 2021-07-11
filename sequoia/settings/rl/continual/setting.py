@@ -847,6 +847,7 @@ class ContinualRLSetting(RLSetting, ContinualAssumption):
         super().setup(stage=stage)
         if stage in {"fit", None}:
             self.train_wrappers = self.create_train_wrappers()
+        if stage in {"validate", None}:
             self.valid_wrappers = self.create_valid_wrappers()
         elif stage in {"test", None}:
             self.test_wrappers = self.create_test_wrappers()
@@ -882,7 +883,6 @@ class ContinualRLSetting(RLSetting, ContinualAssumption):
             self.prepare_data()
         # NOTE: We actually want to call setup every time, so we re-create the
         # wrappers for each task.
-        # if not self.has_setup_fit:
         self.setup("fit")
 
         batch_size = batch_size or self.batch_size
@@ -944,7 +944,11 @@ class ContinualRLSetting(RLSetting, ContinualAssumption):
         """
         if not self.has_prepared_data:
             self.prepare_data()
-        self.setup("fit")
+
+        # Need to force this to happen every time, because the wrappers might change
+        # between tasks.
+        self._has_setup_validate = False
+        self.setup("validate")
 
         env_factory = partial(
             self._make_env,
@@ -1009,6 +1013,10 @@ class ContinualRLSetting(RLSetting, ContinualAssumption):
         """
         if not self.has_prepared_data:
             self.prepare_data()
+        # NOTE: New for PL: The call doesn't go through if self._has_setup_test is True
+        # Need to force this to happen every time, because the wrappers might change
+        # between tasks.
+        self._has_setup_test = False
         self.setup("test")
         # BUG: gym.wrappers.Monitor doesn't want to play nice when applied to
         # Vectorized env, it seems..

@@ -67,8 +67,11 @@ class TaskSequenceResults(Results, Generic[MetricType]):
         result["Average"] = self.average_metrics.to_log_dict(verbose=verbose)
         return result
 
-    def summary(self) -> str:
-        return str(self.to_log_dict())
+    def summary(self, verbose: bool = False):
+        s = StringIO()
+        print(json.dumps(self.to_log_dict(verbose=verbose), indent="\t"), file=s)
+        s.seek(0)
+        return s.read()
 
     def make_plots(self) -> Dict[str, plt.Figure]:
         result = {}
