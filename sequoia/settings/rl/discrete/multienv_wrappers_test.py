@@ -187,13 +187,22 @@ class TestMultiEnvWrappers:
         add_task_ids = True
         nb_tasks = 5
 
+        from sequoia.settings.rl.continual.make_env import wrap
+
+        def set_attributes(env: gym.Env, **attributes) -> gym.Env:
+            for k, v in attributes.items():
+                setattr(env.unwrapped, k, v)
+            return env
+
+        from functools import partial
         envs = [
-            EpisodeLimit(
-                TimeLimit(
-                    iterable_env,
-                    max_episode_steps=max_episode_steps,
-                ),
-                max_episodes=episodes_per_task,
+            wrap(
+                gym.make("CartPole-v0"),
+                [
+                    partial(TimeLimit, max_episode_steps=max_episode_steps),
+                    partial(set_attributes, length=0.1 + 0.2 * i),
+                    partial(EpisodeLimit, max_episodes=episodes_per_task),
+                ]
             )
             for i in range(nb_tasks)
         ]
@@ -207,24 +216,32 @@ class TestMultiEnvWrappers:
         env = ConcatEnvsWrapper(
             envs, add_task_ids=add_task_ids, on_task_switch_callback=on_task_switch
         )
+        env = EnvDataset(env)
+
         env.seed(123)
         assert env.nb_tasks == nb_tasks
         if add_task_ids:
             assert env.observation_space == TypedDictSpace(
-                x=env._envs[0].observation_space, task_labels=spaces.Discrete(nb_tasks),
+                x=env.env._envs[0].observation_space, task_labels=spaces.Discrete(nb_tasks),
             )
         else:
-            assert env.observation_space == env._envs[0].observation_space
+            assert env.observation_space == env.env._envs[0].observation_space
         assert env.observation_space.sample() in env.observation_space
         task_ids: List[int] = []
+        lengths_at_each_step = []
+        lengths_at_each_episode = []
 
         for episode in range(nb_tasks * episodes_per_task):
             env_id = episode // episodes_per_task
 
             episode_task_ids: List[int] = []
+            
             for step, obs in enumerate(env):
                 assert obs in env.observation_space
-                print(f"Episode {episode}, Step {step}: obs: {obs}")
+                print(f"Episode {episode}, Step {step}: obs: {obs}, length: {env.length}")
+                if step == 0:
+                    lengths_at_each_episode.append(env.length)
+                lengths_at_each_step.append(env.length)
 
                 if add_task_ids:
                     assert list(obs.keys()) == ["x", "task_labels"]
@@ -243,7 +260,10 @@ class TestMultiEnvWrappers:
                 # Add the unique task id from this episode to the list of all task ids.
                 task_ids.extend(set(episode_task_ids))
 
+        actual_task_schedule = dict(unique_consecutive_with_index(lengths_at_each_step))
+        assert len(actual_task_schedule) == nb_tasks
         assert env.is_closed()
+
         from collections import Counter
 
         if add_task_ids:

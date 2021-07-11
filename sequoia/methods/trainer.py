@@ -216,6 +216,7 @@ class PatchedDataConnector(DataConnector):
         else:
             # This gets called before each epoch, so we get here on the start of the
             # second training epoch.
+            # TODO: Check that this isn't causing issues between tasks
             assert train_dataloader is self.trainer.train_dataloader
 
         profiled_dl = self.trainer.profiler.profile_iterable(

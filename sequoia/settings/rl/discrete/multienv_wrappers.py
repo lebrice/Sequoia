@@ -184,6 +184,11 @@ class ConcatEnvsWrapper(MultiEnvWrapper):
         super().__init__(envs, add_task_ids=add_task_ids)
         self.on_task_switch_callback = on_task_switch_callback
 
+    def set_task(self, task_id: int) -> None:
+        # NOTE: If any wrappers try to store things onto the unwrapped env, then those
+        # would need to be transfered over to the new env here.
+        super().set_task(task_id)
+
     def reset(self):
         old_task = self._current_task_id
         observation = super().reset()
@@ -200,19 +205,10 @@ class ConcatEnvsWrapper(MultiEnvWrapper):
         return (self._current_task_id + 1) % self.nb_tasks
 
     def __iter__(self):
-        # BUG: iterating over a MultiEnvWrapper
         return super().__iter__()
 
     def send(self, action):
         return super().send(action)
-
-    #     if not self.is_closed(env_id):
-    #         self.observation_ = env.reset()
-    #         return super().__iter__(self)
-    #     for env_id, env in enumerate(self._envs):
-
-    # yield from super().__iter__()
-    # self.observation_ = self.reset()
 
 
 # Register this as a 'concat' handler for gym environments!
