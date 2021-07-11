@@ -113,13 +113,10 @@ class TestDiscreteTaskAgnosticRLSetting(ContinualRLSettingTests):
             train_max_steps=train_max_steps,
             train_task_schedule=train_task_schedule,
         )
-        # TODO: Fix this problem: the number of steps is 5 by default atm.
-        # for give_nb_task, give_max_steps, give_task_schedule in itertools.product(*[[True, False] for _ in range(3)]):
+        # TODO: Should also pass nothing, and expect an error to be raised?
         kwargs = full_kwargs.copy()
         if not give_nb_tasks:
-            # FIXME:
-            kwargs["nb_tasks"] = None
-            # kwargs.pop("nb_tasks")
+            kwargs.pop("nb_tasks")
         if not give_train_max_steps:
             kwargs.pop("train_max_steps")
         if not give_train_task_schedule:

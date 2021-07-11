@@ -301,7 +301,7 @@ class ContinualRLSetting(RLSetting, ContinualAssumption):
         defaults = {f.name: f.default for f in fields(self)}
 
         super().__post_init__()
-        
+
         # TODO: Fix nnoying little issues with this trio of fields that are interlinked:
         if self.test_steps_per_task is not None:
             if self.test_max_steps == defaults["test_max_steps"]:
@@ -394,19 +394,21 @@ class ContinualRLSetting(RLSetting, ContinualAssumption):
         self._temp_test_env: Optional[gym.Env] = None
         # Create the task schedules, using the 'task sampling' function from `tasks.py`.
 
-
+        # TODO: PLEASE HELP I'm going mad because of the validation logic for these
+        # fields!!
         if not self.train_task_schedule:
             self.train_task_schedule = self.create_train_task_schedule()
         elif max(self.train_task_schedule) == len(self.train_task_schedule) - 1:
-            # If the keys correspond to the task ids rather than the transition steps:
-            if self.nb_tasks == defaults["nb_tasks"]:
-                self.nb_tasks = len(self.train_task_schedule)
-                if self.smooth_task_boundaries:
-                    # Remove 1 because the last key shows the final state.
-                    self.nb_tasks -= 1
+            # If the keys correspond to the task ids rather than the steps:
+            if self.nb_tasks in [defaults["nb_tasks"], None]:
+                self.nb_tasks = len(self.train_task_schedule) - 1
+                if self.nb_tasks < 1:
+                    raise RuntimeError(
+                        f"Need at least 2 entries in the task schedule!"
+                    )
                 logger.info(
-                    f"Setting the number of tasks to {self.nb_tasks} based on the task "
-                    f"schedule."
+                    f"Assuming that the last entry in the provided task schedule is "
+                    f"the final state, and that there are {self.nb_tasks} tasks. "
                 )
             self.train_steps_per_task = (
                 self.train_steps_per_task or self.train_max_steps // self.nb_tasks
@@ -435,7 +437,8 @@ class ContinualRLSetting(RLSetting, ContinualAssumption):
                 "`train_task_schedule` needs an entry at key 0, as the initial state"
             )
         if self.train_max_steps != max(self.train_task_schedule):
-            if self.train_max_steps == defaults["train_max_steps"]:
+            if self.train_max_steps in [defaults["train_max_steps"], None]:
+                # TODO: This might be wrong no?
                 self.train_max_steps = max(self.train_task_schedule)
                 logger.info(f"Setting `train_max_steps` to {self.train_max_steps}")
             elif self.smooth_task_boundaries:
@@ -459,8 +462,8 @@ class ContinualRLSetting(RLSetting, ContinualAssumption):
             self.val_task_schedule = self.create_val_task_schedule()
         elif max(self.val_task_schedule) == len(self.val_task_schedule) - 1:
             # If the keys correspond to the task ids rather than the transition steps
-            nb_tasks = len(self.val_task_schedule)
-            steps_per_task = self.train_max_steps // nb_tasks
+            expected_nb_tasks = len(self.val_task_schedule)
+            steps_per_task = self.train_max_steps // expected_nb_tasks
             self.val_task_schedule = type(self.val_task_schedule)(
                 **{
                     i * steps_per_task: self.val_task_schedule[step]
@@ -477,11 +480,11 @@ class ContinualRLSetting(RLSetting, ContinualAssumption):
             self.test_task_schedule = self.create_test_task_schedule()
         elif max(self.test_task_schedule) == len(self.test_task_schedule) - 1:
             # If the keys correspond to the task ids rather than the transition steps
-            nb_tasks = len(self.test_task_schedule)
+            expected_nb_tasks = len(self.test_task_schedule)
             if self.test_steps_per_task is not None:
                 steps_per_task = self.test_steps_per_task
             else:
-                steps_per_task = self.test_max_steps // nb_tasks
+                steps_per_task = self.test_max_steps // expected_nb_tasks
             self.test_task_schedule = type(self.test_task_schedule)(
                 **{
                     i * steps_per_task: self.test_task_schedule[step]
@@ -548,15 +551,15 @@ class ContinualRLSetting(RLSetting, ContinualAssumption):
         #         f"{len(train_task_schedule)} tasks in the task schedule, but got value "
         #         f"of {self.nb_tasks} instead!"
         #     )
-        nb_tasks = len(self.train_task_schedule)
+        expected_nb_tasks = len(self.train_task_schedule)
         if (
-            self.train_max_steps != defaults["train_max_steps"] and
-            self.train_max_steps == max(self.train_task_schedule)
-            ) or (not self.smooth_task_boundaries):
-            nb_tasks -= 1
+            self.train_max_steps not in [defaults["train_max_steps"], None]
+            and self.train_max_steps == max(self.train_task_schedule)
+        ) or (not self.smooth_task_boundaries):
+            expected_nb_tasks -= 1
 
-        if self.nb_tasks != nb_tasks:
-            if self.nb_tasks == defaults["nb_tasks"]:
+        if self.nb_tasks != expected_nb_tasks:
+            if self.nb_tasks in [None, defaults["nb_tasks"]]:
                 assert len(self.train_task_schedule) == len(self.test_task_schedule)
                 self.nb_tasks = len(self.train_task_schedule) - 1
                 logger.info(
@@ -568,12 +571,12 @@ class ContinualRLSetting(RLSetting, ContinualAssumption):
                     f"with train_max_steps ({self.train_max_steps}) and the "
                     f"passed task schedule (with keys "
                     f"{self.train_task_schedule.keys()}): "
-                    f"Expected nb_tasks to be None or {nb_tasks}."
+                    f"Expected nb_tasks to be None or {expected_nb_tasks}."
                 )
 
         if not train_task_lengths:
             assert not test_task_lengths
-            assert nb_tasks == 1
+            assert expected_nb_tasks == 1
             assert self.train_max_steps > 0
             assert self.test_max_steps > 0
             train_max_steps = self.train_max_steps
@@ -614,12 +617,14 @@ class ContinualRLSetting(RLSetting, ContinualAssumption):
         # Ex: nb_tasks == 5, train_max_steps = 10_000:
         # change_steps = [0, 2_000, 4_000, 6_000, 8_000, 10_000]
         if self.train_steps_per_task is not None:
-            if self.smooth_task_boundaries:
-                train_max_steps = self.train_steps_per_task * self.nb_tasks
-            else:
-                train_max_steps = self.train_steps_per_task * self.nb_tasks
+            train_max_steps = self.train_steps_per_task * self.nb_tasks
+            # if self.smooth_task_boundaries:
+            #     train_max_steps = self.train_steps_per_task * self.nb_tasks
+            # else:
+            #     train_max_steps = self.train_steps_per_task * self.nb_tasks
         else:
             train_max_steps = self.train_max_steps
+            assert self.nb_tasks is not None
 
         task_schedule_keys = np.linspace(
             0, train_max_steps, self.nb_tasks + 1, endpoint=True, dtype=int
