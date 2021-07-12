@@ -26,7 +26,7 @@ class MockResults(Results):
     def make_plots(self):
         return {}
 
-    def to_log_dict(self):
+    def to_log_dict(self, verbose: bool = False):
         return {"hparams": self.hparams.to_dict() if isinstance(self.hparams, Serializable) else self.hparams, "objective": self.objective}
 
     def summary(self):

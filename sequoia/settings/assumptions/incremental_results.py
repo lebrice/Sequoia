@@ -245,7 +245,10 @@ class IncrementalResults(Results, Generic[MetricType]):
 
     def summary(self, verbose: bool = True):
         s = StringIO()
-        print(json.dumps(self.to_log_dict(verbose=verbose), indent="\t"), file=s)
+        from simple_parsing.helpers.serialization import encode
+        log_dict = self.to_log_dict(verbose=verbose)
+        log_dict_json = json.dumps(log_dict, indent="\t", default=encode) 
+        print(log_dict_json, file=s)
         s.seek(0)
         return s.read()
 
