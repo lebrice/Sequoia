@@ -14,10 +14,10 @@ For example:
 >>> loss += Loss("task_c", loss=3.00)
 >>> log_dict = loss.to_log_dict()
 >>> pprint(log_dict)
-{'total/loss': 6.33,
+{'total/loss': tensor([6.3300]),
  'total/task_a/accuracy': 0.95,
  'total/task_a/loss': 1.23,
- 'total/task_b/loss': 2.1,
+ 'total/task_b/loss': tensor([2.1000]),
  'total/task_c/loss': 3.0}
 
 Another feature of Loss objects is that they can automatically generate
