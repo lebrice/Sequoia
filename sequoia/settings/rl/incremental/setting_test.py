@@ -323,6 +323,13 @@ def test_continual_world_support(dataset: str, config: Config):
     """
     # TODO: Add option of passing a benchmark instance? That might make it quicker to
     # run tests?
+    setting = IncrementalRLSetting(dataset=dataset, config=config,)
+    assert setting.nb_tasks == 10 if dataset == "CW10" else 20
+    assert setting.train_steps_per_task == 1_000_000
+    assert setting.train_max_steps == 1_000_000 * setting.nb_tasks
+    assert setting.test_steps_per_task == 10_000
+    assert setting.test_max_steps == 10_000 * setting.nb_tasks
+
     setting = IncrementalRLSetting(
         dataset=dataset,
         config=config,

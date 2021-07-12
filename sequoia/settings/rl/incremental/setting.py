@@ -198,7 +198,11 @@ class IncrementalRLSetting(IncrementalAssumption, DiscreteTaskAgnosticRLSetting)
                     f"window-close-v{version}",
                     f"peg-unplug-side-v{version}",
                 ]
-                if self.train_steps_per_task > max_train_steps_per_task:
+                if (
+                    self.train_steps_per_task
+                    not in [defaults["train_steps_per_task"], None]
+                    and self.train_steps_per_task > max_train_steps_per_task
+                ):
                     raise RuntimeError(
                         f"Can't use more than {max_train_steps_per_task} steps per "
                         f"task in the {self.dataset} benchmark!"
