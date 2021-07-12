@@ -50,14 +50,14 @@ def stack(first_item: Union[T, List[T]], *others: T, **kwargs) -> Any:
 def _stack_none(
     first_item: None, *others: None, **kwargs
 ) -> None:
-    return None
+    assert all(v is None for v in others), "Only some values are None"
+    return np.array([None, *others])
 
 
 @stack.register(np.ndarray)
 def _stack_ndarrays(
     first_item: np.ndarray, *others: np.ndarray, **kwargs
 ) -> np.ndarray:
-    assert all(v is None for v in others), "Only some values are None"
     return np.stack([first_item, *others], **kwargs)
 
 
