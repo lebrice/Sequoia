@@ -123,9 +123,11 @@ class IncrementalRLSetting(IncrementalAssumption, DiscreteTaskAgnosticRLSetting)
     # Wether to give access to the task labels at test time.
     task_labels_at_test_time: bool = False
 
-    train_envs: List[Union[str, Callable[[], gym.Env]]] = list_field()
-    val_envs: List[Union[str, Callable[[], gym.Env]]] = list_field()
-    test_envs: List[Union[str, Callable[[], gym.Env]]] = list_field()
+    # NOTE: Specifying the `type` to use for the argparse argument, because of a bug in
+    # simple-parsing that makes this not work correctly atm.
+    train_envs: List[Union[str, Callable[[], gym.Env]]] = list_field(type=str)
+    val_envs: List[Union[str, Callable[[], gym.Env]]] = list_field(type=str)
+    test_envs: List[Union[str, Callable[[], gym.Env]]] = list_field(type=str)
 
     def __post_init__(self):
         defaults = {f.name: f.default for f in fields(self)}
@@ -272,7 +274,9 @@ class IncrementalRLSetting(IncrementalAssumption, DiscreteTaskAgnosticRLSetting)
             self._using_custom_envs_foreach_task = True
             # TODO: Raise a warning if we're going to overwrite a non-default nb_tasks?
             self.nb_tasks = len(self.train_envs)
-            assert self.train_steps_per_task
+            assert self.train_steps_per_task or self.train_max_steps
+            if self.train_steps_per_task is None:
+                self.train_steps_per_task = self.train_max_steps // self.nb_tasks
             # TODO: Should we use the task schedules to tell the length of each task?
             if self.test_steps_per_task in [defaults["test_steps_per_task"], None]:
                 self.test_steps_per_task = self.test_max_steps // self.nb_tasks

@@ -367,20 +367,12 @@ class IterableWrapper(MayCloseEarly, IterableDataset, Generic[EnvType], ABC):
     def send(self, action):
         # TODO: Make `send` use `self.step`, that way wrappers can apply the same way to
         # RL and SL environments.
-        # FIXME: Detect if this is wrapping a supervised environment
         if self.wrapping_passive_env:
             action = self.action(action)
             reward = self.env.send(action)
             reward = self.reward(reward)
             return reward
 
-        # if hasattr(self.env, "send"):
-        #     # TODO: Maybe put 'self.action_' in step(), same for the other fields
-        #     action = self.action(action)
-        #     self.action_ = action
-        #     reward = self.env.send(action)
-        #     self.reward_ = self.reward(reward)
-        # else:
         self.unwrapped.action_ = action
         self.unwrapped.observation_, self.unwrapped.reward_, self.unwrapped.done_, self.unwrapped.info_ = self.step(action)
         return self.unwrapped.reward_
