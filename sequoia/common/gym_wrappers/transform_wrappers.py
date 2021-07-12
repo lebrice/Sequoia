@@ -67,7 +67,7 @@ class TransformReward(TransformReward_, IterableWrapper):
         except Exception as e:
             logger.warning(UserWarning(
                 f"Don't know how the transform {self.f} will impact the "
-                f"observation space! (Exception: {e})"
+                f"reward space! (Exception: {e})"
             ))
 
 
