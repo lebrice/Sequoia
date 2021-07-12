@@ -342,7 +342,7 @@ class IterableWrapper(MayCloseEarly, IterableDataset, Generic[EnvType], ABC):
         if has_wrapper(self.env, EnvDataset) or is_proxy_to(
             self.env, (EnvDataset, ActiveDataLoader)
         ):
-            obs, reward, done, info = self.step(self.action_)
+            obs, reward, done, info = self.step(self.unwrapped.action_)
             return obs
             # raise RuntimeError(f"WIP: Dropping this '__next__' API in RL.")
             # logger.debug(f"Wrapped env is an EnvDataset, using EnvDataset.__iter__.")
