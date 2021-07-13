@@ -86,18 +86,7 @@ except ImportError:
     pass
 
 try:
-    # TODO: This won't work, because we don't currently package the `cndpm_method`
-    # inside of the `cndpm` package.
-    # from cn_dpm.cndpm_method import CNDPM
-
-    # NOTE However: This will following line WILL work, because we point to the actual
-    # file to use. This is tricky though: If you just do `pip install -e .[cn_dpm],
-    # then the `cn_dpm` package gets copied from `sequoia/methods/cn_dpm` into
-    # site_packages, and then using `from cn_dpm.models import ...` actually imports it
-    # from the COPY, instead of from the actual submodule!
-    # TODO: (@lebrice): figure out a way to install cn-dpm correctly through pip, in
-    # editable mode.
-    # For now though, you should install the CN-DPM submodule in editable mode, like so:
+    # For now, install the CN-DPM submodule in editable mode, like so:
     # `pip install -e sequoia/methods/cn_dpm`
     from .cn_dpm.cndpm_method import CNDPM
 
