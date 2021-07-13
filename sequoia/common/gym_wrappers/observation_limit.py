@@ -24,8 +24,6 @@ class ObservationLimit(IterableWrapper):
     """
     def __init__(self, env: gym.Env, max_steps: int):
         super().__init__(env=env)
-        self.is_vectorized = isinstance(env.unwrapped, VectorEnv)    
-
         self._max_obs = max_steps
         self._obs_counter: int = 0
         self._initial_reset = False

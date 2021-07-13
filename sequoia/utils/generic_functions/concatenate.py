@@ -14,6 +14,9 @@ from gym import Space, spaces
 from sequoia.common.spaces import Sparse
 from sequoia.utils.categorical import Categorical
 from torch import Tensor
+from continuum import TaskSet
+from continuum.tasks import concat as _continuum_concat
+from torch.utils.data import Dataset, ConcatDataset, IterableDataset, ChainDataset
 
 T = TypeVar("T")
 
@@ -28,7 +31,9 @@ T = TypeVar("T")
 
 
 @singledispatch
-def concatenate(first_item: Union[T, List[T]], *others: T, **kwargs) -> Union[Sequence[T], Any]:
+def concatenate(
+    first_item: Union[T, List[T]], *others: T, **kwargs
+) -> Union[Sequence[T], Any]:
     # By default, if we don't know how to handle the item type, just
     # returns an ndarray with with all the items.
 
@@ -44,7 +49,9 @@ def concatenate(first_item: Union[T, List[T]], *others: T, **kwargs) -> Union[Se
 
 
 @concatenate.register(np.ndarray)
-def _concatenate_ndarrays(first_item: np.ndarray, *others: np.ndarray, **kwargs) -> np.ndarray:
+def _concatenate_ndarrays(
+    first_item: np.ndarray, *others: np.ndarray, **kwargs
+) -> np.ndarray:
     if not first_item.shape:
         # can't concatenate 0-dimensional arrays, so we stack them instead:
         return np.stack([first_item, *others], **kwargs)
@@ -61,14 +68,41 @@ def _concatenate_tensors(first_item: Tensor, *others: Tensor, **kwargs) -> Tenso
 
 @concatenate.register(Mapping)
 def _concatenate_dicts(first_item: Dict, *others: Dict, **kwargs) -> Dict:
-    return type(first_item)(**{
-        key: concatenate(first_item[key], *(other[key] for other in others), **kwargs)
-        for key in first_item.keys()
-    })
+    return type(first_item)(
+        **{
+            key: concatenate(
+                first_item[key], *(other[key] for other in others), **kwargs
+            )
+            for key in first_item.keys()
+        }
+    )
 
 
 @concatenate.register(Categorical)
-def _concatenate_distributions(first_item: Categorical, *others: Categorical, **kwargs) -> Categorical:
-    return Categorical(logits=torch.cat([
-        first_item.logits, *(other.logits for other in others)
-    ], *kwargs))
+def _concatenate_distributions(
+    first_item: Categorical, *others: Categorical, **kwargs
+) -> Categorical:
+    return Categorical(
+        logits=torch.cat(
+            [first_item.logits, *(other.logits for other in others)], *kwargs
+        )
+    )
+
+
+@concatenate.register
+def _concatenate_tasksets(first_item: TaskSet, *others: TaskSet) -> TaskSet:
+    return _continuum_concat([first_item, *others])
+
+
+@concatenate.register(Dataset)
+def _concatenate_datasets(
+    first_item: Dataset[T], *others: Dataset[T]
+) -> ConcatDataset[T]:
+    return ConcatDataset([first_item, *others])
+
+
+@concatenate.register
+def _concatenate_iterable_datasets(
+    first_item: IterableDataset, *others: IterableDataset
+) -> ChainDataset:
+    return ChainDataset([first_item, *others])

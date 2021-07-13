@@ -21,7 +21,7 @@ from .channels import (
     has_channels_last,
 )
 from .transform import Img, Transform
-from sequoia.common.spaces import NamedTupleSpace, NamedTuple
+from sequoia.common.spaces import NamedTupleSpace, TypedDictSpace
 from sequoia.common.spaces.image import Image as ImageSpace
 from sequoia.common.gym_wrappers.convert_tensors import (
     has_tensor_support,
@@ -96,7 +96,7 @@ def _resize_namedtuple_space(
 
 @resize.register(Mapping)
 def _resize_namedtuple(x: Dict, size: Tuple[int, ...], **kwargs) -> Dict:
-    """ When presented with a NamedTupleSpace input, this transform will be
+    """ When presented with a Mapping-like input, this transform will be
     applied to all 'Image' spaces.
     """
     return type(x)(
@@ -104,6 +104,19 @@ def _resize_namedtuple(x: Dict, size: Tuple[int, ...], **kwargs) -> Dict:
             key: resize(value, size, **kwargs) if is_image(value) else value
             for key, value in x.items()
         }
+    )
+
+
+@resize.register(TypedDictSpace)
+def _resize_typed_dict(x: TypedDictSpace, size: Tuple[int, ...], **kwargs) -> TypedDictSpace:
+    """ When presented with a Mapping-like input, this transform will be
+    applied to all 'Image' spaces.
+    """
+    return type(x)(
+        {
+            key: resize(value, size, **kwargs) if is_image(value) else value
+            for key, value in x.items()
+        }, dtype=x.dtype,
     )
 
 

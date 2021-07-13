@@ -19,7 +19,7 @@ from sequoia.methods import register_method
 from sequoia.methods.aux_tasks.ewc import EWCTask
 from sequoia.methods.baseline_method import BaselineMethod, BaselineModel
 from sequoia.settings import Setting, TaskIncrementalRLSetting
-from sequoia.settings.assumptions.incremental import IncrementalSetting
+from sequoia.settings.assumptions.incremental import IncrementalAssumption
 
 
 class EwcModel(BaselineModel):
@@ -43,7 +43,7 @@ class EwcModel(BaselineModel):
 
 @register_method
 @dataclass
-class EwcMethod(BaselineMethod, target_setting=IncrementalSetting):
+class EwcMethod(BaselineMethod, target_setting=IncrementalAssumption):
     """ Subclass of the BaselineMethod, which adds the EWCTask to the `BaselineModel`.
 
     This Method is applicable to any CL setting (RL or SL) where there are clear task
@@ -63,7 +63,7 @@ class EwcMethod(BaselineMethod, target_setting=IncrementalSetting):
             hparams=hparams, config=config, trainer_options=trainer_options, **kwargs
         )
 
-    def configure(self, setting: IncrementalSetting):
+    def configure(self, setting: IncrementalAssumption):
         """ Called before the method is applied on a setting (before training).
 
         You can use this to instantiate your model, for instance, since this is
@@ -130,13 +130,12 @@ def demo():
         dataset="cartpole",
         train_task_schedule=task_schedule,
         test_task_schedule=task_schedule,
-        observe_state_directly=True,
         # max_steps=1000,
     )
 
-    # from sequoia.settings import TaskIncrementalSetting, ClassIncrementalSetting
+    # from sequoia.settings import TaskIncrementalSLSetting, ClassIncrementalSetting
     # setting = ClassIncrementalSetting(dataset="mnist", nb_tasks=5)
-    # setting = TaskIncrementalSetting(dataset="mnist", nb_tasks=5)
+    # setting = TaskIncrementalSLSetting(dataset="mnist", nb_tasks=5)
     results = setting.apply(method, config=config)
     print(results.summary())
 

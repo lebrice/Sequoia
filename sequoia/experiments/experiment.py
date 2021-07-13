@@ -22,15 +22,15 @@ from simple_parsing import (
     subparsers,
 )
 
-from sequoia.common.config import Config
+from sequoia.common.config import Config, WandbConfig
 from sequoia.methods import Method, all_methods
 from sequoia.settings import (
-    ClassIncrementalResults,
     Results,
     Setting,
     SettingType,
     all_settings,
 )
+from sequoia.settings.sl.incremental import IncrementalSLResults
 from sequoia.settings.presets import setting_presets
 from sequoia.utils import Parseable, Serializable, get_logger
 from sequoia.utils.logging_utils import get_logger
@@ -89,6 +89,8 @@ class Experiment(Parseable, Serializable):
     # things like the log directory, wether Cuda is used, etc.
     config: Config = mutable_field(Config)
 
+    wandb: Optional[WandbConfig] = None
+
     def __post_init__(self):
         if not (self.setting or self.method):
             raise RuntimeError("One of `setting` or `method` must be set!")
@@ -144,7 +146,7 @@ class Experiment(Parseable, Serializable):
             # up by the Setting, just to prevent any ambiguities.
             try:
                 _, unused_args = self.setting.from_known_args()
-            except ImportError as exc:
+            except (ImportError, AssertionError) as exc:
                 # NOTE: An ImportError can occur here because of a missing OpenGL
                 # dependency, since when no arguments are passed, the default RL setting
                 # is created (cartpole with pixel observations), which requires a render
@@ -169,9 +171,11 @@ class Experiment(Parseable, Serializable):
 
             assert isclass(self.setting) and issubclass(self.setting, Setting)
             # Actually load the setting from the file.
+            # TODO: Why isn't this using `load_benchmark`?
             self.setting = self.setting.load(
                 path=self.benchmark, drop_extra_fields=drop_extras
             )
+            self.setting.wandb = self.wandb
 
             if self.method is None:
                 raise NotImplementedError(
@@ -235,7 +239,7 @@ class Experiment(Parseable, Serializable):
             
         """
         assert setting is not None and method is not None
-
+        assert isinstance(setting, Setting), f"TODO: Fix this, need to pass a wandb config to the Setting from the experiment!"
         if not (isinstance(setting, Setting) and isinstance(method, Method)):
             setting, method = parse_setting_and_method_instances(
                 setting=setting, method=method, argv=argv, strict_args=strict_args
@@ -279,13 +283,20 @@ class Experiment(Parseable, Serializable):
         assert self.setting is not None
         assert self.method is not None
         assert self.config is not None
-        return self.run_experiment(
-            setting=self.setting,
-            method=self.method,
-            config=self.config,
-            argv=argv,
-            strict_args=strict_args,
-        )
+
+        if not (isinstance(self.setting, Setting) and isinstance(self.method, Method)):
+            self.setting, self.method = parse_setting_and_method_instances(
+                setting=self.setting, method=self.method, argv=argv, strict_args=strict_args
+            )
+
+        assert isinstance(self.setting, Setting)
+        assert isinstance(self.method, Method)
+
+        self.setting.wandb = self.wandb
+        self.setting.config = self.config
+
+        return self.setting.apply(self.method, config=self.config)
+
 
     @classmethod
     def main(
@@ -312,7 +323,7 @@ class Experiment(Parseable, Serializable):
             will be a dictionary mapping from
             (setting_type, method_type) tuples to Results.
         """
-
+        # TODO: Clean this up with the new command-line API.
         if argv is None:
             argv = sys.argv[1:]
         if isinstance(argv, str):
@@ -331,24 +342,17 @@ class Experiment(Parseable, Serializable):
 
         if setting and method:
             # One 'job': Launch it directly.
-            setting, method = parse_setting_and_method_instances(
-                setting=setting, method=method, argv=argv, strict_args=strict_args
-            )
-            assert isinstance(setting, Setting)
-            assert isinstance(method, Method)
-
             results = experiment.launch(argv, strict_args=strict_args)
             print("\n\n EXPERIMENT IS DONE \n\n")
             print(f"Results: {results}")
             return results
 
-        else:
-            # TODO: Test out this other case. Haven't used it in a while.
-            # TODO: Move this to something like a BatchExperiment?
-            all_results = launch_batch_of_runs(
-                setting=setting, method=method, argv=argv
-            )
-            return all_results
+        # TODO: Test out this other case. Haven't used it in a while.
+        # TODO: Move this to something like a BatchExperiment?
+        all_results = launch_batch_of_runs(
+            setting=setting, method=method, argv=argv
+        )
+        return all_results
 
 
 def launch_batch_of_runs(

@@ -11,14 +11,14 @@ from simple_parsing.helpers.hparams import uniform
 from avalanche.training.strategies import AGEM, BaseStrategy
 
 from sequoia.methods import register_method
-from sequoia.settings.passive import ClassIncrementalSetting, TaskIncrementalSetting
+from sequoia.settings.sl import ClassIncrementalSetting, TaskIncrementalSLSetting
 
 from .base import AvalancheMethod
 
 
 @register_method
 @dataclass
-class AGEMMethod(AvalancheMethod[AGEM], target_setting=ClassIncrementalSetting):
+class AGEMMethod(AvalancheMethod[AGEM]):
     """Average Gradient Episodic Memory (AGEM) strategy from Avalanche.
     See AGEM plugin for details.
     This strategy does not use task identities.
@@ -35,7 +35,7 @@ class AGEMMethod(AvalancheMethod[AGEM], target_setting=ClassIncrementalSetting):
 
 
 if __name__ == "__main__":
-    setting = TaskIncrementalSetting(
+    setting = TaskIncrementalSLSetting(
         dataset="mnist", nb_tasks=5, monitor_training_performance=True
     )
     # Create the Method, either manually or through the command-line:

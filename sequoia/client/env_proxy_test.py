@@ -12,13 +12,13 @@ from sequoia.common.gym_wrappers.env_dataset_test import \
     TestEnvDataset as _TestEnvDataset
 from sequoia.common.spaces import Image
 from sequoia.common.transforms import Compose, Transforms
-from sequoia.settings.active import IncrementalRLSetting
-from sequoia.settings.active.continual.gym_dataloader import GymDataLoader
-from sequoia.settings.active.continual.gym_dataloader_test import \
+from sequoia.settings.rl import IncrementalRLSetting
+from sequoia.settings.rl.continual.environment import GymDataLoader
+from sequoia.settings.rl.continual.environment_test import \
     TestGymDataLoader as _TestGymDataLoader
-from sequoia.settings.assumptions import IncrementalSetting
-from sequoia.settings.passive.passive_environment import PassiveEnvironment
-from sequoia.settings.passive.passive_environment_test import \
+from sequoia.settings.assumptions import IncrementalAssumption
+from sequoia.settings.sl.environment import PassiveEnvironment
+from sequoia.settings.sl.environment_test import \
     TestPassiveEnvironment as _TestPassiveEnvironment
 from torch import Tensor
 from torch.utils.data import DataLoader
@@ -35,7 +35,7 @@ def wrap_type_with_proxy(env_type: Type[EnvType]) -> EnvType:
     class _EnvProxy(EnvironmentProxy):
         def __init__(self, *args, **kwargs):
             env_fn = partial(env_type, *args, **kwargs)
-            super().__init__(env_fn, setting_type=IncrementalSetting)
+            super().__init__(env_fn, setting_type=IncrementalAssumption)
 
     return _EnvProxy
 

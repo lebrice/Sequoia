@@ -4,6 +4,7 @@ from typing import ClassVar, List, Optional, Type
 
 import pytest
 import tqdm
+
 # from avalanche.models import MTSimpleCNN, MTSimpleMLP, SimpleCNN, SimpleMLP
 from avalanche.models.utils import avalanche_forward
 from avalanche.training.strategies import BaseStrategy
@@ -11,8 +12,14 @@ from torch.nn import Module
 
 from sequoia.common.config import Config
 from sequoia.conftest import xfail_param
-from sequoia.settings.passive import ClassIncrementalSetting, TaskIncrementalSetting
-from sequoia.settings.passive.cl.objects import Observations, Rewards
+from sequoia.settings.sl import (
+    ClassIncrementalSetting,
+    TaskIncrementalSLSetting,
+    ContinualSLSetting,
+    DiscreteTaskAgnosticSLSetting,
+)
+from sequoia.settings.sl.incremental.objects import Observations, Rewards
+from sequoia.conftest import slow, slow_param
 
 from .base import AvalancheMethod
 from .experience import SequoiaExperience
@@ -25,6 +32,7 @@ class _TestAvalancheMethod:
     # Names of (hyper-)parameters which are allowed to have a different default value in
     # Sequoia compared to their implementations in Avalanche.
     ignored_parameter_differences: ClassVar[List[str]] = [
+        "plugins",
         "device",
         "eval_mb_size",
         "criterion",
@@ -62,29 +70,43 @@ class _TestAvalancheMethod:
 
     @pytest.mark.timeout(60)
     @pytest.mark.parametrize(
-        "model_type",
-        [
-            SimpleCNN,
-            SimpleMLP,
-            MTSimpleCNN,
-            # xfail_param(
-            #     MTSimpleCNN,
-            #     reason="IndexError Bug inside `avalanche/models/dynamic_modules.py",
-            # ),
-            MTSimpleMLP,
-            # xfail_param(
-            #     MTSimpleMLP,
-            #     reason="IndexError Bug inside `avalanche/models/dynamic_modules.py",
-            # ),
-        ],
+        "model_type", [SimpleCNN, SimpleMLP, MTSimpleCNN, MTSimpleMLP,],
+    )
+    def test_short_continual_sl_setting(
+        self,
+        model_type: Type[Module],
+        short_continual_sl_setting: ContinualSLSetting,
+        config: Config,
+    ):
+        method = self.Method(model=model_type, train_mb_size=10, train_epochs=1)
+        results = short_continual_sl_setting.apply(method, config)
+        assert 0.05 < results.average_metrics.objective
+
+    @pytest.mark.timeout(60)
+    @pytest.mark.parametrize(
+        "model_type", [SimpleCNN, SimpleMLP, MTSimpleCNN, MTSimpleMLP,],
+    )
+    def test_short_discrete_task_agnostic_sl_setting(
+        self,
+        model_type: Type[Module],
+        short_discrete_task_agnostic_sl_setting: DiscreteTaskAgnosticSLSetting,
+        config: Config,
+    ):
+        method = self.Method(model=model_type, train_mb_size=10, train_epochs=1)
+        results = short_discrete_task_agnostic_sl_setting.apply(method, config)
+        assert 0.05 < results.average_metrics.objective
+
+    @pytest.mark.timeout(60)
+    @pytest.mark.parametrize(
+        "model_type", [SimpleCNN, SimpleMLP, MTSimpleCNN, MTSimpleMLP,],
     )
     def test_short_task_incremental_setting(
         self,
         model_type: Type[Module],
-        short_task_incremental_setting: TaskIncrementalSetting,
+        short_task_incremental_setting: TaskIncrementalSLSetting,
         config: Config,
     ):
-        method = self.Method(model=model_type, train_mb_size=10, train_epochs=3)
+        method = self.Method(model=model_type, train_mb_size=10, train_epochs=1)
         results = short_task_incremental_setting.apply(method, config)
         assert 0.05 < results.average_final_performance.objective
 
@@ -112,18 +134,19 @@ class _TestAvalancheMethod:
         short_class_incremental_setting: ClassIncrementalSetting,
         config: Config,
     ):
-        method = self.Method(model=model_type, train_mb_size=10, train_epochs=3)
+        method = self.Method(model=model_type, train_mb_size=10, train_epochs=1)
         results = short_class_incremental_setting.apply(method, config)
         assert 0.05 < results.average_final_performance.objective
 
-    @pytest.mark.timeout(300)
+    @slow
+    @pytest.mark.timeout(60)
     @pytest.mark.parametrize(
         "model_type",
         [
             SimpleCNN,
             SimpleMLP,
-            MTSimpleCNN,
-            MTSimpleMLP,
+            slow_param(MTSimpleCNN),
+            slow_param(MTSimpleMLP),
             # xfail_param(
             #     MTSimpleCNN,
             #     reason="IndexError Bug inside `avalanche/models/dynamic_modules.py",
@@ -134,14 +157,19 @@ class _TestAvalancheMethod:
             # ),
         ],
     )
-    def test_sl_track(
+    def test_short_sl_track(
         self,
         model_type: Type[Module],
-        sl_track_setting: ClassIncrementalSetting,
+        short_sl_track_setting: ClassIncrementalSetting,
         config: Config,
     ):
-        method = self.Method(model=model_type, train_mb_size=512)
-        results = sl_track_setting.apply(method, config)
+        # Use the same batch size as the setting, since it's shorter than usual.
+        method = self.Method(
+            model=model_type,
+            train_mb_size=short_sl_track_setting.batch_size,
+            train_epochs=1,
+        )
+        results = short_sl_track_setting.apply(method, config)
         results.cl_score
         # TODO: Set up a more reasonable bound on the expected performance. For now this
         # is fine as we're just debugging: the test passes as long as there is a results
@@ -151,13 +179,13 @@ class _TestAvalancheMethod:
         assert 0 < results.average_final_performance.objective
 
 
-def test_warning_if_environment_to_experience_isnt_overwritten(sl_track_setting):
+def test_warning_if_environment_to_experience_isnt_overwritten(short_sl_track_setting):
     """ When
     """
     method = AvalancheMethod()
-    assert sl_track_setting.monitor_training_performance
+    assert short_sl_track_setting.monitor_training_performance
     with pytest.warns(UserWarning, match="chance accuracy"):
-        method.configure(sl_track_setting)
+        method.configure(short_sl_track_setting)
 
 
 class MyDummyMethod(AvalancheMethod):
@@ -223,11 +251,13 @@ class MyDummyMethod(AvalancheMethod):
         )
 
 
-def test_no_warning_if_environment_to_experience_is_overwritten(sl_track_setting):
-    """ When
+def test_no_warning_if_environment_to_experience_is_overwritten(short_sl_track_setting):
+    """ When the Method doesn't overwrite the `environment_to_experience` method, we
+    raise a Warning to let the User know that they can only expect chance online
+    accuracy.
     """
     method = MyDummyMethod()
-    assert sl_track_setting.monitor_training_performance
+    assert short_sl_track_setting.monitor_training_performance
     with pytest.warns(None) as record:
-        method.configure(sl_track_setting)
+        method.configure(short_sl_track_setting)
     assert len(record) == 0

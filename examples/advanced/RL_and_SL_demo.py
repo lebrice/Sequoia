@@ -23,7 +23,7 @@ from sequoia.common.loss import Loss
 from sequoia.methods import BaselineMethod
 from sequoia.methods.aux_tasks import AuxiliaryTask, SimCLRTask
 from sequoia.methods.models import BaselineModel, ForwardPass
-from sequoia.settings import Setting, Environment, ActiveSetting
+from sequoia.settings import Setting, Environment, RLSetting
 from sequoia.utils import camel_case, dict_intersection, get_logger
 
 logger = get_logger(__file__)
@@ -192,7 +192,7 @@ class CustomMethod(BaselineMethod, target_setting=Setting):
 
         # For example, change the value of the coefficient of our
         # regularization loss when in RL vs SL:
-        if isinstance(setting, ActiveSetting):
+        if isinstance(setting, RLSetting):
             self.hparams.simple_reg.coefficient = 0.01
         else:
             self.hparams.simple_reg.coefficient = 1.0
@@ -236,16 +236,15 @@ class CustomMethod(BaselineMethod, target_setting=Setting):
 def demo_manual():
     """ Apply the custom method to a Setting, creating both manually in code. """
     # Create any Setting from the tree:
-    from sequoia.settings import TaskIncrementalRLSetting, TaskIncrementalSetting
+    from sequoia.settings import TaskIncrementalRLSetting, TaskIncrementalSLSetting
 
-    # setting = TaskIncrementalSetting(dataset="mnist", nb_tasks=5)  # SL
+    # setting = TaskIncrementalSLSetting(dataset="mnist", nb_tasks=5)  # SL
     setting = TaskIncrementalRLSetting(  # RL
         dataset="cartpole",
         train_task_schedule={
             0: {"gravity": 10, "length": 0.5},
             5000: {"gravity": 10, "length": 1.0},
         },
-        observe_state_directly=True,  # state input, rather than pixel input.
         max_steps=10_000,
     )
 
@@ -291,9 +290,9 @@ def demo_command_line():
     parser = ArgumentParser(description=__doc__)
 
     ## Add command-line arguments for any Setting in the tree:
-    from sequoia.settings import TaskIncrementalRLSetting, TaskIncrementalSetting
+    from sequoia.settings import TaskIncrementalRLSetting, TaskIncrementalSLSetting
 
-    # parser.add_arguments(TaskIncrementalSetting, dest="setting")
+    # parser.add_arguments(TaskIncrementalSLSetting, dest="setting")
     parser.add_arguments(TaskIncrementalRLSetting, dest="setting")
     parser.add_arguments(Config, dest="config")
 

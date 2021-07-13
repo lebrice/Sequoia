@@ -14,7 +14,7 @@ from gym.spaces.utils import flatdim
 from sequoia.common.spaces import Image
 from sequoia.common.hparams import HyperParameters, log_uniform
 from sequoia.methods import Method
-from sequoia.settings.active import ActiveEnvironment, ActiveSetting
+from sequoia.settings.rl import ActiveEnvironment, RLSetting
 
 # TODO: Migrate stuff to directly import simple-parsing's hparams module.
 # from simple_parsing.helpers.hparams import HyperParameters
@@ -90,7 +90,7 @@ class ActorCritic(nn.Module):
             )
 
     def forward(
-        self, observation: ActiveSetting.Observations
+        self, observation: RLSetting.Observations
     ) -> Tuple[Tensor, Categorical]:
         x = observation.x
         state = torch.as_tensor(x, dtype=torch.float)
@@ -121,7 +121,7 @@ class ActorCritic(nn.Module):
         return value, policy_dist
 
 
-class ExampleA2CMethod(Method, target_setting=ActiveSetting):
+class ExampleA2CMethod(Method, target_setting=RLSetting):
     """ Example A2C method.
 
     Most of the code here was taken from:
@@ -153,7 +153,7 @@ class ExampleA2CMethod(Method, target_setting=ActiveSetting):
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         self.render = render
 
-    def configure(self, setting: ActiveSetting):
+    def configure(self, setting: RLSetting):
         self.actor_critic = ActorCritic(
             observation_space=setting.observation_space,
             action_space=setting.action_space,
@@ -187,7 +187,7 @@ class ExampleA2CMethod(Method, target_setting=ActiveSetting):
             rewards: List[Tensor] = []
             entropy_term = 0
 
-            observation: ActiveSetting.Observations = train_env.reset()
+            observation: RLSetting.Observations = train_env.reset()
             # Convert numpy arrays in the observation into Tensors on the right device.
             observation = observation.torch(device=self.device)
 
@@ -204,13 +204,13 @@ class ExampleA2CMethod(Method, target_setting=ActiveSetting):
                 # NOTE: 'correct' thing to do would be to pass Actions objects of the
                 # right type. This is for future-proofing this Method so it can
                 # still function in the future if new settings are added.
-                action = ActiveSetting.Actions(y_pred=action.cpu().detach().numpy())
+                action = RLSetting.Actions(y_pred=action.cpu().detach().numpy())
 
                 if self.render:
                     train_env.render()
 
-                new_observation: ActiveSetting.Observations
-                reward: ActiveSetting.Rewards
+                new_observation: RLSetting.Observations
+                reward: RLSetting.Rewards
                 new_observation, reward, done, _ = train_env.step(action)
                 new_observation = new_observation.torch(device=self.device)
                 total_steps += 1
@@ -294,12 +294,12 @@ class ExampleA2CMethod(Method, target_setting=ActiveSetting):
         # plt.show()
 
     def get_actions(
-        self, observations: ActiveSetting.Observations, action_space: gym.Space
-    ) -> ActiveSetting.Actions:
+        self, observations: RLSetting.Observations, action_space: gym.Space
+    ) -> RLSetting.Actions:
         # Move the observations to the right device, converting numpy arrays to tensors.
         observations = observations.torch(device=self.device)
         value, action_dist = self.actor_critic(observations)
-        return ActiveSetting.Actions(y_pred=action_dist.sample())
+        return RLSetting.Actions(y_pred=action_dist.sample())
 
     # The methods below aren't required, but are good to add.
 
@@ -327,7 +327,7 @@ class ExampleA2CMethod(Method, target_setting=ActiveSetting):
         hparams: ExampleA2CMethod.HParams = args.hparams
         return cls(hparams=hparams)
 
-    def get_search_space(self, setting: ActiveSetting) -> Dict:
+    def get_search_space(self, setting: RLSetting) -> Dict:
         return self.hparams.get_orion_space()
 
     def adapt_to_new_hparams(self, new_hparams: Dict) -> None:
@@ -339,16 +339,15 @@ if __name__ == "__main__":
     # Create the Setting.
 
     # CartPole-state for debugging:
-    from sequoia.settings.active import RLSetting
+    from sequoia.settings.rl import RLSetting
 
-    setting = RLSetting(dataset="CartPole-v0", observe_state_directly=True)
+    setting = RLSetting(dataset="CartPole-v0")
 
     # OR: Incremental CartPole-state:
-    from sequoia.settings.active import IncrementalRLSetting
+    from sequoia.settings.rl import IncrementalRLSetting
 
     setting = IncrementalRLSetting(
         dataset="CartPole-v0",
-        observe_state_directly=True,
         monitor_training_performance=True,
         nb_tasks=1,
         steps_per_task=1_000,

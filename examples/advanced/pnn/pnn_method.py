@@ -12,33 +12,25 @@ from gym import spaces
 from gym.spaces import Box
 from numpy import inf
 from scipy.signal import lfilter
-from sequoia import Environment
-from sequoia.common import Config
-from sequoia.common.spaces import Image
-from sequoia.settings import (
-    Actions,
-    ActiveEnvironment,
-    ActiveSetting,
-    Method,
-    Observations,
-    PassiveEnvironment,
-    PassiveSetting,
-    Rewards,
-    Setting,
-    DomainIncrementalSetting,
-    TaskIncrementalRLSetting,
-    TaskIncrementalSetting,
-)
-from sequoia.settings.assumptions import IncrementalSetting
 from simple_parsing import ArgumentParser
 from torchvision import transforms
 
-import sys
+from sequoia import Environment
+from sequoia.common import Config
+from sequoia.common.spaces import Image
+from sequoia.common.transforms.utils import is_image
+from sequoia.settings import Actions, Method, Observations, Rewards, Setting
+from sequoia.settings.assumptions import IncrementalAssumption
+from sequoia.settings.rl import ActiveEnvironment, RLSetting, TaskIncrementalRLSetting
+from sequoia.settings.sl import (
+    DomainIncrementalSLSetting,
+    PassiveEnvironment,
+    SLSetting,
+    TaskIncrementalSLSetting,
+)
 
-sys.path.extend([".", ".."])
-
-from model_sl import PnnClassifier
-from model_rl import PnnA2CAgent
+from examples.advanced.pnn.model_rl import PnnA2CAgent
+from examples.advanced.pnn.model_sl import PnnClassifier
 
 
 class PnnMethod(Method, target_setting=Setting):
@@ -84,8 +76,8 @@ class PnnMethod(Method, target_setting=Setting):
         where you get access to the observation & action spaces.
         """
 
-        input_space: Box = setting.observation_space[0]
-        task_label_space = setting.observation_space[1]
+        input_space: Box = setting.observation_space["x"]
+        task_label_space = setting.observation_space["task_labels"]
 
         # For now all Settings have `Discrete` (i.e. classification) action spaces.
         action_space: spaces.Discrete = setting.action_space
@@ -96,7 +88,7 @@ class PnnMethod(Method, target_setting=Setting):
 
         self.added_tasks = []
 
-        if isinstance(setting, ActiveSetting):
+        if isinstance(setting, RLSetting):
             # If we're applied to an RL setting:
 
             # Used these as the default hparams in RL:
@@ -118,12 +110,14 @@ class PnnMethod(Method, target_setting=Setting):
             self.loss_function = {
                 "gamma": self.hparams.gamma,
             }
-            if setting.observe_state_directly:
-                # Observing state input (e.g. the 4 floats in cartpole rather than images)
-                self.arch = "mlp"
-            else:
+
+            x_space = setting.observation_space.x
+            if is_image(setting.observation_space.x):
                 # Observing pixel input.
                 self.arch = "conv"
+            else:
+                # Observing state input (e.g. the 4 floats in cartpole rather than images)
+                self.arch = "mlp"
             self.model = PnnA2CAgent(self.arch, self.hparams.hidden_size)
 
         else:
@@ -161,7 +155,9 @@ class PnnMethod(Method, target_setting=Setting):
         # the index of the new task. If not, task_id will be None.
         # For example, you could do something like this:
         # self.model.current_task = task_id
-        self.model.freeze_columns([task_id])
+        # This freezes all columns except the one for the next task.. but there might
+        # not yet be a column for the new task!
+        self.model.freeze_columns(skip=[task_id])
         if task_id not in self.added_tasks:
             if isinstance(self.model, PnnA2CAgent):
                 self.model.new_task(
@@ -292,7 +288,7 @@ class PnnMethod(Method, target_setting=Setting):
 
     def fit_sl(self, train_env: PassiveEnvironment, valid_env: PassiveEnvironment):
         """ Train on a Supervised Learning (a.k.a. "passive") environment. """
-        observations: TaskIncrementalSetting.Observations = train_env.reset()
+        observations: TaskIncrementalSLSetting.Observations = train_env.reset()
         cuda_observations = observations.to(self.device)
         assert isinstance(self.model, PnnClassifier)
         assert self.hparams
@@ -351,11 +347,8 @@ def main_rl():
     Config.add_argparse_args(parser, dest="config")
     PnnMethod.add_argparse_args(parser, dest="method")
 
-    # Haven't tested with observe_state_directly=False
-    # it run but I don't know if it converge
     setting = TaskIncrementalRLSetting(
         dataset="cartpole",
-        observe_state_directly=True,
         nb_tasks=2,
         train_task_schedule={
             0: {"gravity": 10, "length": 0.3},
@@ -388,8 +381,8 @@ def main_sl():
     # TODO: PNN is coded for the DomainIncrementalSetting, where the action space
     # is the same for each task.
     # parser.add_arguments(DomainIncrementalSetting, dest="setting")
-    parser.add_arguments(TaskIncrementalSetting, dest="setting")
-    # TaskIncrementalSetting.add_argparse_args(parser, dest="setting")
+    parser.add_arguments(TaskIncrementalSLSetting, dest="setting")
+    # TaskIncrementalSLSetting.add_argparse_args(parser, dest="setting")
     Config.add_argparse_args(parser, dest="config")
 
     # Add arguments for the Method:
@@ -397,10 +390,11 @@ def main_sl():
 
     args = parser.parse_args()
 
-    # setting: TaskIncrementalSetting = args.setting
-    setting: TaskIncrementalSetting = TaskIncrementalSetting.from_argparse_args(
-    # setting: DomainIncrementalSetting = DomainIncrementalSetting.from_argparse_args(
-        args, dest="setting"
+    # setting: TaskIncrementalSLSetting = args.setting
+    setting: TaskIncrementalSLSetting = TaskIncrementalSLSetting.from_argparse_args(
+        # setting: DomainIncrementalSetting = DomainIncrementalSetting.from_argparse_args(
+        args,
+        dest="setting",
     )
     config: Config = Config.from_argparse_args(args, dest="config")
 

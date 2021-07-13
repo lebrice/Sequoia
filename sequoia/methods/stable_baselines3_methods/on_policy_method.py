@@ -13,7 +13,7 @@ from simple_parsing import mutable_field
 from stable_baselines3.common.on_policy_algorithm import OnPolicyAlgorithm
 
 from sequoia.common.hparams import uniform, log_uniform
-from sequoia.settings.active import ContinualRLSetting
+from sequoia.settings.rl import ContinualRLSetting
 from sequoia.utils.logging_utils import get_logger
 
 from .base import SB3BaseHParams, StableBaselines3Method
@@ -155,6 +155,16 @@ class OnPolicyMethod(StableBaselines3Method, ABC):
 
         todo: use this to customize how your method handles task transitions.
         """
+        super().on_task_switch(task_id=task_id)
+
+    def clear_buffers(self):
+        """ Clears out the experience buffer of the Policy. """
+        # I think that's the right way to do it.. not sure.
+        if self.model:
+            # TODO: These are really interesting methods!
+            # self.model.save_replay_buffer
+            # self.model.load_replay_buffer
+            self.model.rollout_buffer.reset()
 
     def get_search_space(
         self, setting: ContinualRLSetting

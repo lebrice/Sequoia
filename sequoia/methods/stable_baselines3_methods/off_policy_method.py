@@ -3,21 +3,32 @@
 import math
 import warnings
 from dataclasses import dataclass
-from typing import Callable, ClassVar, Optional, Type, Union
+from typing import Callable, ClassVar, Optional, Type, Union, Any
 from abc import ABC
 import gym
 from gym import spaces
 from gym.spaces.utils import flatten_space
 from simple_parsing import mutable_field
 from stable_baselines3.common.off_policy_algorithm import OffPolicyAlgorithm
+from stable_baselines3.common.off_policy_algorithm import TrainFreq, TrainFrequencyUnit
+from simple_parsing.helpers.serialization import register_decoding_fn
 
 from sequoia.common.hparams import log_uniform, uniform
-from sequoia.settings.active import ContinualRLSetting
+from sequoia.settings.rl import ContinualRLSetting
 from sequoia.utils.logging_utils import get_logger
 
 from .base import SB3BaseHParams, StableBaselines3Method
 
 logger = get_logger(__file__)
+
+
+def decode_trainfreq(v: Any):
+    if isinstance(v, list) and len(v) == 2:
+        return TrainFreq(v[0], v[1])
+    return v
+
+
+register_decoding_fn(TrainFreq, decode_trainfreq)
 
 
 class OffPolicyModel(OffPolicyAlgorithm, ABC):
@@ -84,6 +95,10 @@ class OffPolicyMethod(StableBaselines3Method, ABC):
     hparams: OffPolicyModel.HParams = mutable_field(OffPolicyModel.HParams)
     # Approximate limit on the size of the replay buffer, in megabytes.
     max_buffer_size_megabytes: float = 2_048.0
+
+    def __post_init__(self):
+        super().__post_init__()
+        self.model: OffPolicyAlgorithm
 
     def configure(self, setting: ContinualRLSetting):
         super().configure(setting)
@@ -152,7 +167,9 @@ class OffPolicyMethod(StableBaselines3Method, ABC):
                     f"{ten_percent_of_step_budget} steps."
                 )
                 self.hparams.learning_starts = ten_percent_of_step_budget
-                if self.hparams.train_freq != -1:
+                if self.hparams.train_freq != -1 and isinstance(
+                    self.hparams.train_freq, int
+                ):
                     # Update the model at least 2 times during each task, and at most
                     # once per step.
                     self.hparams.train_freq = min(
@@ -226,3 +243,13 @@ class OffPolicyMethod(StableBaselines3Method, ABC):
 
         todo: use this to customize how your method handles task transitions.
         """
+        super().on_task_switch(task_id=task_id)
+
+    def clear_buffers(self):
+        """ Clears out the experience buffer of the Policy. """
+        # I think that's the right way to do it.. not sure.
+        if self.model:
+            # TODO: These are really interesting methods!
+            # self.model.save_replay_buffer
+            # self.model.load_replay_buffer
+            self.model.replay_buffer.reset()

@@ -1,0 +1,110 @@
+@startuml settings
+' skinparam linetype polyline
+' skinparam linetype ortho
+
+' skinparam classFontSize 20
+' fieldFontSize 20
+' !include gym.puml
+' !include assumptions/assumptions.puml
+hide empty members
+' hide fields
+' hide methods  
+
+' ' Use this to turn on / off the display of assumptions
+' remove Assumptions
+' ' Use this to turn on / off groups of assumptions
+' remove supervision_assumptions
+' remove action_space_assumption
+
+
+' remove Settings
+' Comment/uncomment this to show/hide the descriptions for each node.
+' hide fields
+
+package settings as sequoia.settings {
+    ' !include base/base.puml
+
+    ' package settings.base {
+    ' }
+
+    package settings.assumptions {
+        !include assumptions/assumptions.puml
+        remove assumptions
+        remove <<Observations>>
+        remove <<Actions>>
+        remove <<Rewards>>
+        remove <<Environment>>
+        ' remove supervision_assumptions
+        ' remove context_assumption_family
+        ' remove <<Assumption>>
+    }
+
+    ' !include settings/rl/rl.puml
+    package rl {
+
+        ' ContinualRLSetting -.- rl.continuous.ContinuousTaskAgnosticRLSetting
+
+        abstract class RLSetting <<AbstractSetting>> extends SparseFeedback, ActiveEnvironment {}
+        package continuous as rl.continuous {
+            class ContinuousTaskAgnosticRLSetting <<Setting>> implements RLSetting, ContinuousTaskAgnosticSetting {}
+        }
+        package discrete as rl.discrete {
+            class DiscreteTaskAgnosticRLSetting <<Setting>> implements DiscreteTaskAgnosticSetting, ContinuousTaskAgnosticRLSetting {}
+        }
+        package incremental as rl.incremental {
+            class IncrementalRLSetting <<Setting>> implements IncrementalSetting, DiscreteTaskAgnosticRLSetting {}
+        }
+        package class_incremental as rl.class_incremental {
+            class ClassIncrementalRLSetting <<Setting>> implements ClassIncrementalSetting, IncrementalRLSetting {}
+        }
+        package domain_incremental as rl.domain_incremental {
+            class DomainIncrementalRLSetting <<Setting>> implements DomainIncrementalSetting, IncrementalRLSetting {}
+        }
+        package traditional as rl.traditional {
+            class TraditionalRLSetting <<Setting>> implements TraditionalSetting, IncrementalRLSetting {}
+        }
+        package task_incremental as rl.task_incremental {
+            class TaskIncrementalRLSetting <<Setting>> implements TaskIncrementalSetting, IncrementalRLSetting {}
+        }
+        package multi_task as rl.multi_task {
+            class MultiTaskRLSetting <<Setting>> implements MultiTaskSetting, TaskIncrementalRLSetting, TraditionalRLSetting {}
+        }
+        remove rl.class_incremental
+        remove rl.domain_incremental
+    }
+
+    ' !include settings/rl/sl.puml
+    package sl {
+        abstract class SLSetting <<AbstractSetting>> extends DenseFeedback, PassiveEnvironment {}
+        package continuous as sl.continuous {
+            class ContinuousTaskAgnosticSLSetting <<Setting>> implements SLSetting, ContinuousTaskAgnosticSetting {}
+        }
+        package discrete as sl.discrete {
+            class DiscreteTaskAgnosticSLSetting <<Setting>> implements DiscreteTaskAgnosticSetting, ContinuousTaskAgnosticSLSetting {}
+        }
+        package incremental as sl.incremental {
+            class IncrementalSLSetting <<Setting>> implements IncrementalSetting, DiscreteTaskAgnosticSLSetting {}
+        }
+        package class_incremental as sl.class_incremental {
+            class ClassIncrementalSLSetting <<Setting>> implements ClassIncrementalSetting, IncrementalSLSetting {}
+        }
+        package domain_incremental as sl.domain_incremental {
+            class DomainIncrementalSLSetting <<Setting>> implements DomainIncrementalSetting, IncrementalSLSetting {}
+        }
+        package traditional as sl.traditional {
+            class TraditionalSLSetting <<Setting>> implements TraditionalSetting, IncrementalSLSetting {}
+        }
+        package task_incremental as sl.task_incremental {
+            class TaskIncrementalSLSetting <<Setting>> implements TaskIncrementalSetting, IncrementalSLSetting {}
+        }
+        package multi_task as sl.multi_task {
+            class MultiTaskSLSetting <<Setting>> implements MultiTaskSetting, TaskIncrementalSLSetting, TraditionalSLSetting {}
+        }
+        remove sl.class_incremental
+        remove sl.domain_incremental
+    }
+}
+
+
+
+@enduml

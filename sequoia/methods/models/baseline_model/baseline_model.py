@@ -21,7 +21,7 @@ from sequoia.methods.models.output_heads import OutputHead, PolicyHead
 from sequoia.utils.logging_utils import get_logger
 from sequoia.common.hparams import log_uniform, categorical
 from sequoia.settings import Observations, Rewards
-from sequoia.settings.assumptions.incremental import IncrementalSetting
+from sequoia.settings.assumptions.incremental import IncrementalAssumption
 from sequoia.methods.models.simple_convnet import SimpleConvNet
 
 from .base_model import ForwardPass
@@ -32,7 +32,7 @@ from .semi_supervised_model import SemiSupervisedModel
 torch.autograd.set_detect_anomaly(True)
 
 logger = get_logger(__file__)
-SettingType = TypeVar("SettingType", bound=IncrementalSetting)
+SettingType = TypeVar("SettingType", bound=IncrementalAssumption)
 
 
 class BaselineModel(

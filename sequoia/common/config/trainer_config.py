@@ -59,7 +59,13 @@ class TrainerConfig(HyperParameters):
         """ Create a Trainer object from the command-line args.
         Adds the given loggers and callbacks as well.
         """
-        return Trainer(
+        # FIXME: Trying to subclass the DataConnector to fix issues while iterating
+        # over gym envs, that arise because of the _with_is_last() function from
+        # lightning.
+        from pytorch_lightning.trainer.connectors.data_connector import DataConnector
+        import pytorch_lightning.trainer.trainer
+        setattr(pytorch_lightning.trainer.trainer, "DataConnector", DataConnector)
+        trainer = Trainer(
             logger=loggers,
             callbacks=callbacks,
             gpus=self.gpus,
@@ -79,3 +85,4 @@ class TrainerConfig(HyperParameters):
             limit_val_batches=self.limit_val_batches,
             limit_test_batches=self.limit_train_batches,
         )
+        return trainer

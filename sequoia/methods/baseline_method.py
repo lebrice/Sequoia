@@ -4,6 +4,9 @@ The Method could be whatever you want, really. For the 'baselines' we have here,
 we use pytorch-lightning, and a few little utility classes such as `Metrics` and
 `Loss`, which are basically just like dicts/objects, with some cool other
 methods.
+
+TODO: Add a wrapper to limit the 'epoch' length in RL, and then use an early-stopping
+callback to also perform validation like in SL.
 """
 import json
 import operator
@@ -22,9 +25,10 @@ from simple_parsing import mutable_field
 from wandb.wandb_run import Run
 
 from sequoia.common import Config, TrainerConfig
-from sequoia.settings import ActiveSetting, PassiveSetting
-from sequoia.settings.active.continual import ContinualRLSetting
-from sequoia.settings.assumptions.incremental import IncrementalSetting
+from sequoia.common.spaces import Image
+from sequoia.settings import RLSetting, SLSetting
+from sequoia.settings.rl.continual import ContinualRLSetting
+from sequoia.settings.assumptions.incremental import IncrementalAssumption
 from sequoia.settings.base import Method
 from sequoia.settings.base.environment import Environment
 from sequoia.settings.base.objects import Actions, Observations, Rewards
@@ -32,12 +36,55 @@ from sequoia.settings.base.results import Results
 from sequoia.settings.base.setting import Setting, SettingType
 from sequoia.utils import Parseable, Serializable, compute_identity, get_logger
 from sequoia.methods import register_method
+from sequoia.settings.sl.continual import ContinualSLSetting
 
 from .models import BaselineModel, ForwardPass
 
 logger = get_logger(__file__)
 
+from pytorch_lightning import Trainer
+from pytorch_lightning.trainer.connectors.data_connector import DataConnector
+from sequoia.common.gym_wrappers.utils import IterableWrapper, has_wrapper
+from sequoia.settings.rl.continual.environment import GymDataLoader
 
+
+class PatchedDataConnector(DataConnector):
+    def _with_is_last(self, iterable):
+        """ Patch for this 'with_is_last' which messes up iterating over an RL env.
+        """
+        if isinstance(iterable, gym.Env) and has_wrapper(iterable, GymDataLoader):
+            env = iterable
+            assert isinstance(env, IterableWrapper), env
+            while not env.is_closed():
+                for step, obs in enumerate(env):
+                    if env.is_closed():
+                        yield obs, True
+                        break
+                    else:
+                        yield obs, False
+        else:
+            yield from super()._with_is_last(iterable)
+            # it = iter(iterable)
+            # last = next(it)
+            # if hasattr(last, "done"):
+            #     end_of_episode = last["done"]
+            #     yield last, end_of_episode
+            # for val in it:
+            #     # yield last and has next
+            #     if hasattr(last, "done"):
+            #         end_of_episode = last["done"]
+            #         yield last, end_of_episode
+            #     else:
+            #         yield last, False
+            #     last = val
+            # yield last, no longer has next
+            # yield last, True
+
+import pytorch_lightning.trainer.connectors.data_connector
+setattr(pytorch_lightning.trainer.connectors.data_connector, "DataConnector", PatchedDataConnector)
+pytorch_lightning.trainer.connectors.data_connector.DataConnector = PatchedDataConnector
+
+    
 @register_method
 @dataclass
 class BaselineMethod(Method, Serializable, Parseable, target_setting=Setting):
@@ -176,10 +223,10 @@ class BaselineMethod(Method, Serializable, Parseable, target_setting=Setting):
 
         # Set the default batch size to use, depending on the kind of Setting.
         if self.hparams.batch_size is None:
-            if isinstance(setting, ActiveSetting):
+            if isinstance(setting, RLSetting):
                 # Default batch size of 1 in RL
                 self.hparams.batch_size = 1
-            elif isinstance(setting, PassiveSetting):
+            elif isinstance(setting, SLSetting):
                 self.hparams.batch_size = 32
             else:
                 warnings.warn(
@@ -209,7 +256,7 @@ class BaselineMethod(Method, Serializable, Parseable, target_setting=Setting):
         setting_name: str = setting.get_name()
         dataset = setting.dataset
 
-        if isinstance(setting, IncrementalSetting):
+        if isinstance(setting, IncrementalAssumption):
             if self.hparams.multihead is None:
                 # Use a multi-head model by default if the task labels are
                 # available at training time and has more than one task.
@@ -217,10 +264,14 @@ class BaselineMethod(Method, Serializable, Parseable, target_setting=Setting):
                     assert setting.task_labels_at_train_time
                 self.hparams.multihead = setting.nb_tasks > 1
 
+        if not setting.known_task_boundaries_at_train_time:
+            # If we won't have access to the task boundaries, so we can only do one
+            # epoch.
+            self.trainer_options.max_epochs = 1
+
         if isinstance(setting, ContinualRLSetting):
             setting.add_done_to_observations = True
-
-            if not setting.observe_state_directly:
+            if isinstance(setting.observation_space.x, Image):
                 if self.hparams.encoder is None:
                     self.hparams.encoder = "simple_convnet"
                 # TODO: Add 'proper' transforms for cartpole, specifically?
@@ -309,7 +360,7 @@ class BaselineMethod(Method, Serializable, Parseable, target_setting=Setting):
         method (`Actions`) and the type of `action_space`: we should either have
         a `Discrete` action space, and this method should return ints, or this
         method should return `Actions`, and the `action_space` should be a
-        `NamedTupleSpace` or something similar.
+        `TypedDictSpace` or something similar.
         Either way, `get_actions(obs, action_space) in action_space` should
         always be `True`.
         """
@@ -355,7 +406,7 @@ class BaselineMethod(Method, Serializable, Parseable, target_setting=Setting):
         # We use this here to create loggers!
         callbacks = self.create_callbacks(setting)
         loggers = []
-        if setting.wandb:
+        if setting.wandb and setting.wandb.project:
             wandb_logger = setting.wandb.make_logger()
             loggers.append(wandb_logger)
         trainer = self.trainer_options.make_trainer(
@@ -470,7 +521,7 @@ class BaselineMethod(Method, Serializable, Parseable, target_setting=Setting):
         """ Receives the results of an experiment, where `self` was applied to Setting
         `setting`, which produced results `results`.
         """
-        # TODO: Reset the run name so a new one is used for each experiment.
+        super().receive_results(setting, results=results)
 
     def create_callbacks(self, setting: SettingType) -> List[Callback]:
         """Create the PytorchLightning Callbacks for this Setting.
@@ -491,7 +542,7 @@ class BaselineMethod(Method, Serializable, Parseable, target_setting=Setting):
         # once PL adds it.
         # from sequoia.common.callbacks.vae_callback import SaveVaeSamplesCallback
         return [
-            EarlyStopping(monitor="val Loss")
+            EarlyStopping(monitor="loss")
             # self.hparams.knn_callback,
             # SaveVaeSamplesCallback(),
         ]

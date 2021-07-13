@@ -9,7 +9,7 @@ from gym.spaces import Discrete
 
 from sequoia.common.transforms import Transforms
 from sequoia.conftest import DummyEnvironment, atari_py_required
-from sequoia.settings.active.continual.make_env import make_batched_env
+from sequoia.settings.rl.continual.make_env import make_batched_env
 
 from .env_dataset import EnvDataset
 from .transform_wrappers import TransformObservation
@@ -143,7 +143,9 @@ class TestEnvDataset:
                 rewards = env.send(env.action_space.sample())
                 all_rewards.append(rewards)
             assert len(all_rewards) == max_steps
-            env.reset()
+            
+            with pytest.raises(gym.error.ClosedEnvironmentError):
+                env.reset()
 
             with pytest.raises(gym.error.ClosedEnvironmentError):
                 for i in range(10):
@@ -225,6 +227,8 @@ class TestEnvDataset:
         print(f"Before send")
         reward = env.send(action)
 
+        # TODO: Perhaps going to drop this API, because if really complicates the
+        # wrappers.
         print("Before __next__")
         next_obs = next(env)
 

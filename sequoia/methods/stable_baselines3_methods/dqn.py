@@ -9,7 +9,7 @@ from gym import spaces
 from sequoia.common.hparams import categorical
 from sequoia.common.transforms import ChannelsFirst
 from sequoia.methods import register_method
-from sequoia.settings.active import ContinualRLSetting
+from sequoia.settings.rl import ContinualRLSetting
 from sequoia.utils.logging_utils import get_logger
 from simple_parsing import mutable_field
 from simple_parsing.helpers.hparams import log_uniform, uniform
@@ -132,6 +132,7 @@ class DQNMethod(OffPolicyMethod):
 
         todo: use this to customize how your method handles task transitions.
         """
+        super().on_task_switch(task_id=task_id)
 
 
 if __name__ == "__main__":

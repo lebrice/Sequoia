@@ -13,7 +13,7 @@ import tqdm
 from gym import spaces
 from gym.spaces.utils import flatdim
 from gym.utils import colorize
-from simple_parsing.helpers import choice
+from simple_parsing.helpers import choice, field, list_field
 from simple_parsing.helpers.hparams import HyperParameters, log_uniform, uniform
 from torch import nn, optim
 from torch.nn import Module
@@ -35,15 +35,10 @@ from avalanche.training.strategies.strategy_wrappers import default_logger
 
 from sequoia.common.spaces import Image
 from sequoia.methods import Method
-from sequoia.settings.passive import (
-    ClassIncrementalSetting,
-    PassiveEnvironment,
-    PassiveSetting,
-)
-from sequoia.settings.passive.cl.class_incremental_setting import (
-    ClassIncrementalTestEnvironment,
-)
-from sequoia.settings.passive.cl.objects import Actions, Observations, Rewards
+from sequoia.settings.sl import ClassIncrementalSetting, PassiveEnvironment, SLSetting
+from sequoia.settings.sl.continual import Actions, Observations, Rewards
+from sequoia.settings.sl.continual import ContinualSLTestEnvironment
+from sequoia.settings.sl import ContinualSLSetting
 from sequoia.utils import get_logger
 
 from .experience import SequoiaExperience
@@ -73,7 +68,7 @@ class AvalancheMethod(
     Method,
     HyperParameters,
     Generic[StrategyType],
-    target_setting=ClassIncrementalSetting,
+    target_setting=ContinualSLSetting,
 ):
     """ Base class for all the Methods adapted from Avalanche. """
 
@@ -82,6 +77,10 @@ class AvalancheMethod(
 
     # The Strategy class to use for this Method. Subclasses have to add this property.
     strategy_class: ClassVar[Type[StrategyType]] = BaseStrategy
+
+    # TODO: Maybe use a 'PluginClass', so that we can avoid subclassing both the
+    # plugin and the strategy when we need to patch something in the plugin.
+    plugin_class: ClassVar[Optional[Type[StrategyPlugin]]]
 
     # Class Variable to hold the types of models available as options for the `model`
     # field below.
@@ -123,9 +122,9 @@ class AvalancheMethod(
     #  The device to use. Defaults to None (cpu).
     device: torch.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     # Plugins to be added. Defaults to None.
-    plugins: Optional[List[StrategyPlugin]] = None
+    plugins: Optional[List[StrategyPlugin]] = list_field(default=None, cmd=False, to_dict=False)
     # (optional) instance of EvaluationPlugin for logging and metric computations.
-    evaluator: Optional[EvaluationPlugin] = None
+    evaluator: Optional[EvaluationPlugin] = field(None, cmd=False, to_dict=False)
     # The frequency of the calls to `eval` inside the training loop.
     # if -1: no evaluation during training.
     # if  0: calls `eval` after the final epoch of each training
@@ -153,27 +152,34 @@ class AvalancheMethod(
     def configure(self, setting: ClassIncrementalSetting) -> None:
         self.setting = setting
         self.model = self.create_model(setting).to(self.device)
-
+        
         # Select the loss function to use.
         if not isinstance(self.criterion, nn.Module):
             self.criterion = self.criterion()
 
-        if setting.wandb:
+        metrics = [
+            accuracy_metrics(epoch=True, experience=True, stream=True),
+            forgetting_metrics(experience=True, stream=True),
+            loss_metrics(minibatch=False, epoch=True, experience=True, stream=True),
+        ]
+        loggers = [
+            # BUG: evaluation.py:94, _update_metrics: 
+            # before_training() takes 2 positional arguments but 3 were given
+            # default_logger,
+            InteractiveLogger(),
+        ]
+        if setting.wandb and setting.wandb.project:
             wandb_logger = WandBLogger(
                 project_name=setting.wandb.project,
                 run_name=setting.wandb.run_name,
                 params=setting.wandb.wandb_init_kwargs(),
             )
-            metrics = [
-                accuracy_metrics(epoch=True, experience=True, stream=True),
-                forgetting_metrics(experience=True, stream=True),
-                loss_metrics(minibatch=False, epoch=True, experience=True, stream=True),
-            ]
-            self.evaluator = EvaluationPlugin(
-                *metrics, loggers=[InteractiveLogger(), wandb_logger]
-            )
-        else:
-            self.evaluator = default_logger
+            loggers.append(wandb_logger)
+
+        self.evaluator = EvaluationPlugin(
+            *metrics,
+            loggers=loggers,
+        )
 
         self.optimizer = self.make_optimizer()
         # Actually initialize the strategy using the fields on `self`.
@@ -295,11 +301,15 @@ class AvalancheMethod(
             y_pred = logits.argmax(-1)
             return self.target_setting.Actions(y_pred=y_pred)
 
+    def set_testing(self):
+        self.model.current_task_id = None
+        return super().set_testing()
+
     def on_task_switch(self, task_id: Optional[int]) -> None:
         if self.training:
             # No need to tell the cl_strategy, because we call `.train` which calls
             # `before_training_exp` with the current exp (the current task).
-            pass
+            self.model.current_task_id = task_id
         else:
             # TODO: In Sequoia, the test 'epoch' goes through the sequence of tasks, not
             # necessarily in the same order as during training, while in Avalanche the
@@ -326,7 +336,7 @@ class AvalancheMethod(
             setattr(self, k, v)
 
     def environment_to_experience(
-        self, env: PassiveEnvironment, setting: PassiveSetting
+        self, env: PassiveEnvironment, setting: SLSetting
     ) -> Experience:
         """
         "Converts" the PassiveEnvironments (dataloaders) from Sequoia
@@ -398,7 +408,7 @@ class AvalancheMethod(
         )
 
 
-def test_epoch(strategy, test_env: ClassIncrementalTestEnvironment, **kwargs):
+def test_epoch(strategy, test_env: ContinualSLTestEnvironment, **kwargs):
     strategy.is_training = False
     strategy.model.eval()
     strategy.model.to(strategy.device)
@@ -418,7 +428,7 @@ def test_epoch(strategy, test_env: ClassIncrementalTestEnvironment, **kwargs):
 
 
 def test_epoch_gym_env(
-    strategy: BaseStrategy, test_env: ClassIncrementalTestEnvironment, **kwargs
+    strategy: BaseStrategy, test_env: ContinualSLTestEnvironment, **kwargs
 ):
     strategy.mb_it = 0
     episode = 0

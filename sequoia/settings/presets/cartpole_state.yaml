@@ -1,5 +1,4 @@
 dataset: CartPole-v0
-observe_state_directly: true
 max_episodes: null
 nb_tasks: 2
 test_steps: 1000
@@ -11,7 +10,7 @@ train_task_schedule:
   2000:
     gravity: 10
     length: 0.8
-valid_task_schedule:
+val_task_schedule:
   0:
     gravity: 10
     length: 0.3

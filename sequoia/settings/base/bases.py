@@ -40,6 +40,7 @@ from sequoia.utils.utils import (
     get_path_to_source_file,
     remove_suffix,
 )
+import wandb
 
 logger = get_logger(__file__)
 
@@ -191,34 +192,50 @@ class SettingABC:
         return remove_suffix(name, "_setting")
 
     @classmethod
-    def get_children(cls) -> List[Type["SettingABC"]]:
+    def immediate_children(cls) -> Iterable[Type["SettingABC"]]:
         """ Returns the immediate children of this Setting in the hierarchy.
         In most cases, this will be a list with only one value.
         """
-        return cls._children
+        yield from cls._children
 
     @classmethod
-    def all_children(cls) -> Iterable[Type["SettingABC"]]:
-        """Iterates over all the children of this Setting, in-order.
+    def get_immediate_children(cls) -> List[Type["SettingABC"]]:
+        """ Returns a list of the immediate children of this Setting. """
+        return list(cls.immediate_children())
+
+    @classmethod
+    def children(cls) -> Iterable[Type["SettingABC"]]:
+        """Returns an Iterator over all the children of this Setting, in-order.
         """
         # Yield the immediate children.
         for child in cls._children:
             yield child
             # Yield from the children themselves.
-            yield from child.all_children()
+            yield from child.children()
 
     @classmethod
-    def get_immediate_parents(cls) -> Optional[Type["SettingABC"]]:
+    def get_children(cls) -> List[Type["SettingABC"]]:
+        return list(cls.children())
+
+    @classmethod
+    def immediate_parents(cls) -> List[Type["SettingABC"]]:
         """ Returns the immediate parent(s) Setting(s).
         In most cases, this will be a list with only one value.
         """
         return [parent for parent in cls.__bases__ if issubclass(parent, SettingABC)]
 
     @classmethod
-    def get_parents(cls) -> Iterable[Type["SettingABC"]]:
+    def get_immediate_parents(cls) -> List[Type["SettingABC"]]:
+        """ Returns the immediate parent(s) Setting(s).
+        In most cases, this will be a list with only one value.
+        """
+        return cls.immediate_parents()
+
+    @classmethod
+    def parents(cls) -> Iterable[Type["SettingABC"]]:
         """yields the lineage, from bottom to top.
 
-        NOTE: In the case of Settings having multiple parents (such as IIDSetting),
+        NOTE: In the case of Settings having multiple parents (such as TraditionalSLSetting),
         this is still just a list that reflects the method resolution order for that
         setting.
         """
@@ -227,6 +244,44 @@ class SettingABC:
             for parent_class in cls.mro()[1:]
             if issubclass(parent_class, SettingABC)
         ]
+
+    @classmethod
+    def get_parents(cls) -> List[Type["SettingABC"]]:
+        return list(cls.parents())
+
+    @classmethod
+    def get_path_to_source_file(cls: Type) -> Path:
+        from sequoia.utils.utils import get_path_to_source_file
+
+        return get_path_to_source_file(cls)
+
+    @classmethod
+    def get_tree_string(
+        cls,
+        formatting: str = "command_line",
+        with_methods: bool = False,
+        with_assumptions: bool = False,
+        with_docstrings: bool = False,
+    ) -> str:
+        """ Returns a string representation of the tree starting at this node downwards.
+        """
+        from sequoia.utils.readme import get_tree_string, get_tree_string_markdown
+
+        formatting_functions = {
+            "command_line": get_tree_string,
+            "markdown": get_tree_string_markdown,
+        }
+        if formatting not in formatting_functions.keys():
+            raise RuntimeError(
+                f"formatting must be one of {','.join(formatting_functions)}, "
+                f"got {formatting}"
+            )
+        return formatting_functions[formatting](
+            cls,
+            with_methods=with_methods,
+            with_assumptions=with_assumptions,
+            with_docstrings=with_docstrings,
+        )
 
 
 SettingType = TypeVar("SettingType", bound=SettingABC)
@@ -295,6 +350,71 @@ class Method(Generic[SettingType], Parseable, ABC):
             The `Results` object constructed by `setting`, as a result of applying
             this Method to it.
         """
+        
+        run_name = ""
+        # Set the default name for this run.
+        # run_name = f"{method_name}-{setting_name}"
+        # dataset = getattr(self, "dataset", None)
+        # if isinstance(dataset, str):
+        #     run_name += f"-{dataset}"
+        # if getattr(self, "nb_tasks", 0) > 1:
+        #     run_name += f"_{self.nb_tasks}t"
+
+        setting_name = setting.get_name()
+        method_name = self.get_name()
+        base_results_dir: Path = setting.config.log_dir / setting_name / method_name
+        
+        dataset_name = getattr(setting, "dataset", None)
+        if isinstance(dataset_name, str):
+            base_results_dir /= dataset_name
+        
+        if wandb.run and wandb.run.id:
+            # if setting.wandb and setting.wandb.project:
+            run_id = wandb.run.id
+            assert isinstance(run_id, str)
+            # results_dir = base_results_dir / run_id
+            # TODO: Fix this:
+            results_dir = wandb.run.dir
+        else:
+            for suffix in [f"run_{i}"  for i in range(100)]:
+                results_dir = base_results_dir / suffix
+                try:
+                    results_dir.mkdir(exist_ok=False, parents=True)
+                except FileExistsError:
+                    pass
+                else:
+                    break
+            else:
+                raise RuntimeError(
+                    f"Unable to create a unique results dir under {base_results_dir} "
+                )
+        results_dir = Path(results_dir)
+        logger.info(f"Saving results in directory {results_dir}")
+        results_json_path = results_dir / "results.json"
+        try:
+            with open(results_json_path, "w") as f:
+                json.dump(results.to_log_dict(), f)
+        except Exception as e:
+            print(f"Unable to save the results: {e}")
+
+        setting_path = results_dir / "setting.yaml"
+        try:
+            setting.save(setting_path)
+        except Exception as e:
+            print(f"Unable to save the Setting: {e}")
+
+        method_path = results_dir / "method.yaml"
+        try:
+            self.save(method_path)
+        except Exception as e:
+            print(f"Unable to save the Method: {e}")
+
+        if wandb.run:
+            wandb.save(str(results_json_path))
+            if setting_path.exists():
+                wandb.save(str(setting_path))
+            if method_path.exists():
+                wandb.save(str(method_path))
 
     def setup_wandb(self, run: Run) -> None:
         """ Called by the Setting when using Weights & Biases, after `wandb.init`.
@@ -432,12 +552,12 @@ class Method(Generic[SettingType], Parseable, ABC):
         ):
             # TODO: If we're trying to check if this method would be compatible
             # with a LightningDataModule, rather than a Setting, then we treat
-            # that LightningModule the same way we would an IIDSetting.
+            # that LightningModule the same way we would an TraditionalSLSetting.
             # i.e., if we're trying to apply a Method on something that isn't in
-            # the tree, then we consider that datamodule as the IIDSetting node.
-            from sequoia.settings import IIDSetting
+            # the tree, then we consider that datamodule as the TraditionalSLSetting node.
+            from sequoia.settings import TraditionalSLSetting
 
-            setting = IIDSetting
+            setting = TraditionalSLSetting
 
         return issubclass(setting, cls.target_setting)
 
@@ -450,7 +570,7 @@ class Method(Generic[SettingType], Parseable, ABC):
 
         return list(filter(cls.is_applicable, all_settings))
         # This would return ALL the setting:
-        # return list([cls.target_setting, *cls.target_setting.all_children()])
+        # return list([cls.target_setting, *cls.target_setting.children()])
 
     @classmethod
     def all_evaluation_settings(cls, **kwargs) -> Iterable[SettingType]:
@@ -600,6 +720,7 @@ class Method(Generic[SettingType], Parseable, ABC):
         experiment_id: str = None,
         database_path: Union[str, Path] = None,
         max_runs: int = None,
+        hpo_algorithm: Union[str, Dict] = "BayesianOptimizer",
         debug: bool = False,
     ) -> Tuple[Dict, float]:
         """ Performs a Hyper-Parameter Optimization sweep using orion.
@@ -628,6 +749,9 @@ class Method(Generic[SettingType], Parseable, ABC):
         max_runs : int, optional
             Maximum number of runs to perform. Defaults to `None`, in which case the run
             lasts until the search space is exhausted.
+
+        hpo_algorithm : Union[str, Dict], optional
+            The hyper-parameter optimization algorithms to use.
 
         debug : bool, optional
             Wether to run Orion in debug-mode, where the database is an EphemeralDb,
@@ -658,7 +782,7 @@ class Method(Generic[SettingType], Parseable, ABC):
             name=experiment_name,
             space=search_space,
             debug=debug,
-            algorithms="BayesianOptimizer",
+            algorithms=hpo_algorithm,
             max_trials=max_runs,
             storage={
                 "type": "legacy",

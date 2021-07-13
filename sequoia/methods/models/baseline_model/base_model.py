@@ -25,11 +25,11 @@ from sequoia.common.gym_wrappers.convert_tensors import add_tensor_support
 from sequoia.common.loss import Loss
 from sequoia.common.spaces import Image
 from sequoia.common.transforms import SplitBatch
-from sequoia.settings.active import ActiveSetting, ContinualRLSetting
-from sequoia.settings.assumptions.incremental import IncrementalSetting
+from sequoia.settings.rl import RLSetting, ContinualRLSetting
+from sequoia.settings.assumptions.incremental import IncrementalAssumption
 from sequoia.settings.base import Environment
 from sequoia.settings.base.setting import Actions, Observations, Rewards
-from sequoia.settings.passive import PassiveSetting
+from sequoia.settings.sl import SLSetting
 from sequoia.utils.logging_utils import get_logger
 
 from ..fcnet import FCNet
@@ -40,7 +40,7 @@ from ..output_heads.rl.episodic_a2c import EpisodicA2C
 from .base_hparams import BaseHParams
 
 logger = get_logger(__file__)
-SettingType = TypeVar("SettingType", bound=IncrementalSetting)
+SettingType = TypeVar("SettingType", bound=IncrementalAssumption)
 
 
 class BaseModel(LightningModule, Generic[SettingType]):
@@ -93,7 +93,7 @@ class BaseModel(LightningModule, Generic[SettingType]):
         self.action_space: gym.Space = setting.action_space
         self.reward_space: gym.Space = setting.reward_space
 
-        self.input_shape = self.observation_space[0].shape
+        self.input_shape = self.observation_space.x.shape
         self.reward_shape = self.reward_space.shape
 
         # TODO: Remove this:
@@ -112,11 +112,12 @@ class BaseModel(LightningModule, Generic[SettingType]):
         # Create the encoder and the output head.
         # Space of our encoder representations.
         self.representation_space: gym.Space
-        if isinstance(setting, ContinualRLSetting) and setting.observe_state_directly:
+        observing_state = not isinstance(setting.observation_space.x, Image)
+        if isinstance(setting, ContinualRLSetting) and observing_state:
             # ISSUE # 62: Need to add a dense network instead of no encoder, and
             # change the PolicyHead to have only one layer.
             # Only pass the image, not the task labels to the encoder (for now).
-            input_dims = flatdim(self.observation_space[0])
+            input_dims = flatdim(self.observation_space["x"])
             output_dims = self.hp.new_hidden_size or 128
 
             self.encoder = FCNet(
@@ -156,7 +157,7 @@ class BaseModel(LightningModule, Generic[SettingType]):
         self.output_head: OutputHead = self.create_output_head(task_id=0)
 
     @auto_move_data
-    def forward(self, observations: IncrementalSetting.Observations) -> ForwardPass:
+    def forward(self, observations: IncrementalAssumption.Observations) -> ForwardPass:
         """ Forward pass of the Model.
 
         Returns a ForwardPass object (acts like a dict of Tensors.)
@@ -277,13 +278,13 @@ class BaseModel(LightningModule, Generic[SettingType]):
     def output_head_type(self, setting: SettingType) -> Type[OutputHead]:
         """ Return the type of output head we should use in a given setting.
         """
-        if isinstance(setting, ActiveSetting):
+        if isinstance(setting, RLSetting):
             if not isinstance(setting.action_space, spaces.Discrete):
                 raise NotImplementedError("Only support discrete actions for now.")
             assert issubclass(self.hp.rl_output_head_algo, OutputHead)
             return self.hp.rl_output_head_algo
 
-        assert isinstance(setting, PassiveSetting)
+        assert isinstance(setting, SLSetting)
 
         if isinstance(setting.action_space, spaces.Discrete):
             # Discrete actions: i.e. classification problem.
@@ -403,9 +404,9 @@ class BaseModel(LightningModule, Generic[SettingType]):
             assert isinstance(batch, (tuple, list)) and len(batch) == 2
             observations, rewards = batch
 
-        assert isinstance(observations, self.Observations)
-        assert rewards is None or isinstance(rewards, self.Rewards)
-
+        assert isinstance(observations, self.Observations), (
+            observations, type(observations), self.Observations,
+        )
         # Move the observations to the right device, and convert numpy arrays to
         # tensors.
         observations = observations.torch(device=self.device)
@@ -535,9 +536,9 @@ class BaseModel(LightningModule, Generic[SettingType]):
         log.debug("\n" + str(model_summary))
         return model_summary
 
-    def _are_batched(self, observations: IncrementalSetting.Observations) -> bool:
+    def _are_batched(self, observations: IncrementalAssumption.Observations) -> bool:
         """ Returns wether these observations are batched. """
-        assert isinstance(self.observation_space, spaces.Tuple)
+        assert isinstance(self.observation_space, spaces.Dict)
 
         # if observations.task_labels is not None:
         #     if isinstance(observations.task_labels, int):
@@ -546,7 +547,7 @@ class BaseModel(LightningModule, Generic[SettingType]):
         #     assert False, observations.shapes
         #     return observations.task_labels.shape and observations.task_labels.shape[0]
 
-        x_space: spaces.Box = self.observation_space[0]
+        x_space: spaces.Box = self.observation_space["x"]
 
         if isinstance(x_space, Image) or len(x_space.shape) == 4:
             return observations.x.ndim == 4

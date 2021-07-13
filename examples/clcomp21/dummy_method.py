@@ -6,7 +6,7 @@ import tqdm
 
 from sequoia.settings import Setting, Environment, Observations, Actions
 from sequoia.methods import Method
-from sequoia.settings.passive import PassiveSetting
+from sequoia.settings.sl import SLSetting
 
 
 class DummyMethod(Method, target_setting=Setting):
@@ -22,7 +22,7 @@ class DummyMethod(Method, target_setting=Setting):
         You can use this to instantiate your model, for instance, since this is
         where you get access to the observation & action spaces.
         """
-        if isinstance(setting, PassiveSetting):
+        if isinstance(setting, SLSetting):
             # Being applied in SL, we will only do one 'epoch" (a.k.a. "episode").
             self.max_train_episodes = 1
         pass

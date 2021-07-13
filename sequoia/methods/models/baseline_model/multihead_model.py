@@ -9,7 +9,8 @@ from torch import Tensor, nn
 from dataclasses import replace
 from sequoia.common import Batch, Config, Loss
 from sequoia.settings import Actions, Environment, Observations, Rewards
-from sequoia.settings.assumptions.incremental import IncrementalSetting
+from sequoia.settings.assumptions.incremental import IncrementalAssumption
+from sequoia.settings.assumptions.continual import ContinualAssumption
 from sequoia.utils.generic_functions import concatenate, get_slice
 from sequoia.utils.logging_utils import get_logger
 from sequoia.utils.generic_functions import stack
@@ -40,7 +41,7 @@ class MultiHeadModel(BaseModel[SettingType]):
         # have access to task labels. Need to figure out how to manage this between TaskIncremental and Classifier.
         multihead: Optional[bool] = None
 
-    def __init__(self, setting: IncrementalSetting, hparams: HParams, config: Config):
+    def __init__(self, setting: ContinualAssumption, hparams: HParams, config: Config):
         super().__init__(setting=setting, hparams=hparams, config=config)
         self.output_heads: Dict[str, OutputHead] = nn.ModuleDict()
         self.hp: MultiHeadModel.HParams
@@ -55,6 +56,13 @@ class MultiHeadModel(BaseModel[SettingType]):
 
         self.previous_task_labels: Optional[Sequence[int]] = None
 
+        if setting.task_labels_at_train_time:
+            # NOTE: Not sure if this could cause an issue when setting is a SettingProxy
+            starting_task_id = 0 #setting.current_task_id
+        else:
+            starting_task_id = None
+        self.output_heads[str(starting_task_id)] = self.output_head
+
     def output_head_loss(
         self, forward_pass: ForwardPass, actions: Actions, rewards: Rewards
     ) -> Loss:
@@ -62,7 +70,7 @@ class MultiHeadModel(BaseModel[SettingType]):
             loss per output head?
         """
         # Asks each output head for its contribution to the loss.
-        observations: IncrementalSetting.Observations = forward_pass.observations
+        observations: IncrementalAssumption.Observations = forward_pass.observations
         task_labels = observations.task_labels
         if isinstance(task_labels, Tensor):
             task_labels = task_labels.cpu().numpy()
@@ -358,7 +366,7 @@ class MultiHeadModel(BaseModel[SettingType]):
         return task_output_head
 
     @auto_move_data
-    def forward(self, observations: IncrementalSetting.Observations) -> ForwardPass:
+    def forward(self, observations: IncrementalAssumption.Observations) -> ForwardPass:
         """Smart forward pass with multi-head predictions and task inference.
 
         This forward pass can handle three different scenarios, depending on the
@@ -392,6 +400,10 @@ class MultiHeadModel(BaseModel[SettingType]):
         observations = observations.to(self.device)
         task_ids: Optional[Tensor] = observations.task_labels
 
+        if isinstance(task_ids, np.ndarray) and task_ids.dtype == np.object:
+            task_ids = task_ids.tolist()
+            if len(task_ids) == 1:
+                task_ids = task_ids[0]
         if task_ids is None:
             # Run the forward pass with task inference turned on.
             return self.task_inference_forward_pass(observations)
@@ -486,8 +498,7 @@ class MultiHeadModel(BaseModel[SettingType]):
         # --> Perform a simple kind of task inference:
         # 1. Perform a forward pass with each task's output head;
         # 2. Merge these predictions into a single prediction somehow.
-        assert observations.task_labels is None
-
+        assert observations.task_labels is None or all(observations.task_labels == None)
         # NOTE: This assumes that the observations are batched.
         # These are used below to indicate the shape of the different tensors.
         B = observations.x.shape[0]
@@ -626,6 +637,7 @@ def get_task_indices(
     return all_task_indices
 
 
+# TODO: Remove this, currently unused.
 def cleanup_task_labels(
     task_labels: Optional[Sequence[Optional[int]]],
 ) -> Optional[np.ndarray]:
@@ -654,8 +666,8 @@ def cleanup_task_labels(
         if task_labels.dtype == object:
             if all(task_labels == None):
                 task_labels = None
-            elif all(task_labels != None):
-                task_labels = torch.as_tensor(task_labels.astype(np.int))
+            elif not any(task_labels == None):
+                task_labels = torch.as_tensor(task_labels.astype(int))
             else:
                 raise NotImplementedError(f"TODO: Only given a portion of task labels?")
                 # IDEA: Maybe set task_id to -1 in those cases, and return an int

@@ -28,6 +28,7 @@ class Setting2(Setting1):
         super().__post_init__()
 
 
+@pytest.mark.xfail(reason="Changed this.")
 def test_settings_override_with_constant_take_init():
     """ Test that when a value for one of the constant fields is passed to the
     constructor, its value is ignored and getting that attribute on the object
@@ -41,13 +42,24 @@ def test_settings_override_with_constant_take_init():
     assert bob2.bar == 1.0
     assert bob2.foo == 4
 
+
+def test_loading_benchmark_doesnt_overwrite_constant():
+    setting1 = Setting1.loads_json('{"foo":1, "bar":2}')
+    assert setting1.foo == 1
+    assert setting1.bar == 2
+
+    setting2 = Setting2.loads_json('{"foo":1, "bar":2}')
+    assert setting2.foo == 1
+    assert setting2.bar == 1
+
+
 def test_init_still_works():
     setting = Setting(val_fraction=0.01)
     assert setting.val_fraction == 0.01
 
 
 def test_passing_unexpected_arg_raises_typeerror():
-    with pytest.raises(TypeError, match="unexpected keyword argument 'baz'"):
+    with pytest.raises(TypeError):
         bob2 = Setting2(foo=4, bar=4, baz=123123)
         
 @dataclass
@@ -88,3 +100,62 @@ def test_that_transforms_can_be_set_through_command_line():
         Transforms.channels_first
     ]
     assert isinstance(setting.train_transforms, Compose)
+
+
+from typing import ClassVar, Type, Dict, Any
+from sequoia.common.config import Config
+from sequoia.methods.random_baseline import RandomBaselineMethod
+from sequoia.settings.base.results import Results
+from .setting import Setting
+
+
+class SettingTests:
+    """ Tests for a Setting. """
+    Setting: ClassVar[Type[Setting]]
+
+    # TODO: How to parametrize this dynamically based on the value of `Setting`?
+    
+    # The kwargs to be passed to the Setting when we want to create a 'short' setting.
+    fast_dev_run_kwargs: ClassVar[Dict[str, Any]]
+
+    def assert_chance_level(self, setting: Setting, results: Setting.Results):
+        """Called during testing. Use this to assert that the results you get
+        from applying your method on the given setting match your expectations.
+
+        Args:
+            setting
+            results (Results): A given Results object.
+        """
+        assert results is not None
+        assert results.objective > 0
+        print(
+            f"Objective when applied to a setting of type {type(setting)}: {results.objective}"
+        )
+
+    @pytest.mark.timeout(60)
+    def test_random_baseline(self, config: Config):
+        """
+        Test that applies a random baseline to the Setting, and checks that the results
+        are around chance level.
+        """
+        # Create the Setting
+        setting_type = self.Setting
+        # if issubclass(setting_type, ContinualRLSetting):
+        #     kwargs.update(max_steps=100, test_steps_per_task=100)
+        # if issubclass(setting_type, IncrementalRLSetting):
+        #     kwargs.update(nb_tasks=2)
+        # if issubclass(setting_type, ClassIncrementalSetting):
+        #     kwargs = dict(nb_tasks=5)
+        # if issubclass(setting_type, (TraditionalSLSetting, RLSetting)):
+        #     kwargs.pop("nb_tasks", None)
+        # if isinstance(setting, SLSetting):
+        #     method.batch_size = 64
+        # elif isinstance(setting, RLSetting):
+        #     method.batch_size = None
+        #     setting.max_steps = 100
+
+        setting: Setting = setting_type(**self.fast_dev_run_kwargs)
+        method = RandomBaselineMethod()
+
+        results = setting.apply(method, config=config)
+        self.assert_chance_level(setting, results=results)

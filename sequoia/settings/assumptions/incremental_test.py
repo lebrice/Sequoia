@@ -7,10 +7,10 @@ from gym.vector.utils.spaces import batch_space
 from sequoia.methods import Method
 from sequoia.settings import Actions, Environment, Observations, Setting
 
-from .incremental import IncrementalSetting, TestEnvironment
+from .incremental import IncrementalAssumption, TestEnvironment
 
 
-class DummyMethod(Method, target_setting=IncrementalSetting):
+class DummyMethod(Method, target_setting=IncrementalAssumption):
     """ Dummy method used to check that the Setting calls `on_task_switch` with the
     right arguments.
     """
@@ -44,7 +44,7 @@ class DummyMethod(Method, target_setting=IncrementalSetting):
                 obs, _, done, info = test_env.step(actions)
 
     def get_actions(
-        self, observations: IncrementalSetting.Observations, action_space: gym.Space
+        self, observations: IncrementalAssumption.Observations, action_space: gym.Space
     ):
         return np.ones(action_space.shape)
 
@@ -54,7 +54,7 @@ class DummyMethod(Method, target_setting=IncrementalSetting):
         self.received_while_training.append(self.training)
 
 
-class OtherDummyMethod(Method, target_setting=IncrementalSetting):
+class OtherDummyMethod(Method, target_setting=IncrementalAssumption):
     def __init__(self):
         self.batch_sizes: List[int] = []
 

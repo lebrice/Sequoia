@@ -11,14 +11,14 @@ from simple_parsing.helpers.hparams import categorical, uniform
 from avalanche.training.strategies import EWC, BaseStrategy
 
 from sequoia.methods import register_method
-from sequoia.settings.passive import ClassIncrementalSetting, TaskIncrementalSetting
+from sequoia.settings.sl import ClassIncrementalSetting, TaskIncrementalSLSetting
 
 from .base import AvalancheMethod
 
 
 @register_method
 @dataclass
-class EWCMethod(AvalancheMethod[EWC], target_setting=ClassIncrementalSetting):
+class EWCMethod(AvalancheMethod[EWC]):
     """
     Elastic Weight Consolidation (EWC) strategy from Avalanche.
     See EWC plugin for details.
@@ -37,9 +37,9 @@ class EWCMethod(AvalancheMethod[EWC], target_setting=ClassIncrementalSetting):
     # `separate` to keep a separate penalty for each previous experience. `online` to
     # keep a single penalty summed with a decay factor over all previous tasks.
     mode: str = categorical("separate", "online", default="separate")
-    # Used only if mode is `onlineweightedsum`. It specify the decay term of the
+    # Used only if `mode` is 'online'. It specify the decay term of the
     # importance matrix.
-    decay_factor: Optional[float] = None
+    decay_factor: Optional[float] = uniform(0.0, 1.0, default=0.9)
     # if True, keep in memory both parameter values and importances for all previous
     # task, for all modes. If False, keep only last parameter values and importances. If
     # mode is `separate`, the value of `keep_importance_data` is set to be True.
@@ -48,7 +48,7 @@ class EWCMethod(AvalancheMethod[EWC], target_setting=ClassIncrementalSetting):
 
 if __name__ == "__main__":
 
-    setting = TaskIncrementalSetting(
+    setting = TaskIncrementalSLSetting(
         dataset="mnist", nb_tasks=5, monitor_training_performance=True
     )
     # Create the Method, either manually or through the command-line:
