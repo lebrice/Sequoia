@@ -11,7 +11,9 @@ from pathlib import Path
 from typing import Any, Callable, ClassVar, Dict, List, Optional, Type, Union
 
 import gym
+import numpy as np
 from gym import spaces
+from gym.utils import colorize
 from simple_parsing import field, list_field
 from simple_parsing.helpers import choice
 from typing_extensions import Final
@@ -281,14 +283,30 @@ class IncrementalRLSetting(IncrementalAssumption, DiscreteTaskAgnosticRLSetting)
             if self.test_steps_per_task in [defaults["test_steps_per_task"], None]:
                 self.test_steps_per_task = self.test_max_steps // self.nb_tasks
             assert self.test_steps_per_task
+            assert self.train_steps_per_task == self.train_max_steps // self.nb_tasks, (
+                self.train_max_steps,
+                self.train_steps_per_task,
+                self.nb_tasks,
+            )
 
+            task_schedule_keys = np.linspace(
+                0, self.train_max_steps, self.nb_tasks + 1, endpoint=True, dtype=int
+            ).tolist()
             self.train_task_schedule = self.train_task_schedule or {
-                i * self.train_steps_per_task: {} for i in range(self.nb_tasks + 1)
+                key: {} for key in task_schedule_keys
             }
             self.val_task_schedule = self.train_task_schedule.copy()
+
+            assert self.test_steps_per_task == self.test_max_steps // self.nb_tasks, (
+                self.test_max_steps,
+                self.test_steps_per_task,
+                self.nb_tasks,
+            )
+            test_task_schedule_keys = np.linspace(
+                0, self.test_max_steps, self.nb_tasks + 1, endpoint=True, dtype=int
+            ).tolist()
             self.test_task_schedule = self.test_task_schedule or {
-                i * (self.test_steps_per_task or 10_000): {}
-                for i in range(self.nb_tasks + 1)
+                key: {} for key in test_task_schedule_keys
             }
 
             if not self.val_envs:
@@ -447,19 +465,26 @@ class IncrementalRLSetting(IncrementalAssumption, DiscreteTaskAgnosticRLSetting)
                 f"Using custom environments from `self.[train/val/test]_envs` for task "
                 f"{self.current_task_id}."
             )
-            # NOTE: Here is how this supports passing custom envs for each task: We just
-            # switch out the value of this property, and let the
-            # `train/val/test_dataloader` methods work as usual!
-            # TODO: Instantiate the envs if needed.
+
             # TODO: Add support for batching these environments:
-            def instantiate_all_envs(
+            # TODO: This is probably not needed, since most of the wrappers below will
+            # instiate the envs as needed. However this is better for finding bugs, if
+            # any.
+            def instantiate_all_envs_if_needed(
                 envs: List[Union[Callable[[], gym.Env], gym.Env]]
             ) -> List[gym.Env]:
-                return [env() if not isinstance(env, gym.Env) else env for env in envs]
+                return [
+                    env
+                    if isinstance(env, gym.Env)
+                    else gym.make(env)
+                    if isinstance(env, str)
+                    else env()
+                    for env in envs
+                ]
 
-            self.train_envs = instantiate_all_envs(self.train_envs)
-            self.val_envs = instantiate_all_envs(self.val_envs)
-            self.test_envs = instantiate_all_envs(self.test_envs)
+            self.train_envs = instantiate_all_envs_if_needed(self.train_envs)
+            self.val_envs = instantiate_all_envs_if_needed(self.val_envs)
+            self.test_envs = instantiate_all_envs_if_needed(self.test_envs)
 
             if self.stationary_context:
                 from sequoia.settings.rl.discrete.multienv_wrappers import (
@@ -467,6 +492,9 @@ class IncrementalRLSetting(IncrementalAssumption, DiscreteTaskAgnosticRLSetting)
                     RandomMultiEnvWrapper,
                 )
 
+                # NOTE: Here is how this supports passing custom envs for each task: We
+                # just switch out the value of these properties, and let the
+                # `train/val/test_dataloader` methods work as usual!
                 self.train_dataset = RandomMultiEnvWrapper(
                     self.train_envs, add_task_ids=self.task_labels_at_train_time
                 )
@@ -494,17 +522,16 @@ class IncrementalRLSetting(IncrementalAssumption, DiscreteTaskAgnosticRLSetting)
                 )
             # Check that the observation/action spaces are all the same for all
             # the train/valid/test envs
-            # NOTE: Skipping this check for now.
-            # self._check_all_envs_have_same_spaces(
-            #     envs_or_env_functions=self.train_envs, wrappers=self.train_wrappers,
-            # )
-            # # TODO: Inconsistent naming between `val_envs` and `valid_wrappers` etc.
-            # self._check_all_envs_have_same_spaces(
-            #     envs_or_env_functions=self.val_envs, wrappers=self.valid_wrappers,
-            # )
-            # self._check_all_envs_have_same_spaces(
-            #     envs_or_env_functions=self.test_envs, wrappers=self.test_wrappers,
-            # )
+            self._check_all_envs_have_same_spaces(
+                envs_or_env_functions=self.train_envs, wrappers=self.train_wrappers,
+            )
+            # TODO: Inconsistent naming between `val_envs` and `valid_wrappers` etc.
+            self._check_all_envs_have_same_spaces(
+                envs_or_env_functions=self.val_envs, wrappers=self.val_wrappers,
+            )
+            self._check_all_envs_have_same_spaces(
+                envs_or_env_functions=self.test_envs, wrappers=self.test_wrappers,
+            )
         else:
             # TODO: Should we populate the `self.train_envs`, `self.val_envs` and
             # `self.test_envs` fields here as well, just to be consistent?
@@ -826,16 +853,27 @@ class IncrementalRLSetting(IncrementalAssumption, DiscreteTaskAgnosticRLSetting)
             )
             task_env.close()
             if task_env.observation_space != first_env.observation_space:
-                raise RuntimeError(
-                    f"Env at task {task_id} doesn't have the same observation "
-                    f"space ({task_env.observation_space}) as the environment of "
-                    f"the first task: {first_env.observation_space}."
+                warnings.warn(
+                    RuntimeWarning(
+                        colorize(
+                            f"Env at task {task_id} doesn't have the same observation "
+                            f"space ({task_env.observation_space}) as the environment of "
+                            f"the first task: {first_env.observation_space}. "
+                            f"This isn't fully supported yet. Don't expect this to work.",
+                            "yellow",
+                        )
+                    )
                 )
             if task_env.action_space != first_env.action_space:
-                raise RuntimeError(
-                    f"Env at task {task_id} doesn't have the same action "
-                    f"space ({task_env.action_space}) as the environment of "
-                    f"the first task: {first_env.action_space}"
+                warnings.warn(
+                    RuntimeWarning(
+                        colorize(
+                            f"Env at task {task_id} doesn't have the same action "
+                            f"space ({task_env.action_space}) as the environment of "
+                            f"the first task: {first_env.action_space}",
+                            "yellow",
+                        )
+                    )
                 )
 
     def _make_wrappers(

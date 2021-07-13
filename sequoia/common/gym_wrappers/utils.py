@@ -399,9 +399,13 @@ class IterableWrapper(MayCloseEarly, IterableDataset, Generic[EnvType], ABC):
     def __iter__(self) -> Iterator:
         # TODO: Pretty sure this could be greatly simplified by just always using the loop from EnvDataset.
         if self.wrapping_passive_env:
-            # TODO: Also apply the `self.observation` `self.reward` methods while
+            # NOTE: Also applies the `self.observation` `self.reward` methods while
             # iterating.
-            yield from self.env
+            for obs, rewards in self.env:
+                obs = self.observation(obs)
+                if rewards is not None:
+                    rewards = self.reward(rewards)
+                yield obs, rewards
         else:
             self.unwrapped.observation_ = self.reset()
             self.unwrapped.done_ = False

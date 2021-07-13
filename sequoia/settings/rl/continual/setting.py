@@ -304,7 +304,12 @@ class ContinualRLSetting(RLSetting, ContinualAssumption):
 
         # TODO: Fix nnoying little issues with this trio of fields that are interlinked:
         if self.test_steps_per_task is not None:
-            if self.test_max_steps == defaults["test_max_steps"]:
+            # We need set the value of self.test_max_steps and self.test_steps_per_task
+            if self.test_task_schedule and max(self.test_task_schedule) != len(
+                self.test_task_schedule
+            ):
+                self.test_max_steps = max(self.test_task_schedule)
+            elif self.test_max_steps == defaults["test_max_steps"]:
                 self.test_max_steps = self.nb_tasks * self.test_steps_per_task
             else:
                 self.nb_tasks = self.test_max_steps // self.test_steps_per_task
@@ -413,10 +418,16 @@ class ContinualRLSetting(RLSetting, ContinualAssumption):
             self.train_steps_per_task = (
                 self.train_steps_per_task or self.train_max_steps // self.nb_tasks
             )
+            new_keys = np.linspace(
+                0, self.train_max_steps, self.nb_tasks + 1, endpoint=True, dtype=int
+            ).tolist()
+            assert len(new_keys) == len(self.train_task_schedule)
             self.train_task_schedule = type(self.train_task_schedule)(
-                {
-                    i * self.train_steps_per_task: self.train_task_schedule[step]
-                    for i, step in enumerate(sorted(self.train_task_schedule.keys()))
+                **{
+                    new_key: self.train_task_schedule[old_key]
+                    for new_key, old_key in zip(
+                        new_keys, sorted(self.train_task_schedule.keys())
+                    )
                 }
             )
         elif self.smooth_task_boundaries:
@@ -463,11 +474,15 @@ class ContinualRLSetting(RLSetting, ContinualAssumption):
         elif max(self.val_task_schedule) == len(self.val_task_schedule) - 1:
             # If the keys correspond to the task ids rather than the transition steps
             expected_nb_tasks = len(self.val_task_schedule)
-            steps_per_task = self.train_max_steps // expected_nb_tasks
+            old_keys = sorted(self.val_task_schedule.keys())
+            new_keys = np.linspace(
+                0, self.train_max_steps, self.nb_tasks + 1, endpoint=True, dtype=int
+            ).tolist()
+            assert len(new_keys) == len(self.train_task_schedule)
             self.val_task_schedule = type(self.val_task_schedule)(
                 **{
-                    i * steps_per_task: self.val_task_schedule[step]
-                    for i, step in enumerate(sorted(self.val_task_schedule.keys()))
+                    new_key: self.val_task_schedule[old_key]
+                    for new_key, old_key in zip(new_keys, old_keys)
                 }
             )
 
@@ -544,13 +559,7 @@ class ContinualRLSetting(RLSetting, ContinualAssumption):
             set(self.test_task_schedule.keys()) - {self.test_max_steps}
         )
 
-        # Expected value for self.nb_tasks
-        # if self.nb_tasks != nb_tasks:
-        #     raise RuntimeError(
-        #         f"Expected `nb_tasks` to be {nb_tasks}, since there are "
-        #         f"{len(train_task_schedule)} tasks in the task schedule, but got value "
-        #         f"of {self.nb_tasks} instead!"
-        #     )
+        # FIXME: This is quite confusing:
         expected_nb_tasks = len(self.train_task_schedule)
         if (
             self.train_max_steps not in [defaults["train_max_steps"], None]
@@ -605,11 +614,9 @@ class ContinualRLSetting(RLSetting, ContinualAssumption):
             else:
                 raise RuntimeError(
                     f"Value of test_max_steps ({self.test_max_steps}) is "
-                    f"inconsistent with the given tet task schedule, which has "
-                    f"the last task boundary at step {test_last_boundary}, with "
-                    f"task lengths of {test_task_lengths}, as it suggests the maximum "
-                    f"total number of steps to be {test_last_boundary} + "
-                    f"{test_task_lengths[-1]} => {test_max_steps}!"
+                    f"inconsistent with the given test task schedule (which has keys "
+                    f"{self.test_task_schedule.keys()}). Expected the last key to be "
+                    f"{test_max_steps}"
                 )
 
     def create_train_task_schedule(self) -> TaskSchedule:

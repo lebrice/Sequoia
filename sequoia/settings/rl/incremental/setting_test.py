@@ -478,14 +478,10 @@ class TestPassingEnvsForEachTask:
     use for each task.
     """
 
-    # @pytest.mark.xfail(
-    #     reason="TODO: Check all env spaces to make sure they match, ideally without "
-    #     "having to instiate them."
-    # )
-    def test_raises_error_when_envs_have_different_obs_spaces(self):
+    def test_raises_warning_when_envs_have_different_obs_spaces(self):
         task_envs = ["CartPole-v0", "Pendulum-v0"]
-        with pytest.raises(
-            RuntimeError, match="doesn't have the same observation space"
+        with pytest.warns(
+            RuntimeWarning, match="doesn't have the same observation space"
         ):
             setting = IncrementalRLSetting(train_envs=task_envs)
             setting.train_dataloader()
@@ -556,10 +552,10 @@ class TestPassingEnvsForEachTask:
         assert setting.train_envs == ["CartPole-v0", "Pendulum-v0"]
         # TODO: Not using this:
 
-    def test_raises_error_when_envs_have_different_obs_spaces(self):
+    def test_raises_warning_when_envs_have_different_obs_spaces(self):
         task_envs = ["CartPole-v0", "Pendulum-v0"]
-        with pytest.raises(
-            RuntimeError, match="doesn't have the same observation space"
+        with pytest.warns(
+            RuntimeWarning, match="doesn't have the same observation space"
         ):
             setting = IncrementalRLSetting(train_envs=task_envs)
             setting.train_dataloader()
