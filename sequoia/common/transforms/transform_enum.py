@@ -103,7 +103,7 @@ class Compose(List[T], ComposeBase):
     >>> from gym.spaces import Box
     >>> image_space = Box(0, 255, (28, 28, 1), dtype=np.uint8)
     >>> transforms(image_space)
-    TensorBox(0.0, 1.0, (3, 32, 32), float32, device=None)
+    TensorBox(0.0, 1.0, (3, 32, 32), torch.float32, device=None)
     """
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)

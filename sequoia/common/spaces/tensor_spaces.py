@@ -65,7 +65,6 @@ class TensorSpace(gym.Space, ABC):
         if "dtype" in kwargs:
             kwargs["dtype"] = self._numpy_dtype
         super().__init__(*args, **kwargs)
-        
         self.dtype: torch.dtype = self._torch_dtype
 
 
@@ -81,8 +80,10 @@ class TensorBox(TensorSpace, spaces.Box):
         self.dtype = self._torch_dtype
 
     def sample(self):
+        self.dtype = self._numpy_dtype
         sample = super().sample()
-        return torch.as_tensor(sample, device=self.device)
+        self.dtype = self._torch_dtype
+        return torch.as_tensor(sample, dtype=self._torch_dtype, device=self.device)
 
     def contains(self, x: Union[list, np.ndarray, Tensor]) -> bool:
         if isinstance(x, list):
@@ -103,6 +104,16 @@ class TensorBox(TensorSpace, spaces.Box):
             f"{self.shape}, {self.dtype}, device={self.device})"
         )
 
+    @classmethod
+    def from_box(cls, box: spaces.Box, device: torch.device = None):
+        return cls(
+            low=box.low.flat[0],
+            high=box.high.flat[0],
+            shape=box.shape,
+            dtype=box.dtype,  #NOTE: Gets converted in TensorSpace constructor.
+            device=device
+        )
+
 
 class TensorDiscrete(TensorSpace, spaces.Discrete):
     def contains(self, v: Tensor) -> bool:
@@ -110,7 +121,10 @@ class TensorDiscrete(TensorSpace, spaces.Discrete):
         return super().contains(v_numpy)
 
     def sample(self):
-        return torch.as_tensor(super().sample(), dtype=self.dtype, device=self.device)
+        self.dtype = self._numpy_dtype
+        s = super().sample()
+        self.dtype = self._torch_dtype
+        return torch.as_tensor(s, dtype=self.dtype, device=self.device)
 
 
 class TensorMultiDiscrete(TensorSpace, spaces.MultiDiscrete):
@@ -122,7 +136,9 @@ class TensorMultiDiscrete(TensorSpace, spaces.MultiDiscrete):
             return super().contains(v_numpy)
 
     def sample(self):
+        self.dtype = self._numpy_dtype
         s = super().sample()
+        self.dtype = self._torch_dtype
         return torch.as_tensor(s, dtype=self.dtype, device=self.device)
 
 

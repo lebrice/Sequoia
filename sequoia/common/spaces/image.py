@@ -6,7 +6,7 @@ import numpy as np
 from gym import spaces
 from gym.vector.utils import batch_space
 
-from .tensor_box import TensorBox
+from .tensor_spaces import TensorBox
 
 
 class Image(spaces.Box):

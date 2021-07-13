@@ -211,8 +211,8 @@ def _(space: Dict, device: torch.device = None) -> Dict:
     _mark_supports_tensors(space)
     return space
 
-
-from sequoia.common.spaces.tensor_box import (
+# TODO: Should this be moved to the place where these are defined instead?
+from sequoia.common.spaces.tensor_spaces import (
     TensorBox,
     TensorDiscrete,
     TensorMultiDiscrete,

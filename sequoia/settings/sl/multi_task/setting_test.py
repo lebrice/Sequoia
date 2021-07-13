@@ -76,7 +76,7 @@ def test_multitask_setting(config: Config):
     setting = MultiTaskSLSetting(dataset="mnist", config=config)
     assert setting.phases == 1
     assert setting.nb_tasks == 5
-    from sequoia.common.spaces.tensor_box import TensorBox, TensorDiscrete
+    from sequoia.common.spaces.tensor_spaces import TensorBox, TensorDiscrete
     from sequoia.common.spaces.image import ImageTensorSpace
 
     assert setting.observation_space == TypedDictSpace(

@@ -23,13 +23,13 @@ def test_EnvDataset_of_ActionLimit():
     total_steps = 0
     for episode in range(15):
         print(f"Staring episode {episode}, env.is_closed(): {env.is_closed()}")
-        step = 0
+        step = None
         for step, obs in enumerate(env):
             print(f"Episode {episode}, Step {step}, obs {obs} {env.is_closed()}")
             assert step <= max_episode_steps
             env.send(env.action_space.sample())
             total_steps += 1
-        assert step > 0
+        assert step is not None
         # NOTE: Here we have the last 'step' as 9.
         episode_steps.append(step)
         
