@@ -293,10 +293,6 @@ class ContinualSLSetting(SLSetting, ContinualAssumption):
             shuffle=False,
             one_epoch_only=(not self.known_task_boundaries_at_train_time),
         )
-        if self.config.device:
-            # TODO: Put this before or after the image transforms?
-            env = TransformObservation(env, f=partial(move, device=self.config.device))
-            env = TransformReward(env, f=partial(move, device=self.config.device))
 
         if self.config.render:
             # Add a wrapper that calls 'env.render' at each step?
@@ -308,6 +304,13 @@ class ContinualSLSetting(SLSetting, ContinualAssumption):
         if train_specific_transforms:
             env = TransformObservation(env, f=train_specific_transforms)
 
+        if self.config.device:
+            # TODO: Put this before or after the image transforms?
+            from sequoia.common.gym_wrappers.convert_tensors import ConvertToFromTensors
+            env = ConvertToFromTensors(env, device=self.config.device)
+            # env = TransformObservation(env, f=partial(move, device=self.config.device))
+            # env = TransformReward(env, f=partial(move, device=self.config.device))
+        
         if self.monitor_training_performance:
             env = MeasureSLPerformanceWrapper(
                 env, first_epoch_only=True, wandb_prefix=f"Train/",
@@ -352,10 +355,6 @@ class ContinualSLSetting(SLSetting, ContinualAssumption):
             one_epoch_only=(not self.known_task_boundaries_at_train_time),
         )
 
-        if self.config.device:
-            # TODO: Put this before or after the image transforms?
-            env = TransformObservation(env, f=partial(move, device=self.config.device))
-            env = TransformReward(env, f=partial(move, device=self.config.device))
         # TODO: If wandb is enabled, then add customized Monitor wrapper (with
         # IterableWrapper as an additional subclass). There would then be a lot of
         # overlap between such a Monitor and the current TestEnvironment.
@@ -368,6 +367,13 @@ class ContinualSLSetting(SLSetting, ContinualAssumption):
         val_specific_transforms = self.additional_transforms(self.val_transforms)
         if val_specific_transforms:
             env = TransformObservation(env, f=val_specific_transforms)
+
+        if self.config.device:
+            # TODO: Put this before or after the image transforms?
+            from sequoia.common.gym_wrappers.convert_tensors import ConvertToFromTensors
+            env = ConvertToFromTensors(env, device=self.config.device)
+            # env = TransformObservation(env, f=partial(move, device=self.config.device))
+            # env = TransformReward(env, f=partial(move, device=self.config.device))
 
         # NOTE: We don't measure online performance on the validation set.
         # if self.monitor_training_performance:
@@ -412,17 +418,19 @@ class ContinualSLSetting(SLSetting, ContinualAssumption):
             shuffle=False,
             one_epoch_only=True,
         )
-        
-        if self.config.device:
-            # TODO: Put this before or after the image transforms?
-            env = TransformObservation(env, f=partial(move, device=self.config.device))
-            env = TransformReward(env, f=partial(move, device=self.config.device))
 
         # NOTE: The transforms from `self.transforms` (the 'base' transforms) were
         # already added when creating the datasets and the CL scenario.
         test_specific_transforms = self.additional_transforms(self.test_transforms)
         if test_specific_transforms:
             env = TransformObservation(env, f=test_specific_transforms)
+
+        if self.config.device:
+            # TODO: Put this before or after the image transforms?
+            from sequoia.common.gym_wrappers.convert_tensors import ConvertToFromTensors
+            env = ConvertToFromTensors(env, device=self.config.device)
+            # env = TransformObservation(env, f=partial(move, device=self.config.device))
+            # env = TransformReward(env, f=partial(move, device=self.config.device))
 
         # FIXME: Instead of trying to create a 'fake' task schedule for the test
         # environment, instead let the test environment see the task ids, (and then hide

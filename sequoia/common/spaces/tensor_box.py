@@ -25,13 +25,25 @@ numpy_to_torch_dtypes = {
 torch_to_numpy_dtypes = {value: key for (key, value) in numpy_to_torch_dtypes.items()}
 
 
-class TensorBox(spaces.Box):
-    """ Box space that accepts both Tensor and ndarrays. """
+from abc import ABC
 
-    def __init__(
-        self, low, high, shape=None, dtype=np.float32, device: torch.device = None
-    ):
-        if any(dtype == key for key in numpy_to_torch_dtypes):
+def supports_tensors(space: gym.Space) -> bool:
+    pass
+
+class TensorSpace(gym.Space, ABC):
+    def __init__(self, *args, device: torch.device = None, **kwargs):
+        # super().__init__(*args, **kwargs)
+        self.device: Optional[torch.device] = torch.device(device) if device else None
+        # Depending on the value passed to `dtype`
+        dtype = kwargs.get("dtype")
+        if dtype is None:
+            if isinstance(self, (spaces.Discrete, spaces.MultiDiscrete)):
+                # NOTE: They dont actually give a 'dtype' argument for these. 
+                self._numpy_dtype = np.int64
+                self._torch_dtype = torch.int64
+            else:
+                raise NotImplementedError(f"Not passing dtype to space {self}?")
+        elif any(dtype == key for key in numpy_to_torch_dtypes):
             self._numpy_dtype = dtype
             self._torch_dtype = [
                 v for k, v in numpy_to_torch_dtypes.items() if k == dtype
@@ -50,10 +62,23 @@ class TensorBox(spaces.Box):
             raise NotImplementedError(
                 f"Unsupported dtype {dtype} (of type {type(dtype)})"
             )
-        super().__init__(low, high, shape=shape, dtype=self._numpy_dtype)
-        self.device: Optional[torch.device] = torch.device(device) if device else None
+        if "dtype" in kwargs:
+            kwargs["dtype"] = self._numpy_dtype
+        super().__init__(*args, **kwargs)
+        
+        self.dtype: torch.dtype = self._torch_dtype
+
+
+class TensorBox(TensorSpace, spaces.Box):
+    """ Box space that accepts both Tensor and ndarrays. """
+
+    def __init__(
+        self, low, high, shape=None, dtype=np.float32, device: torch.device = None
+    ):
+        super().__init__(low, high, shape=shape, dtype=dtype, device=device)
         self.low_tensor = torch.as_tensor(self.low, device=self.device)
         self.high_tensor = torch.as_tensor(self.high, device=self.device)
+        self.dtype = self._torch_dtype
 
     def sample(self):
         sample = super().sample()
@@ -77,3 +102,33 @@ class TensorBox(spaces.Box):
             f"{type(self).__name__}({self.low.min()}, {self.high.max()}, "
             f"{self.shape}, {self.dtype}, device={self.device})"
         )
+
+
+class TensorDiscrete(TensorSpace, spaces.Discrete):
+    def contains(self, v: Tensor) -> bool:
+        v_numpy = v.detach().cpu().numpy()
+        return super().contains(v_numpy)
+
+    def sample(self):
+        return torch.as_tensor(super().sample(), dtype=self.dtype, device=self.device)
+
+
+class TensorMultiDiscrete(TensorSpace, spaces.MultiDiscrete):
+    def contains(self, v: Tensor) -> bool:
+        try:
+            return super().contains(v)
+        except:
+            v_numpy = v.detach().cpu().numpy()
+            return super().contains(v_numpy)
+
+    def sample(self):
+        s = super().sample()
+        return torch.as_tensor(s, dtype=self.dtype, device=self.device)
+
+
+from gym.vector.utils.spaces import batch_space
+
+
+@batch_space.register(TensorDiscrete)
+def _batch_discrete_space(space: TensorDiscrete, n: int = 1) -> TensorMultiDiscrete:
+    return TensorMultiDiscrete(torch.full((n,), space.n, dtype=space.dtype))

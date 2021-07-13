@@ -43,7 +43,8 @@ def check_is_multitask_env(env: Environment, has_rewards: bool):
     # assert False, (obs.keys(), obs.numpy().keys())
     assert obs.shapes == space_shapes
     assert obs.numpy().shapes == space_shapes
-    assert obs.numpy().dtypes == space_dtypes
+
+    assert obs.dtypes == space_dtypes
     x_space = env.observation_space.x
     t_space = env.observation_space.task_labels
     assert obs.x in x_space, (obs.x, x_space)
@@ -68,16 +69,23 @@ def check_is_multitask_env(env: Environment, has_rewards: bool):
     assert steps == 10
 
 
-def test_multitask_setting():
-    setting = MultiTaskSLSetting(dataset="mnist")
+from sequoia.common.config import Config
+
+
+def test_multitask_setting(config: Config):
+    setting = MultiTaskSLSetting(dataset="mnist", config=config)
     assert setting.phases == 1
     assert setting.nb_tasks == 5
+    from sequoia.common.spaces.tensor_box import TensorBox, TensorDiscrete
+    from sequoia.common.spaces.image import ImageTensorSpace
+
     assert setting.observation_space == TypedDictSpace(
-        x=Image(0.0, 1.0, (3, 28, 28), np.float32),
-        task_labels=Discrete(5),
+        x=ImageTensorSpace(0.0, 1.0, (3, 28, 28), np.float32, device=config.device),
+        task_labels=TensorDiscrete(5, device=config.device),
         dtype=setting.Observations,
     )
     assert setting.action_space == Discrete(10)
+    assert setting.config.device.type == "cuda" if torch.cuda.is_available() else "cpu"
 
     with setting.train_dataloader(batch_size=32, num_workers=0) as train_env:
         check_is_multitask_env(train_env, has_rewards=True)

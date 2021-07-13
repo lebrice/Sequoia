@@ -22,6 +22,7 @@ class Image(spaces.Box):
         high: Union[float, np.ndarray],
         shape: Tuple[int, ...] = None,
         dtype: np.dtype = None,
+        **kwargs
     ):
         if dtype is None:
             if (
@@ -33,7 +34,7 @@ class Image(spaces.Box):
                 dtype = np.uint8
             else:
                 dtype = np.float32
-        super().__init__(low=low, high=high, shape=shape, dtype=dtype)
+        super().__init__(low=low, high=high, shape=shape, dtype=dtype, **kwargs)
         self.channels_first: bool = False
 
         # Optional batch dimension
@@ -102,11 +103,21 @@ class Image(spaces.Box):
         return not self.channels_first
 
     def __repr__(self):
-        return f"Image({self.low.min()}, {self.high.max()}, {self.shape}, {self.dtype})"
+        return f"{type(self).__name__}({self.low.min()}, {self.high.max()}, {self.shape}, {self.dtype})"
+
+
+import torch
 
 
 class ImageTensorSpace(Image, TensorBox):
-    pass
+    @classmethod
+    def from_box(cls, box_space: TensorBox, device: torch.device=None):
+        device = device or box_space.device
+        return cls(box_space.low, box_space.high, dtype=box_space.dtype, device=device)
+
+    def __repr__(self):
+        return f"{type(self).__name__}({self.low.min()}, {self.high.max()}, {self.shape}, {self.dtype}, device={self.device})"
+
 
 
 # @to_tensor.register

@@ -163,3 +163,9 @@ def test_channels_first_transform_on_gym_env():
 
     obs, *_ = env.step(env.action_space.sample())
     assert obs.shape == (3, 400, 600)
+
+
+def test_preserves_device_when_possible():
+    # TODO: Write a test that checks which transforms can be run on GPU, and checks
+    # that they preserve the `device` attribute of a space when it's applied on a space.
+    pass
