@@ -52,7 +52,7 @@ from torch import Tensor
 from .bases import Method, SettingABC
 from .environment import Actions, Environment, Observations, Rewards
 from .results import Results, ResultsType
-from .setting_meta import SettingMeta
+# from .setting_meta import SettingMeta
 
 logger = get_logger(__file__)
 
@@ -67,7 +67,7 @@ class Setting(
     Serializable,
     LightningDataModule,
     Generic[EnvironmentType],
-    metaclass=SettingMeta,
+    # metaclass=SettingMeta,
 ):
     """ Base class for all research settings in ML: Root node of the tree.
 
