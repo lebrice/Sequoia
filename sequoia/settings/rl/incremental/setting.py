@@ -482,15 +482,15 @@ class IncrementalRLSetting(IncrementalAssumption, DiscreteTaskAgnosticRLSetting)
                     for env in envs
                 ]
 
-            self.train_envs = instantiate_all_envs_if_needed(self.train_envs)
-            self.val_envs = instantiate_all_envs_if_needed(self.val_envs)
-            self.test_envs = instantiate_all_envs_if_needed(self.test_envs)
 
             if self.stationary_context:
                 from sequoia.settings.rl.discrete.multienv_wrappers import (
                     ConcatEnvsWrapper,
                     RandomMultiEnvWrapper,
                 )
+                self.train_envs = instantiate_all_envs_if_needed(self.train_envs)
+                self.val_envs = instantiate_all_envs_if_needed(self.val_envs)
+                self.test_envs = instantiate_all_envs_if_needed(self.test_envs)
 
                 # NOTE: Here is how this supports passing custom envs for each task: We
                 # just switch out the value of these properties, and let the

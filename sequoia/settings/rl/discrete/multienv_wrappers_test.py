@@ -15,6 +15,7 @@ import pytest
 from gym import spaces
 
 from sequoia.utils.utils import unique_consecutive, unique_consecutive_with_index
+from functools import partial
 
 
 class TestMultiEnvWrappers:
@@ -24,7 +25,8 @@ class TestMultiEnvWrappers:
 
     @pytest.mark.parametrize("add_task_ids", [False, True])
     @pytest.mark.parametrize("nb_tasks", [5, 1])
-    def test_concat(self, add_task_ids: bool, nb_tasks: int):
+    @pytest.mark.parametrize("pass_fn_instead_of_env", [False, True])
+    def test_concat(self, add_task_ids: bool, nb_tasks: int, pass_fn_instead_of_env: bool):
         def set_attributes(env: gym.Env, **attributes) -> gym.Env:
             for k, v in attributes.items():
                 setattr(env.unwrapped, k, v)
@@ -32,7 +34,7 @@ class TestMultiEnvWrappers:
 
         max_episodes_per_task = 5
         envs = [
-            EpisodeLimit(
+            partial(EpisodeLimit,
                 TimeLimit(
                     set_attributes(gym.make("CartPole-v0"), length=0.1 + 0.2 * i),
                     max_episode_steps=10,
@@ -41,6 +43,10 @@ class TestMultiEnvWrappers:
             )
             for i in range(nb_tasks)
         ]
+        if not pass_fn_instead_of_env:
+            envs = [
+                env_fn() for env_fn in envs
+            ]
 
         env = ConcatEnvsWrapper(envs, add_task_ids=add_task_ids)
         assert env.nb_tasks == nb_tasks

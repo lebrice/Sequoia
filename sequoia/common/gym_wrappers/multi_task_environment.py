@@ -20,6 +20,7 @@ from gym.envs.classic_control import CartPoleEnv
 from torch import Tensor
 from sequoia.common.spaces.named_tuple import NamedTupleSpace
 from sequoia.utils.logging_utils import get_logger
+from .utils import MayCloseEarly
 
 task_param_names: Dict[Union[Type[gym.Env], str], List[str]] = {
     CartPoleEnv: ["gravity", "masscart", "masspole", "length", "force_mag", "tau"]
@@ -157,7 +158,7 @@ def _add_task_labels_to_dict(
     return type(observation)(**new)  # type: ignore
 
 
-class MultiTaskEnvironment(gym.Wrapper):
+class MultiTaskEnvironment(MayCloseEarly):
     """Creates 'tasks' by modifying attributes or applying functions to the wrapped env.
 
     This wrapper accepts a `task_schedule` dictionary, which maps from a given
@@ -285,7 +286,7 @@ class MultiTaskEnvironment(gym.Wrapper):
             #     self.env.observation_space,
             #     spaces.Discrete(n=n_tasks)
             # ])
-        self._closed = False
+        # self._closed = False
 
         self._on_task_switch_callback: Optional[Callable[[int], None]] = None
 
@@ -326,8 +327,8 @@ class MultiTaskEnvironment(gym.Wrapper):
     def step(self, *args, **kwargs):
         # If we reach a step in the task schedule, then we change the task to
         # that given step.
-        if self._closed:
-            raise gym.error.ClosedEnvironmentError("Can't step in closed env.")
+        # if self._closed:
+        #     raise gym.error.ClosedEnvironmentError("Can't step in closed env.")
 
         if self.steps in self.task_schedule and not self.new_random_task_on_reset:
             self.current_task = self.task_schedule[self.steps]
@@ -349,9 +350,8 @@ class MultiTaskEnvironment(gym.Wrapper):
         self.steps += 1
         return observation, rewards, done, info
 
-    def close(self, **kwargs) -> None:
-        self.env.close(**kwargs)
-        self._closed = True
+    # def close(self, **kwargs) -> None:
+    #     return super().close(**kwargs)
 
     def reset(self, new_random_task: bool = None, **kwargs):
         """ Resets the wrapped environment.
@@ -366,8 +366,8 @@ class MultiTaskEnvironment(gym.Wrapper):
         if new_random_task is None:
             new_random_task = self.new_random_task_on_reset
 
-        if self._closed:
-            raise gym.error.ClosedEnvironmentError("Can't reset closed env.")
+        # if self._closed:
+        #     raise gym.error.ClosedEnvironmentError("Can't reset closed env.")
 
         if new_random_task:
             prev_task_id = self.current_task_id

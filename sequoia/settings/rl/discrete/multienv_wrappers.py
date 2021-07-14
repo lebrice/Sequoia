@@ -35,7 +35,7 @@ class MultiEnvWrapper(IterableWrapper, ABC):
     """
 
     def __init__(self, envs: List[gym.Env], add_task_ids: bool = False):
-        self._envs = envs
+        self._envs = envs.copy()
         self._current_task_id = 0
         self.nb_tasks = len(envs)
         self._envs_is_closed: Sequence[bool] = np.zeros([self.nb_tasks], dtype=bool)
