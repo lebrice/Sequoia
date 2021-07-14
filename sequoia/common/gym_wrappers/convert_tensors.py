@@ -109,6 +109,7 @@ class ConvertToFromTensors(IterableWrapper):
 
 
 def supports_tensors(space: S) -> bool:
+    # TODO: Remove this, instead use a generic function
     return getattr(space, "_supports_tensors", False)
 
 
@@ -117,6 +118,7 @@ def has_tensor_support(space: S) -> bool:
 
 
 def _mark_supports_tensors(space: S) -> None:
+    # TODO: Remove this!
     setattr(space, "_supports_tensors", True)
 
 

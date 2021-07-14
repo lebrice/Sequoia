@@ -1,4 +1,5 @@
 """ Custom `gym.spaces.Space` subclasses used by Sequoia. """
+from .space import Space
 from .sparse import Sparse
 from .image import Image
 from .named_tuple import NamedTuple, NamedTupleSpace

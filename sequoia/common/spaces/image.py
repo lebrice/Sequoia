@@ -118,6 +118,11 @@ class ImageTensorSpace(Image, TensorBox):
     def __repr__(self):
         return f"{type(self).__name__}({self.low.min()}, {self.high.max()}, {self.shape}, {self.dtype}, device={self.device})"
 
+    def sample(self):
+        self.dtype = self._numpy_dtype
+        s = super().sample()
+        self.dtype = self._torch_dtype
+        return torch.as_tensor(s, dtype=self._torch_dtype, device=self.device)
 
 
 # @to_tensor.register

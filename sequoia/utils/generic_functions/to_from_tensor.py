@@ -117,6 +117,14 @@ def _(
     sample: Tuple[Union[np.ndarray, Any], ...],
     device: torch.device = None,
 ) -> Tuple[Union[Tensor, Any], ...]:
+    if sample is None:
+        assert all(isinstance(item_space, Sparse) for item_space in space.spaces)
+        assert all(item_space.sparsity == 1.0 for item_space in space.spaces)
+        # todo: What to do in this context?
+        return None
+        return np.full([len(space.spaces),], fill_value=None, dtype=np.object_)
+    if any(v is None for v in sample):
+        assert False, (space, sample, device)
     return tuple(
         to_tensor(subspace, sample[i], device)
         for i, subspace in enumerate(space.spaces)

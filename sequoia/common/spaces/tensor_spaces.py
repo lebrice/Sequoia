@@ -25,12 +25,67 @@ numpy_to_torch_dtypes = {
 torch_to_numpy_dtypes = {value: key for (key, value) in numpy_to_torch_dtypes.items()}
 
 
+def get_numpy_dtype_equivalent_to(torch_dtype: torch.dtype) -> np.dtype:
+    """ TODO: Gets the numpy dtype equivalent to the given torch dtype. """
+
+    def dtypes_equal(a: torch.dtype, b: torch.dtype) -> bool:
+        return a == b  # simple for now.
+
+    matching_dtypes = [
+        v for k, v in torch_to_numpy_dtypes.items() if dtypes_equal(k, torch_dtype)
+    ]
+    if len(matching_dtypes) == 0:
+        raise RuntimeError(f"Unable to find a numpy dtype equivalent to {torch_dtype}")
+    if len(matching_dtypes) > 1:
+        raise RuntimeError(
+            f"Found more than one match for dtype {torch_dtype}: {matching_dtypes}"
+        )
+    return np.dtype(matching_dtypes[0])
+
+
+def get_torch_dtype_equivalent_to(numpy_dtype: np.dtype) -> torch.dtype:
+    """ TODO: Gets the torch dtype equivalent to the given np dtype. """
+
+    def dtypes_equal(a: torch.dtype, b: torch.dtype) -> bool:
+        return a == b  # simple for now.
+
+    matching_dtypes = [
+        v for k, v in numpy_to_torch_dtypes.items() if dtypes_equal(k, numpy_dtype)
+    ]
+    if len(matching_dtypes) == 0:
+        raise RuntimeError(f"Unable to find a torch dtype equivalent to {numpy_dtype}")
+    if len(matching_dtypes) > 1:
+        raise RuntimeError(
+            f"Found more than one match for dtype {numpy_dtype}: {matching_dtypes}"
+        )
+    return matching_dtypes[0]
+
+from inspect import isclass
+from typing import Any
+
+
+def is_numpy_dtype(dtype: Any) -> bool:
+    return isinstance(dtype, np.dtype) or isclass(dtype) and issubclass(dtype, np.generic)
+
+
+def is_torch_dtype(dtype: Any) -> bool:
+    return isinstance(dtype, torch.dtype)
+
+
 from abc import ABC
 
+
 def supports_tensors(space: gym.Space) -> bool:
+    raise NotImplementedError(f"TODO: Create a generic function for this.")
+    return isinstance(space, TensorSpace)
     pass
 
+
 class TensorSpace(gym.Space, ABC):
+    """ Mixin class that makes a Space's `contains` and `sample` methods accept and
+    produce tensors, respectively.
+    """
+
     def __init__(self, *args, device: torch.device = None, **kwargs):
         # super().__init__(*args, **kwargs)
         self.device: Optional[torch.device] = torch.device(device) if device else None
@@ -38,23 +93,19 @@ class TensorSpace(gym.Space, ABC):
         dtype = kwargs.get("dtype")
         if dtype is None:
             if isinstance(self, (spaces.Discrete, spaces.MultiDiscrete)):
-                # NOTE: They dont actually give a 'dtype' argument for these. 
-                self._numpy_dtype = np.int64
+                # NOTE: They dont actually give a 'dtype' argument for these.
+                self._numpy_dtype = np.dtype(np.int64)
                 self._torch_dtype = torch.int64
             else:
-                raise NotImplementedError(f"Not passing dtype to space {self}?")
-        elif any(dtype == key for key in numpy_to_torch_dtypes):
-            self._numpy_dtype = dtype
-            self._torch_dtype = [
-                v for k, v in numpy_to_torch_dtypes.items() if k == dtype
-            ][0]
-        elif any(dtype == key for key in torch_to_numpy_dtypes):
-            self._numpy_dtype = [
-                v for k, v in torch_to_numpy_dtypes.items() if k == dtype
-            ][0]
+                raise NotImplementedError(f"Space {self} doesn't have a `dtype`?")
+        elif is_numpy_dtype(dtype):
+            self._numpy_dtype = np.dtype(dtype)
+            self._torch_dtype = get_torch_dtype_equivalent_to(dtype)
+        elif is_torch_dtype(dtype):
+            self._numpy_dtype = get_numpy_dtype_equivalent_to(dtype)
             self._torch_dtype = dtype
         elif str(dtype) == "float32":
-            self._numpy_dtype = np.float32
+            self._numpy_dtype = np.dtype(np.float32)
             self._torch_dtype = torch.float32
         else:
             assert not any(dtype == k for k in numpy_to_torch_dtypes)
@@ -110,8 +161,8 @@ class TensorBox(TensorSpace, spaces.Box):
             low=box.low.flat[0],
             high=box.high.flat[0],
             shape=box.shape,
-            dtype=box.dtype,  #NOTE: Gets converted in TensorSpace constructor.
-            device=device
+            dtype=box.dtype,  # NOTE: Gets converted in TensorSpace constructor.
+            device=device,
         )
 
 

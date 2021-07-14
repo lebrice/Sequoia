@@ -51,7 +51,13 @@ def _stack_none(
     first_item: None, *others: None, **kwargs
 ) -> None:
     assert all(v is None for v in others), "Only some values are None"
-    return np.array([None, *others])
+    # TODO: Should we return an ndarray with 'None' entries, of dtype np.object_? or 
+    # just a single None?
+    # Opting for a single None for now, as it's easier to work with. (`v is None` works)
+    return None
+    # if not others:
+    #     return None
+    # return np.array([None, *others])
 
 
 @stack.register(np.ndarray)

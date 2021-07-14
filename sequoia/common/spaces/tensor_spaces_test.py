@@ -1,10 +1,9 @@
 from gym import spaces
-from .tensor_box import TensorBox
 import numpy as np
 import torch
 from torch import Tensor
 import pytest
-from .tensor_spaces import numpy_to_torch_dtypes
+from .tensor_spaces import TensorBox, numpy_to_torch_dtypes
 
 
 @pytest.mark.parametrize("np_dtype", [np.uint8, np.float32])

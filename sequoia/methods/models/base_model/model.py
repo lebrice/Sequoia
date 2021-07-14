@@ -557,7 +557,7 @@ class Model(LightningModule, Generic[SettingType]):
         """
         forward_pass: ForwardPass
         if isinstance(step_outputs, list):
-            forward_pass = ForwardPass.stack(step_outputs)
+            forward_pass = ForwardPass.concatenate(step_outputs)
         else:
             forward_pass = step_outputs
 
