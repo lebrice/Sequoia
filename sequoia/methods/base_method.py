@@ -251,17 +251,17 @@ class BaseMethod(Method, Serializable, Parseable, target_setting=Setting):
             # TODO: Select which output head to use from the command-line?
             # Limit the number of epochs so we never iterate on a closed env.
             # TODO: Would multiple "epochs" be possible?
-            if setting.max_steps is not None:
+            if setting.train_max_steps is not None:
                 self.trainer_options.max_epochs = 1
-                self.trainer_options.limit_train_batches = setting.max_steps // (
+                self.trainer_options.limit_train_batches = setting.train_max_steps // (
                     setting.batch_size or 1
                 )
                 self.trainer_options.limit_val_batches = min(
-                    setting.max_steps // (setting.batch_size or 1), 1000
+                    setting.train_max_steps // (setting.batch_size or 1), 1000
                 )
                 # TODO: Test batch size is limited to 1 for now.
                 # NOTE: This isn't used, since we don't call `trainer.test()`.
-                self.trainer_options.limit_test_batches = setting.max_steps
+                self.trainer_options.limit_test_batches = setting.train_max_steps
 
         # TODO: Debug the multi-GPU setup with DP accelerator and pytorch lightning.
         self.model = self.create_model(setting).to(self.config.device)

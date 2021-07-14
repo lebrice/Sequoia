@@ -23,7 +23,9 @@ class ForwardPass(Batch, FlattenedAccess):
     observations: Observations
     representations: Tensor
     actions: Actions
-    rewards: Optional[Rewards]
+    rewards: Optional[Rewards] = None
+    # Note: Might be annoying later if there is a need for subclasses of ForwardPass,
+    # since dataclass fields without a default value can't follow fields that have one.
 
     @property
     def h_x(self) -> Any:

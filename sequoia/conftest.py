@@ -92,7 +92,7 @@ def get_all_dataset_names(method_class: Type[Method] = None) -> List[str]:
     dataset_names: Iterable[List[str]] = map(
         lambda s: list(s.available_datasets), method_class.get_applicable_settings()
     )
-    return list(set(sum(dataset_names, [])))
+    return sorted(list(set(sum(dataset_names, []))))
 
 
 def get_dataset_params(
@@ -206,7 +206,7 @@ def parametrize_test_datasets(metafunc):
                 )
             )
             test_datasets = default_test_datasets
-
+    test_datasets = sorted(test_datasets)
     logger.info(
         f"Parametrizing the '{func_param_name}' param of test "
         f"{module_name} :: {function_name} with {test_datasets}."

@@ -328,7 +328,8 @@ def test_multitask_rl_bug_with_PL(monkeypatch, config: Config):
             from sequoia.utils.generic_functions import to_tensor
 
             print(step, env.is_closed())
-            step_results = model.training_step(batch=obs, batch_idx=step)
+            forward_pass = model.training_step(batch=obs, batch_idx=step)
+            step_results: Optional[Loss] = model.training_step_end([forward_pass])
             loss_tensor: Optional[Tensor] = None
 
             if step > 0 and step % 5 == 0:

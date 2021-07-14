@@ -78,8 +78,13 @@ def method_and_coefficients(request, tmp_path_factory):
 
 
 # @parametrize("dataset", get_dataset_params(Method, supported_datasets))
+
+
+from sequoia.methods.method_test import key_fn
+
+
 @slow
-@parametrize("setting_type", Method.get_applicable_settings())
+@parametrize("setting_type", sorted(Method.get_applicable_settings(), key=key_fn))
 def test_fast_dev_run(
     method_and_coefficients: Tuple[Method, Dict[str, float]],
     setting_type: Type[Setting],
