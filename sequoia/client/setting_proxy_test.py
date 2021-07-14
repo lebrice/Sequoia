@@ -19,9 +19,9 @@ from sequoia.conftest import slow
 from sequoia.common.metrics.rl_metrics import EpisodeMetrics
 
 from .setting_proxy import SettingProxy
+from sequoia.methods.method_test import key_fn
 
-
-@pytest.mark.parametrize("setting_type", all_settings)
+@pytest.mark.parametrize("setting_type", sorted(all_settings, key=key_fn))
 def test_spaces_match(setting_type: Type[Setting]):
     setting = setting_type()
     s_proxy = SettingProxy(setting_type)
