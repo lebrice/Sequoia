@@ -167,9 +167,10 @@ class TensorBox(TensorSpace, spaces.Box):
 
 
 class TensorDiscrete(TensorSpace, spaces.Discrete):
-    def contains(self, v: Tensor) -> bool:
-        v_numpy = v.detach().cpu().numpy()
-        return super().contains(v_numpy)
+    def contains(self, v: Union[int, Tensor]) -> bool:
+        if isinstance(v, Tensor):
+            v = v.detach().cpu().numpy()
+        return super().contains(v)
 
     def sample(self):
         self.dtype = self._numpy_dtype
