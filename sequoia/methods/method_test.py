@@ -10,11 +10,16 @@ from sequoia.common.config import Config
 from typing import Dict
 
 
+def key_fn(setting_class: Type[Setting]):
+    # order tests in terms of their 'depth' in the tree, and break ties arbitrarily
+    # based on the name.
+    return (len(setting_class.parents()), setting_class.__name__)
+
+
 def make_setting_type_fixture(method_type: Type[Method]) -> pytest.fixture:
     """ Create a parametrized fixture that will go through all the applicable settings
     for a given method.
     """
-
     def setting_type(self, request):
         setting_type = request.param
         return setting_type
@@ -23,8 +28,9 @@ def make_setting_type_fixture(method_type: Type[Method]) -> pytest.fixture:
     settings_to_remove = set([
         Setting, SLSetting, RLSetting
     ])
-    setting_types = list(setting_types - settings_to_remove)
-    
+    # NOTE: Need to make a deterministic ordering of settings, otherwise we can't
+    # parallelize tests with pytest-xdist
+    setting_types = sorted(list(setting_types - settings_to_remove), key=key_fn)
     return pytest.fixture(params=setting_types, scope="module",)(setting_type)
 
 from typing import TypeVar, Generic
