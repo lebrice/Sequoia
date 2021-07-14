@@ -203,7 +203,7 @@ def compute_conv_output_size(
 
 
 @register_method
-class HatMethod(Method, target_setting=TaskIncrementalSLSetting):
+class HatDemoMethod(Method, target_setting=TaskIncrementalSLSetting):
     """ 
     Here we implement the method according to the characteristics and methodology of the current proposal. 
     It should be as much as possible agnostic to the model and setting we are going to use. 
@@ -226,7 +226,7 @@ class HatMethod(Method, target_setting=TaskIncrementalSLSetting):
         max_epochs_per_task: int = 2
 
     def __init__(self, hparams: HParams = None):
-        self.hparams: HatMethod.HParams = hparams or self.HParams()
+        self.hparams: HatDemoMethod.HParams = hparams or self.HParams()
 
         # We will create those when `configure` will be called, before training.
         self.model: HatNet
@@ -333,8 +333,8 @@ class HatMethod(Method, target_setting=TaskIncrementalSLSetting):
         # parser.add_argument("--foo", default=123)
 
     @classmethod
-    def from_argparse_args(cls, args, dest: str = "") -> "HatMethod":
-        hparams: HatMethod.HParams = args.hparams
+    def from_argparse_args(cls, args, dest: str = "") -> "HatDemoMethod":
+        hparams: HatDemoMethod.HParams = args.hparams
         # foo: int = args.foo
         method = cls(hparams=hparams)
         return method
@@ -355,14 +355,14 @@ if __name__ == "__main__":
     """
     ## Add arguments for the Method, the Setting, and the Config.
     ## (Config contains options like the log_dir, the data_dir, etc.)
-    HatMethod.add_argparse_args(parser, dest="method")
+    HatDemoMethod.add_argparse_args(parser, dest="method")
     parser.add_arguments(TaskIncrementalSLSetting, dest="setting")
     parser.add_arguments(Config, "config")
 
     args = parser.parse_args()
 
     ## Create the Method from the args, and extract the Setting, and the Config:
-    method: HatMethod = HatMethod.from_argparse_args(args, dest="method")
+    method: HatDemoMethod = HatDemoMethod.from_argparse_args(args, dest="method")
     setting: TaskIncrementalSLSetting = args.setting
     config: Config = args.config
 

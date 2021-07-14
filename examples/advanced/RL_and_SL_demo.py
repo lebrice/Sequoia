@@ -18,9 +18,10 @@ from torch import Tensor
 # This "hack" is required so we can run `python examples/custom_baseline_demo.py`
 sys.path.extend([".", ".."])
 
-from sequoia.common.config import Config, TrainerConfig
+from sequoia.common.config import Config
 from sequoia.common.loss import Loss
 from sequoia.methods import BaseMethod
+from sequoia.methods.trainer import TrainerConfig
 from sequoia.methods.aux_tasks import AuxiliaryTask, SimCLRTask
 from sequoia.methods.models import BaseModel, ForwardPass
 from sequoia.settings import Setting, Environment, RLSetting
