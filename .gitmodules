@@ -1,3 +1,6 @@
 [submodule "tasks/simclr/falr"]
 	path = tasks/simclr/falr
 	url = https://github.com/lebrice/falr.git
+[submodule "sequoia/methods/cn_dpm"]
+	path = sequoia/methods/cn_dpm
+	url = https://github.com/ryanlindeborg/CN-DPM.git

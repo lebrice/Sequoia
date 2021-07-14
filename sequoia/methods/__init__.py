@@ -51,7 +51,7 @@ def register_method(new_method: Type[Method]) -> Type[Method]:
                     # the same file, so this is basically the 'double-import bug
                     # described above.
                     break
-                
+
                 method_family = method.get_family()
                 new_method_family = new_method.get_family()
                 assert method_family != new_method_family, (
@@ -85,6 +85,13 @@ try:
 except ImportError:
     pass
 
+try:
+    # For now, install the CN-DPM submodule in editable mode, like so:
+    # `pip install -e sequoia/methods/cn_dpm`
+    from .cn_dpm.cndpm_method import CNDPM
+
+except ImportError:
+    pass
 
 ## A bit hacky: Dynamically import all the modules/packages defined in this
 # folder. This way, we register the methods as they are declared.
