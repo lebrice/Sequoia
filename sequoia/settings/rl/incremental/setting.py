@@ -2,6 +2,8 @@ import inspect
 import json
 import operator
 import warnings
+import sys
+
 from contextlib import redirect_stdout
 from dataclasses import dataclass, fields
 from functools import partial
@@ -496,10 +498,19 @@ class IncrementalRLSetting(IncrementalAssumption, DiscreteTaskAgnosticRLSetting)
                 # NOTE: Here is how this supports passing custom envs for each task: We
                 # just switch out the value of these properties, and let the
                 # `train/val/test_dataloader` methods work as usual!
-                self.train_dataset = RandomMultiEnvWrapper(
+                wrapper_type = RandomMultiEnvWrapper
+                if self.task_labels_at_train_time or "pytest" in sys.modules:
+                    # A RoundRobin wrapper can be used when task labels are available,
+                    # because the task labels are available anyway, so it doesn't matter
+                    # if the Method figures out the pattern in the task IDs.
+                    # A RoundRobinWrapper is also used during testing, because it
+                    # makes it easier to check that things are working correctly.
+                    wrapper_type = RoundRobinWrapper
+
+                self.train_dataset = wrapper_type(
                     self.train_envs, add_task_ids=self.task_labels_at_train_time
                 )
-                self.val_dataset = RandomMultiEnvWrapper(
+                self.val_dataset = wrapper_type(
                     self.val_envs, add_task_ids=self.task_labels_at_train_time
                 )
                 self.test_dataset = ConcatEnvsWrapper(

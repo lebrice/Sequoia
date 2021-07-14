@@ -290,12 +290,12 @@ class ContinualRLSetting(RLSetting, ContinualAssumption):
     # don't expose this option on the command-line.
     test_steps_per_task: Optional[int] = None
 
-    # Deprecated: use `train_max_steps` instead.
-    max_steps: Optional[int] = deprecated_property("max_steps", "train_max_steps")
-    # Deprecated: use `train_max_steps` instead.
-    test_steps: Optional[int] = deprecated_property("test_steps", "test_max_steps")
-    # Deprecated, use `train_steps_per_task` instead.
-    steps_per_task: Optional[int] = field(default=None, to_dict=False, cmd=False)
+    # # Deprecated: use `train_max_steps` instead.
+    # max_steps: Optional[int] = deprecated_property(redirects_to="train_max_steps")
+    # # Deprecated: use `test_max_steps` instead.
+    # test_steps: Optional[int] = deprecated_property(redirects_to="test_max_steps")
+    # # Deprecated, use `train_steps_per_task` instead.
+    # steps_per_task: Optional[int] = deprecated_property(redirects_to="train_steps_per_task")
 
     def __post_init__(self):
         defaults = {f.name: f.default for f in fields(self)}
@@ -314,21 +314,6 @@ class ContinualRLSetting(RLSetting, ContinualAssumption):
             else:
                 self.nb_tasks = self.test_max_steps // self.test_steps_per_task
 
-        renamed_fields = {
-            # "max_steps": "train_max_steps",
-            # "test_steps": "test_max_steps",
-            "steps_per_task": "train_steps_per_task",
-            # "steps_per_task": "train_steps_per_task",
-        }
-        for old_field_name, new_field_name in renamed_fields.items():
-            passed_value = getattr(self, old_field_name)
-            if passed_value is not None:
-                warnings.warn(
-                    DeprecationWarning(
-                        f"Field '{old_field_name}' has been renamed to '{new_field_name}'."
-                    )
-                )
-                setattr(self, new_field_name, passed_value)
         # if self.max_steps is not None:
         #     warnings.warn(DeprecationWarning("'max_steps' is deprecated, use 'train_max_steps' instead."))
         #     self.train_max_steps = self.max_steps
@@ -359,14 +344,24 @@ class ContinualRLSetting(RLSetting, ContinualAssumption):
                     f"so this Setting ({type(self).__name__}) doesn't know how to create "
                     f"tasks for that env!\n"
                     f"Supported envs:\n"
-                    + ("\n".join(f"- {k}: {v}" for k, v in self.available_datasets.items()))
+                    + (
+                        "\n".join(
+                            f"- {k}: {v}" for k, v in self.available_datasets.items()
+                        )
+                    )
                 )
         logger.info(f"Chosen dataset: {textwrap.shorten(str(self.dataset), 50)}")
 
         # The ids of the train/valid/test environments.
-        self.train_dataset: Union[str, Callable[[], gym.Env]] = self.train_dataset or self.dataset
-        self.val_dataset: Union[str, Callable[[], gym.Env]] = self.val_dataset or self.dataset
-        self.test_dataset: Union[str, Callable[[], gym.Env]] = self.test_dataset or self.dataset
+        self.train_dataset: Union[
+            str, Callable[[], gym.Env]
+        ] = self.train_dataset or self.dataset
+        self.val_dataset: Union[
+            str, Callable[[], gym.Env]
+        ] = self.val_dataset or self.dataset
+        self.test_dataset: Union[
+            str, Callable[[], gym.Env]
+        ] = self.test_dataset or self.dataset
 
         # # The environment 'ID' associated with each 'simple name'.
         # self.train_dataset_id: str = self._get_dataset_id(self.train_dataset)
@@ -408,9 +403,7 @@ class ContinualRLSetting(RLSetting, ContinualAssumption):
             if self.nb_tasks in [defaults["nb_tasks"], None]:
                 self.nb_tasks = len(self.train_task_schedule) - 1
                 if self.nb_tasks < 1:
-                    raise RuntimeError(
-                        f"Need at least 2 entries in the task schedule!"
-                    )
+                    raise RuntimeError(f"Need at least 2 entries in the task schedule!")
                 logger.info(
                     f"Assuming that the last entry in the provided task schedule is "
                     f"the final state, and that there are {self.nb_tasks} tasks. "
@@ -558,13 +551,36 @@ class ContinualRLSetting(RLSetting, ContinualAssumption):
             set(self.test_task_schedule.keys()) - {self.test_max_steps}
         )
 
+        # TODO: Really annoying validation logic for these fields needs to be simplified
+        # somehow.
+        # if self.train_steps_per_task is None:
+        #     # if self.nb_tasks 
+        #     train_steps_per_task = self.train_max_steps // self.nb_tasks
+        #     if self.train_task_schedule:
+        #         task_lengths = [
+        #             b - a for a, b in pairwise(self.train_task_schedule.keys())
+        #         ]
+        #         if any(
+        #             abs(task_length - train_steps_per_task) > 1
+        #             for task_length in task_lengths
+        #         ):
+        #             raise RuntimeError(
+        #                 f"Trying to set a value for `train_steps_per_task`, but "
+        #                 f"the keys of the task schedule are either uneven, or not "
+        #                 f"equal to {train_steps_per_task}: "
+        #                 f"task schedule keys: {self.train_task_schedule.keys()}"
+        #             )
+        #     self.train_steps_per_task = train_steps_per_task
+
+       
+
         # FIXME: This is quite confusing:
-        expected_nb_tasks = len(self.train_task_schedule)
-        if (
-            self.train_max_steps not in [defaults["train_max_steps"], None]
-            and self.train_max_steps == max(self.train_task_schedule)
-        ) or (not self.smooth_task_boundaries):
-            expected_nb_tasks -= 1
+        expected_nb_tasks = len(self.train_task_schedule) - 1
+        # if (
+        #     self.train_max_steps not in [defaults["train_max_steps"], None]
+        #     and self.train_max_steps == max(self.train_task_schedule)
+        # ) or self.smooth_task_boundaries:
+        #     expected_nb_tasks -= 1
 
         if self.nb_tasks != expected_nb_tasks:
             if self.nb_tasks in [None, defaults["nb_tasks"]]:
@@ -617,6 +633,26 @@ class ContinualRLSetting(RLSetting, ContinualAssumption):
                     f"{self.test_task_schedule.keys()}). Expected the last key to be "
                     f"{test_max_steps}"
                 )
+
+        if self.train_steps_per_task is None:
+            self.train_steps_per_task = self.train_max_steps // self.nb_tasks
+        # TODO: Fix these annoying interactions once and for all.
+        assert self.train_max_steps // self.nb_tasks == self.train_steps_per_task, (
+            self.train_max_steps,
+            self.nb_tasks,
+            self.train_steps_per_task,
+            self.train_task_schedule.keys(),
+        )
+        
+        if self.test_steps_per_task is None:
+            self.test_steps_per_task = self.test_max_steps // self.nb_tasks
+        assert self.test_max_steps // self.nb_tasks == self.test_steps_per_task, (
+            self.test_max_steps,
+            self.nb_tasks,
+            self.test_steps_per_task,
+            self.test_task_schedule.keys(),
+        )
+        
 
     def create_train_task_schedule(self) -> TaskSchedule:
         # change_steps = [0, self.train_max_steps]

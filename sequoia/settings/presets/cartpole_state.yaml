@@ -1,8 +1,12 @@
 dataset: CartPole-v0
 max_episodes: null
 nb_tasks: 2
-test_steps: 1000
+train_max_steps: 4000
+test_max_steps: 1000
 test_steps_per_task: 500
+# TODO: Need to fix these task schedules: They probably won't work the same with
+# 'Continual' settings vs in the IncremementalRL Settings. Also need to decide what
+# happens with the last key in MultiTask RL.
 train_task_schedule:
   0:
     gravity: 10

@@ -246,7 +246,7 @@ def demo_manual():
             0: {"gravity": 10, "length": 0.5},
             5000: {"gravity": 10, "length": 1.0},
         },
-        max_steps=10_000,
+        train_max_steps=10_000,
     )
 
     ## Create the BaseMethod:

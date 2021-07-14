@@ -41,7 +41,7 @@ def cartpole_state_setting():
     setting = SettingProxy(
         RLSetting,
         dataset="cartpole",
-        max_steps=5_000,
+        train_max_steps=5_000,
         test_steps=2_000,
         monitor_training_performance=True,
     )
@@ -53,7 +53,7 @@ def incremental_cartpole_state_setting():
     setting = SettingProxy(
         IncrementalRLSetting,
         dataset="cartpole",
-        max_steps=10_000,
+        train_max_steps=10_000,
         nb_tasks=2,
         test_steps=2_000,
         monitor_training_performance=True,

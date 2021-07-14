@@ -1,5 +1,6 @@
 """ TODO: Tests for the 'modified gravity' mujoco envs. """
 from sequoia.conftest import mujoco_required
+
 pytestmark = mujoco_required
 from .modified_gravity import ModifiedGravityEnv
 from gym.envs.mujoco import MujocoEnv
@@ -23,7 +24,7 @@ class ModifiedGravityEnvTests:
         # "Ren[d]er every frame" is set to False.
         env = TimeLimit(env, max_episode_steps=max_episode_steps)
         total_steps = 0
-        
+
         for episode in range(n_episodes):
             initial_state = env.reset()
             done = False
@@ -39,11 +40,11 @@ class ModifiedGravityEnvTests:
                 env.render("human")
                 episode_steps += 1
                 total_steps += 1
-                
+
                 # decrease the gravity continually over time.
                 # By the end, things should be floating.
                 env.set_gravity(-10 + 5 * total_steps / max_episode_steps)
-                moved_up += (state[1] > previous_state[1])
+                moved_up += state[1] > previous_state[1]
                 # print(f"Moving upward? {obs[1] > state[1]}")
 
             if episode_steps != max_episode_steps:
@@ -61,13 +62,13 @@ class ModifiedGravityEnvTests:
             #     assert 0.5 <= (moved_up / max_episode_steps) <= 1.0, env.gravity
 
         assert total_steps <= n_episodes * max_episode_steps
-        
+
         initial_z = env.init_qpos[1]
         final_z = env.sim.data.qpos[1]
         if env.gravity > 0:
             assert final_z > initial_z
         # TODO: These checks aren't deterministic, and only really "work" with
-        # half-cheetah.  
+        # half-cheetah.
         # assert initial_z == 0
         # Check that the robot is high up in the sky! :D
         # assert final_z > 3
@@ -75,7 +76,7 @@ class ModifiedGravityEnvTests:
 
     def test_task_schedule(self):
         # TODO: Reuse this test (and perhaps others from multi_task_environment_test.py)
-        # but with this continual_half_cheetah instead of cartpole. 
+        # but with this continual_half_cheetah instead of cartpole.
         original = self.Environment()
         starting_gravity = original.gravity
 

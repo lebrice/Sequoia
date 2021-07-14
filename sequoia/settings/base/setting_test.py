@@ -152,7 +152,7 @@ class SettingTests:
         #     method.batch_size = 64
         # elif isinstance(setting, RLSetting):
         #     method.batch_size = None
-        #     setting.max_steps = 100
+        #     setting.train_max_steps = 100
 
         setting: Setting = setting_type(**self.fast_dev_run_kwargs)
         method = RandomBaselineMethod()

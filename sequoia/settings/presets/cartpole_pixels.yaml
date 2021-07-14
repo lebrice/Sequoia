@@ -1,9 +1,9 @@
 dataset: PixelCartPole-v0
 max_episodes: null
 nb_tasks: 3
-max_steps: 3000
+train_max_steps: 3000
 steps_per_task: 1000
-test_steps: 3000
+test_max_steps: 3000
 test_steps_per_task: 1000
 train_task_schedule:
   0:
