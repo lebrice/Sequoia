@@ -423,7 +423,7 @@ class ContinualRLSetting(RLSetting, ContinualAssumption):
             ).tolist()
             assert len(new_keys) == len(self.train_task_schedule)
             self.train_task_schedule = type(self.train_task_schedule)(
-                **{
+                {
                     new_key: self.train_task_schedule[old_key]
                     for new_key, old_key in zip(
                         new_keys, sorted(self.train_task_schedule.keys())
@@ -480,7 +480,7 @@ class ContinualRLSetting(RLSetting, ContinualAssumption):
             ).tolist()
             assert len(new_keys) == len(self.train_task_schedule)
             self.val_task_schedule = type(self.val_task_schedule)(
-                **{
+                {
                     new_key: self.val_task_schedule[old_key]
                     for new_key, old_key in zip(new_keys, old_keys)
                 }
@@ -495,15 +495,14 @@ class ContinualRLSetting(RLSetting, ContinualAssumption):
             self.test_task_schedule = self.create_test_task_schedule()
         elif max(self.test_task_schedule) == len(self.test_task_schedule) - 1:
             # If the keys correspond to the task ids rather than the transition steps
-            expected_nb_tasks = len(self.test_task_schedule)
-            if self.test_steps_per_task is not None:
-                steps_per_task = self.test_steps_per_task
-            else:
-                steps_per_task = self.test_max_steps // expected_nb_tasks
+            old_keys = sorted(self.test_task_schedule.keys())
+            new_keys = np.linspace(
+                0, self.test_max_steps, self.nb_tasks + 1, endpoint=True, dtype=int
+            ).tolist()
             self.test_task_schedule = type(self.test_task_schedule)(
-                **{
-                    i * steps_per_task: self.test_task_schedule[step]
-                    for i, step in enumerate(sorted(self.test_task_schedule.keys()))
+                {
+                    new_key: self.test_task_schedule[old_key]
+                    for new_key, old_key in zip(new_keys, old_keys)
                 }
             )
         if 0 not in self.test_task_schedule.keys():
