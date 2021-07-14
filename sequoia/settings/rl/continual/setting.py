@@ -1064,7 +1064,9 @@ class ContinualRLSetting(RLSetting, ContinualAssumption):
         if wandb.run:
             test_dir = wandb.run.dir
         else:
-            test_dir = "results"
+            test_dir = self.config.log_dir
+            # test_dir = "results"
+
         # TODO: Debug wandb Monitor integration.
         self.test_env = self.TestEnvironment(
             env_dataloader,

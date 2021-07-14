@@ -80,8 +80,10 @@ def make_dataset_fixture(setting_type) -> pytest.fixture:
     # run. Also: not sure if we can use a `slow_param` on these only, because we're
     # parameterizing a fixture rather than a test.
     datasets_to_remove = set(["MT10", "MT50", "CW10", "CW20"])
-    datasets = list(datasets - datasets_to_remove)
-    
+    # NOTE: Need deterministic ordering for the datasets for tests to be parallelizable
+    # with pytest-xdist.
+    datasets = sorted(list(datasets - datasets_to_remove))
+
     return pytest.fixture(
         params=datasets, scope="module",
     )(dataset)
@@ -473,6 +475,11 @@ class TestContinualRLSetting:
         batch_size = None
         expected_batched_x_space = expected_x_space
         expected_batched_action_space = expected_action_space
+
+        # NOTE: Need to make sure that the 'directory' passed to the Monitor
+        # wrapper is a temp dir. Should be the case, but just checking.
+        assert setting.config.log_dir != Path("results")
+
         with setting.test_dataloader(batch_size=batch_size, num_workers=0) as env:
             assert env.batch_size is None
             check_env_spaces(env)

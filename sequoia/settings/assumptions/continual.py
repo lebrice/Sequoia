@@ -353,6 +353,7 @@ class TestEnvironment(gym.wrappers.Monitor, IterableWrapper[EnvType], ABC):
         **kwargs,
     ):
         super().__init__(env, directory, *args, **kwargs)
+        logger.info(f"Creating test env (Monitor) with log directory {self.directory}")
         self.step_limit = step_limit
         self.no_rewards = no_rewards
         self._closed = False

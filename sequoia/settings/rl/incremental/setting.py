@@ -487,6 +487,7 @@ class IncrementalRLSetting(IncrementalAssumption, DiscreteTaskAgnosticRLSetting)
                 from sequoia.settings.rl.discrete.multienv_wrappers import (
                     ConcatEnvsWrapper,
                     RandomMultiEnvWrapper,
+                    RoundRobinWrapper
                 )
                 self.train_envs = instantiate_all_envs_if_needed(self.train_envs)
                 self.val_envs = instantiate_all_envs_if_needed(self.val_envs)

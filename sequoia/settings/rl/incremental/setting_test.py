@@ -40,7 +40,7 @@ class TestIncrementalRLSetting(DiscreteTaskAgnosticRLSettingTests):
     dataset: pytest.fixture = make_dataset_fixture(IncrementalRLSetting)
 
     @pytest.fixture()
-    def setting_kwargs(self, dataset: str, nb_tasks: int):
+    def setting_kwargs(self, dataset: str, nb_tasks: int, config: Config):
         """ Fixture used to pass keyword arguments when creating a Setting. """
         kwargs = {"dataset": dataset, "nb_tasks": nb_tasks, "max_episode_steps": 100}
         if dataset.lower().startswith(
@@ -49,6 +49,9 @@ class TestIncrementalRLSetting(DiscreteTaskAgnosticRLSettingTests):
             # kwargs["train_max_steps"] = 5_000
             # kwargs["max_episode_steps"] = 100
             pass
+        # NOTE: Using 0 workers so I can parallelize the tests without killing my PC.
+        config.num_workers = 0
+        kwargs["config"] = config
         return kwargs
 
     def validate_results(
