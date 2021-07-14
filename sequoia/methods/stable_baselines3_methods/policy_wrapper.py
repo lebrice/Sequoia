@@ -36,6 +36,11 @@ Wrapper = TypeVar("Wrapper", bound="PolicyWrapper")
 class PolicyWrapper(BasePolicy, ABC, Generic[Policy]):
     """ Base class for 'wrappers' to be applied to policies from SB3.
 
+    This adds "hooks" into the `step()` and `zero_grad()` method of the Policy's
+    optimizer.
+
+    NOTE: Hasn't been worked on in a while, would not recommend using this unless you're
+    very familiar with SB3 source code and there is no other way of doing what you want.
     """
     # Dictionary that stores the types of policies that have been 'wrapped' with
     # this mixin.
@@ -99,9 +104,7 @@ class PolicyWrapper(BasePolicy, ABC, Generic[Policy]):
         assert isinstance(policy, cls)
         optimizer = policy.optimizer or policy.optimizer_class
         if optimizer is None:
-            assert False, f"TODO: {policy.optimizer_class}"
             raise NotImplementedError("Need to have an optimizer instance atm")
-            # TODO: Use this maybe:
 
         # 'Replace' the `policy.optimizer.step` with a function that might first
         # backpropagates the loss.

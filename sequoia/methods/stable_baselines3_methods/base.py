@@ -414,7 +414,7 @@ class StableBaselines3Method(Method, ABC, target_setting=ContinualRLSetting):
     def clear_buffers(self):
         """ Clears out the experience buffer of the Policy. """
         # I think that's the right way to do it.. not sure.
-        assert False, self.model.replay_buffer.pos
+        # assert False, self.model.replay_buffer.pos
         if self.model:
             # TODO: These are really interesting methods!
             # self.model.save_replay_buffer

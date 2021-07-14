@@ -303,7 +303,7 @@ def test_done_is_sometimes_True_when_iterating_through_env(batch_size: int):
         if any(obs["done"]):
             break
     else:
-        assert False, "Never encountered done=True!"
+        pytest.fail(reason="Never encountered done=True!")
 
 
 @pytest.mark.parametrize("batch_size", [1, 2, 5])
