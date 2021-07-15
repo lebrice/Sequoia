@@ -1400,7 +1400,7 @@ class ContinualRLSetting(RLSetting, ContinualAssumption):
                     noise_std=self.task_noise_std,
                     task_schedule=task_schedule,
                     add_task_id_to_obs=True,
-                    add_task_dict_to_info=True,
+                    add_task_dict_to_info=False,
                     starting_step=starting_step,
                     new_random_task_on_reset=new_random_task_on_reset,
                     max_steps=max_steps,
