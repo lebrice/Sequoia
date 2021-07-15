@@ -342,7 +342,7 @@ class IterableWrapper(MayCloseEarly, IterableDataset, Generic[EnvType], ABC):
         if has_wrapper(self.env, EnvDataset) or is_proxy_to(
             self.env, (EnvDataset, ActiveDataLoader)
         ):
-            obs, reward, done, info = self.step(self.action_)
+            obs, reward, done, info = self.step(self.unwrapped.action_)
             return obs
             # raise RuntimeError(f"WIP: Dropping this '__next__' API in RL.")
             # logger.debug(f"Wrapped env is an EnvDataset, using EnvDataset.__iter__.")
@@ -367,23 +367,15 @@ class IterableWrapper(MayCloseEarly, IterableDataset, Generic[EnvType], ABC):
     def send(self, action):
         # TODO: Make `send` use `self.step`, that way wrappers can apply the same way to
         # RL and SL environments.
-        # FIXME: Detect if this is wrapping a supervised environment
         if self.wrapping_passive_env:
             action = self.action(action)
             reward = self.env.send(action)
             reward = self.reward(reward)
             return reward
 
-        # if hasattr(self.env, "send"):
-        #     # TODO: Maybe put 'self.action_' in step(), same for the other fields
-        #     action = self.action(action)
-        #     self.action_ = action
-        #     reward = self.env.send(action)
-        #     self.reward_ = self.reward(reward)
-        # else:
-        self.action_ = action
-        self.observation_, self.reward_, self.done_, self.info_ = self.step(action)
-        return self.reward_
+        self.unwrapped.action_ = action
+        self.unwrapped.observation_, self.unwrapped.reward_, self.unwrapped.done_, self.unwrapped.info_ = self.step(action)
+        return self.unwrapped.reward_
 
         # (Option 1 below)
         # return self.env.send(action)
@@ -407,19 +399,23 @@ class IterableWrapper(MayCloseEarly, IterableDataset, Generic[EnvType], ABC):
     def __iter__(self) -> Iterator:
         # TODO: Pretty sure this could be greatly simplified by just always using the loop from EnvDataset.
         if self.wrapping_passive_env:
-            # TODO: Also apply the `self.observation` `self.reward` methods while
+            # NOTE: Also applies the `self.observation` `self.reward` methods while
             # iterating.
-            yield from self.env
+            for obs, rewards in self.env:
+                obs = self.observation(obs)
+                if rewards is not None:
+                    rewards = self.reward(rewards)
+                yield obs, rewards
         else:
-            self.observation_ = self.reset()
-            self.done_ = False
-            self.action_ = None
-            self.reward_ = None
+            self.unwrapped.observation_ = self.reset()
+            self.unwrapped.done_ = False
+            self.unwrapped.action_ = None
+            self.unwrapped.reward_ = None
 
             # Yield the first observation_.
-            yield self.observation_
+            yield self.unwrapped.observation_
 
-            if self.action_ is None:
+            if self.unwrapped.action_ is None:
                 raise RuntimeError(
                     f"You have to send an action using send() between every "
                     f"observation. (env = {self})"
@@ -428,15 +424,15 @@ class IterableWrapper(MayCloseEarly, IterableDataset, Generic[EnvType], ABC):
             def done_is_true(done: Union[bool, np.ndarray, Sequence[bool]]) -> bool:
                 return done if isinstance(done, bool) or not done.shape else all(done)
 
-            while not any([done_is_true(self.done_), self.is_closed()]):
+            while not any([done_is_true(self.unwrapped.done_), self.is_closed()]):
                 # logger.debug(f"step {self.n_steps_}/{self.max_steps},  (episode {self.n_episodes_})")
 
                 # Set those to None to force the user to call .send()
-                self.action_ = None
-                self.reward_ = None
-                yield self.observation_
+                self.unwrapped.action_ = None
+                self.unwrapped.reward_ = None
+                yield self.unwrapped.observation_
 
-                if self.action_ is None:
+                if self.unwrapped.action_ is None:
                     raise RuntimeError(
                         f"You have to send an action using send() between every "
                         f"observation. (env = {self})"

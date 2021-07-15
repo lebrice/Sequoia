@@ -17,6 +17,7 @@ from sequoia.settings.sl import (
     TaskIncrementalSLSetting,
     ContinualSLSetting,
     DiscreteTaskAgnosticSLSetting,
+    SLSetting,
 )
 from sequoia.settings.sl.incremental.objects import Observations, Rewards
 from sequoia.conftest import slow, slow_param
@@ -24,9 +25,10 @@ from sequoia.conftest import slow, slow_param
 from .base import AvalancheMethod
 from .experience import SequoiaExperience
 from .patched_models import MTSimpleCNN, MTSimpleMLP, SimpleCNN, SimpleMLP
+from sequoia.methods.method_test import MethodTests
 
 
-class _TestAvalancheMethod:
+class _TestAvalancheMethod(MethodTests):
     Method: ClassVar[Type[AvalancheMethod]] = AvalancheMethod
 
     # Names of (hyper-)parameters which are allowed to have a different default value in
@@ -40,6 +42,14 @@ class _TestAvalancheMethod:
         "train_epochs",
         "evaluator",
     ]
+
+    @classmethod
+    @pytest.fixture(params=[SimpleCNN, SimpleMLP, MTSimpleCNN, MTSimpleMLP])
+    def method(cls, config: Config, request) -> AvalancheMethod:
+        """ Fixture that returns the Method instance to use when testing/debugging.
+        """
+        model_type = request.param
+        return cls.Method(model=model_type, train_mb_size=10, train_epochs=1)
 
     def test_hparams_have_same_defaults_as_in_avalanche(self):
         strategy_type: Type[BaseStrategy] = self.Method.strategy_class
@@ -68,109 +78,28 @@ class _TestAvalancheMethod:
                 f"Path to SB3 implementation: {getsourcefile(strategy_type)}\n"
             )
 
-    @pytest.mark.timeout(60)
-    @pytest.mark.parametrize(
-        "model_type", [SimpleCNN, SimpleMLP, MTSimpleCNN, MTSimpleMLP,],
-    )
-    def test_short_continual_sl_setting(
+    def validate_results(
         self,
-        model_type: Type[Module],
-        short_continual_sl_setting: ContinualSLSetting,
-        config: Config,
-    ):
-        method = self.Method(model=model_type, train_mb_size=10, train_epochs=1)
-        results = short_continual_sl_setting.apply(method, config)
-        assert 0.05 < results.average_metrics.objective
-
-    @pytest.mark.timeout(60)
-    @pytest.mark.parametrize(
-        "model_type", [SimpleCNN, SimpleMLP, MTSimpleCNN, MTSimpleMLP,],
-    )
-    def test_short_discrete_task_agnostic_sl_setting(
-        self,
-        model_type: Type[Module],
-        short_discrete_task_agnostic_sl_setting: DiscreteTaskAgnosticSLSetting,
-        config: Config,
-    ):
-        method = self.Method(model=model_type, train_mb_size=10, train_epochs=1)
-        results = short_discrete_task_agnostic_sl_setting.apply(method, config)
-        assert 0.05 < results.average_metrics.objective
-
-    @pytest.mark.timeout(60)
-    @pytest.mark.parametrize(
-        "model_type", [SimpleCNN, SimpleMLP, MTSimpleCNN, MTSimpleMLP,],
-    )
-    def test_short_task_incremental_setting(
-        self,
-        model_type: Type[Module],
-        short_task_incremental_setting: TaskIncrementalSLSetting,
-        config: Config,
-    ):
-        method = self.Method(model=model_type, train_mb_size=10, train_epochs=1)
-        results = short_task_incremental_setting.apply(method, config)
-        assert 0.05 < results.average_final_performance.objective
-
-    @pytest.mark.timeout(60)
-    @pytest.mark.parametrize(
-        "model_type",
-        [
-            SimpleCNN,
-            SimpleMLP,
-            MTSimpleCNN,
-            MTSimpleMLP,
-            # xfail_param(
-            #     MTSimpleCNN,
-            #     reason="IndexError Bug inside `avalanche/models/dynamic_modules.py",
-            # ),
-            # xfail_param(
-            #     MTSimpleMLP,
-            #     reason="IndexError Bug inside `avalanche/models/dynamic_modules.py",
-            # ),
-        ],
-    )
-    def test_short_class_incremental_setting(
-        self,
-        model_type: Type[Module],
-        short_class_incremental_setting: ClassIncrementalSetting,
-        config: Config,
-    ):
-        method = self.Method(model=model_type, train_mb_size=10, train_epochs=1)
-        results = short_class_incremental_setting.apply(method, config)
-        assert 0.05 < results.average_final_performance.objective
+        setting: SLSetting,
+        method: AvalancheMethod,
+        results: SLSetting.Results,
+    ) -> None:
+        assert results
+        assert results.objective
+        # TODO: Set some 'reasonable' bounds on the performance here, depending on the
+        # setting/dataset.# def validate_results
 
     @slow
     @pytest.mark.timeout(60)
-    @pytest.mark.parametrize(
-        "model_type",
-        [
-            SimpleCNN,
-            SimpleMLP,
-            slow_param(MTSimpleCNN),
-            slow_param(MTSimpleMLP),
-            # xfail_param(
-            #     MTSimpleCNN,
-            #     reason="IndexError Bug inside `avalanche/models/dynamic_modules.py",
-            # ),
-            # xfail_param(
-            #     MTSimpleMLP,
-            #     reason="IndexError Bug inside `avalanche/models/dynamic_modules.py",
-            # ),
-        ],
-    )
     def test_short_sl_track(
         self,
-        model_type: Type[Module],
+        method: AvalancheMethod,
         short_sl_track_setting: ClassIncrementalSetting,
         config: Config,
     ):
         # Use the same batch size as the setting, since it's shorter than usual.
-        method = self.Method(
-            model=model_type,
-            train_mb_size=short_sl_track_setting.batch_size,
-            train_epochs=1,
-        )
-        results = short_sl_track_setting.apply(method, config)
-        results.cl_score
+        method.train_mb_size = short_sl_track_setting.batch_size
+        results = short_sl_track_setting.apply(method, config=config)
         # TODO: Set up a more reasonable bound on the expected performance. For now this
         # is fine as we're just debugging: the test passes as long as there is a results
         # object that contains a non-zero online performance (meaning that the setting

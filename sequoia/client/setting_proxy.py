@@ -474,7 +474,7 @@ class SettingProxy(SettingABC, Generic[SettingType]):
         # max_steps: int = self.get_attribute("test_steps") // (batch_size or 1)
 
         # # Reset on the last step is causing trouble, since the env is closed.
-        # pbar = tqdm.tqdm(itertools.count(), total=max_steps, desc="Test")
+        # pbar = tqdm.tqdm(itertools.count(), total=train_max_steps, desc="Test")
         # episode = 0
         # for step in pbar:
         #     if test_env.is_closed():

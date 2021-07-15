@@ -17,7 +17,7 @@ def test_on_task_switch_is_called():
     setting = TraditionalRLSetting(
         dataset="CartPole-v0",
         nb_tasks=5,
-        # steps_per_task=100,
+        # train_steps_per_task=100,
         train_max_steps=500,
         test_max_steps=500,
     )

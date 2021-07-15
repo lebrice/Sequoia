@@ -67,6 +67,16 @@ class TraditionalSLSetting(IncrementalSLSetting):
     # Defaults to the value of `class_order`.
     test_class_order: Optional[List[int]] = constant(None)
 
+    @property
+    def phases(self) -> int:
+        """The number of training 'phases', i.e. how many times `method.fit` will be
+        called.
+
+        Defaults to the number of tasks, but may be different, for instance in so-called
+        Multi-Task Settings, this is set to 1.
+        """
+        return 1 if self.stationary_context else self.nb_tasks
+
 
 SettingType = TypeVar("SettingType", bound=TraditionalSLSetting)
 

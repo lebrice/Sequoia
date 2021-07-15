@@ -3,7 +3,6 @@ from typing import Any, Dict, List, Optional, Sequence, Tuple, TypeVar, Union
 
 import numpy as np
 import torch
-from pytorch_lightning.core.decorators import auto_move_data
 from torch import Tensor, nn
 
 from dataclasses import replace
@@ -18,31 +17,26 @@ import torch.nn.functional as F
 from ..forward_pass import ForwardPass
 from ..output_heads import OutputHead
 
-from .base_model import BaseModel, SettingType
+from .model import Model, SettingType
 
 logger = get_logger(__file__)
 
 
-class MultiHeadModel(BaseModel[SettingType]):
-    """ Extension of the Model LightningModule aimed at CL settings.
-
-    # TODO: Replace all of this with the logic from the MultiHeadClassifier
-    # example.
+class MultiHeadModel(Model[SettingType]):
+    """ Mixin that adds multi-head prediction to the Model when task labels are
+    available.
     """
-
     @dataclass
-    class HParams(BaseModel.HParams):
-        """ Hyperparameters specific to a Continual Learning classifier.
-        TODO: Add any hyperparameters specific to CL here.
+    class HParams(Model.HParams):
+        """ Hyperparameters specific to a multi-head model.
         """
-
         # Wether to create one output head per task.
-        # TODO: Does it make no sense to have multihead=True when the model doesn't
-        # have access to task labels. Need to figure out how to manage this between TaskIncremental and Classifier.
         multihead: Optional[bool] = None
 
-    def __init__(self, setting: ContinualAssumption, hparams: HParams, config: Config):
+    def __init__(self, setting: SettingType, hparams: HParams, config: Config):
         super().__init__(setting=setting, hparams=hparams, config=config)
+
+        # Dictionary of output heads!
         self.output_heads: Dict[str, OutputHead] = nn.ModuleDict()
         self.hp: MultiHeadModel.HParams
         self.setting: SettingType
@@ -90,13 +84,7 @@ class MultiHeadModel(BaseModel[SettingType]):
                 )
                 # TODO: Maybe use the last trained output head, by default?
 
-        # BUG: We get no loss from the output head for the first episode after a task
-        # switch.
-        # NOTE: The problem is that the `done` in the observation isn't necessarily
-        # associated with the task designed by the `task_id` in that observation!
-        # That is because of how vectorized environments work, they reset the env and
-        # give the new initial observation when `done` is True, rather than the last
-        # observation in that env.
+        # TODO: Check if this is still necessary
         if self.previous_task_labels is None:
             self.previous_task_labels = task_labels
 
@@ -173,7 +161,7 @@ class MultiHeadModel(BaseModel[SettingType]):
                 )
             else:
                 raise NotImplementedError(
-                    "TODO: The BaselineModel doesn't yet support having multiple "
+                    "TODO: The BaseModel doesn't yet support having multiple "
                     "different tasks within the same batch in RL. "
                 )
                 # IDEA: Need to somehow pass the indices of which env to take care of to
@@ -240,11 +228,11 @@ class MultiHeadModel(BaseModel[SettingType]):
         batch: Tuple[Observations, Optional[Rewards]],
         batch_idx: int,
         environment: Environment,
-        loss_name: str,
+        phase: str,
         dataloader_idx: int = None,
         optimizer_idx: int = None,
     ) -> Dict:
-        assert loss_name
+        assert phase
         if dataloader_idx is not None:
             logger.debug(
                 "TODO: We were indirectly given a task id with the "
@@ -258,7 +246,7 @@ class MultiHeadModel(BaseModel[SettingType]):
             batch=batch,
             batch_idx=batch_idx,
             environment=environment,
-            loss_name=loss_name,
+            phase=phase,
             dataloader_idx=dataloader_idx,
             optimizer_idx=optimizer_idx,
         )
@@ -277,7 +265,7 @@ class MultiHeadModel(BaseModel[SettingType]):
         logger.info(f"Switching from task {self.current_task} -> {task_id}.")
 
         # TODO: Move these to the base model perhaps? (In case there is ever a
-        # re-ordering of the mixins that make up the BaselineModel)
+        # re-ordering of the mixins that make up the BaseModel)
         super().on_task_switch(task_id)
 
         self.previous_task = self.current_task
@@ -365,7 +353,6 @@ class MultiHeadModel(BaseModel[SettingType]):
             self.output_heads[str(task_id)] = task_output_head
         return task_output_head
 
-    @auto_move_data
     def forward(self, observations: IncrementalAssumption.Observations) -> ForwardPass:
         """Smart forward pass with multi-head predictions and task inference.
 
@@ -397,7 +384,7 @@ class MultiHeadModel(BaseModel[SettingType]):
             All three cases above produce the same kind of outputs.
         """
         # TODO: Shouldn't have to do this here, since we have the @auto_move_data dec...
-        observations = observations.to(self.device)
+        # observations = observations.to(self.device)
         task_ids: Optional[Tensor] = observations.task_labels
 
         if isinstance(task_ids, np.ndarray) and task_ids.dtype == np.object:
@@ -432,7 +419,7 @@ class MultiHeadModel(BaseModel[SettingType]):
             # Setup the model for this task. For now we just switch the output head.
             self.output_head = self.get_or_create_output_head(task_id)
 
-    def split_forward_pass(self, observations: Observations) -> Tensor:
+    def split_forward_pass(self, observations: Observations) -> ForwardPass:
         """Perform a forward pass for a batch of observations from different tasks.
 
         This is called in `forward` when there is more than one unique task label in the

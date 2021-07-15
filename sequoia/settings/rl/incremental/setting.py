@@ -2,28 +2,35 @@ import inspect
 import json
 import operator
 import warnings
+import sys
+
 from contextlib import redirect_stdout
-from dataclasses import dataclass
+from dataclasses import dataclass, fields
 from functools import partial
-from itertools import islice
 from io import StringIO
+from itertools import islice
 from pathlib import Path
 from typing import Any, Callable, ClassVar, Dict, List, Optional, Type, Union
 
 import gym
+import numpy as np
 from gym import spaces
-from sequoia.settings.base import Method
+from gym.utils import colorize
+from simple_parsing import field, list_field
+from simple_parsing.helpers import choice
+from typing_extensions import Final
+
 from sequoia.common.gym_wrappers import MultiTaskEnvironment, TransformObservation
 from sequoia.common.gym_wrappers.utils import is_monsterkong_env
-from sequoia.common.spaces import Sparse
 from sequoia.common.metrics import EpisodeMetrics
+from sequoia.common.spaces import Sparse
 from sequoia.common.transforms import Transforms
 from sequoia.settings.assumptions.incremental import (
     IncrementalAssumption,
-    TaskSequenceResults,
     TaskResults,
+    TaskSequenceResults,
 )
-from sequoia.settings.base import Results
+from sequoia.settings.base import Method, Results
 from sequoia.settings.rl.continual import ContinualRLSetting
 from sequoia.settings.rl.envs import (
     ATARI_PY_INSTALLED,
@@ -38,11 +45,9 @@ from sequoia.settings.rl.envs import (
     metaworld_envs,
     mtenv_envs,
 )
+from sequoia.settings.rl.wrappers.task_labels import FixedTaskLabelWrapper
 from sequoia.utils import constant, deprecated_property, dict_union, pairwise
 from sequoia.utils.logging_utils import get_logger
-from simple_parsing import field, list_field
-from simple_parsing.helpers import choice
-from typing_extensions import Final
 
 from ..discrete.setting import DiscreteTaskAgnosticRLSetting
 from ..discrete.setting import supported_envs as _parent_supported_envs
@@ -122,13 +127,17 @@ class IncrementalRLSetting(IncrementalAssumption, DiscreteTaskAgnosticRLSetting)
     # Wether to give access to the task labels at test time.
     task_labels_at_test_time: bool = False
 
-    train_envs: List[Union[str, Callable[[], gym.Env]]] = list_field()
-    val_envs: List[Union[str, Callable[[], gym.Env]]] = list_field()
-    test_envs: List[Union[str, Callable[[], gym.Env]]] = list_field()
+    # NOTE: Specifying the `type` to use for the argparse argument, because of a bug in
+    # simple-parsing that makes this not work correctly atm.
+    train_envs: List[Union[str, Callable[[], gym.Env]]] = list_field(type=str)
+    val_envs: List[Union[str, Callable[[], gym.Env]]] = list_field(type=str)
+    test_envs: List[Union[str, Callable[[], gym.Env]]] = list_field(type=str)
 
     def __post_init__(self):
+        defaults = {f.name: f.default for f in fields(self)}
+
         if self.dataset in ["MT10", "MT50", "CW10", "CW20"]:
-            from metaworld import MT10, MT50, Task, MetaWorldEnv
+            from metaworld import MT10, MT50, MetaWorldEnv, Task
 
             benchmarks = {
                 "MT10": MT10,
@@ -178,9 +187,6 @@ class IncrementalRLSetting(IncrementalAssumption, DiscreteTaskAgnosticRLSetting)
                 assert test_env_tasks[env_name]
 
             max_train_steps_per_task = 1_000_000
-            if self.train_steps_per_task is None:
-                self.train_steps_per_task = max_train_steps_per_task
-
             if self.dataset in ["CW10", "CW20"]:
                 # TODO: Raise a warning if the number of tasks is non-default and set to
                 # something different than in the benchmark
@@ -198,7 +204,11 @@ class IncrementalRLSetting(IncrementalAssumption, DiscreteTaskAgnosticRLSetting)
                     f"window-close-v{version}",
                     f"peg-unplug-side-v{version}",
                 ]
-                if self.train_steps_per_task > max_train_steps_per_task:
+                if (
+                    self.train_steps_per_task
+                    not in [defaults["train_steps_per_task"], None]
+                    and self.train_steps_per_task > max_train_steps_per_task
+                ):
                     raise RuntimeError(
                         f"Can't use more than {max_train_steps_per_task} steps per "
                         f"task in the {self.dataset} benchmark!"
@@ -208,9 +218,6 @@ class IncrementalRLSetting(IncrementalAssumption, DiscreteTaskAgnosticRLSetting)
                 # NOTE: Should we allow using fewer steps?
                 # NOTE: The default value for this field is 10_000 currently, so this
                 # check doesn't do anything.
-                if self.test_steps_per_task is None:
-                    self.test_steps_per_task = 10_000
-
                 if self.dataset == "CW20":
                     env_names = env_names * 2
                 train_env_names = env_names
@@ -221,6 +228,18 @@ class IncrementalRLSetting(IncrementalAssumption, DiscreteTaskAgnosticRLSetting)
                 val_env_names = list(val_env_tasks.keys())
                 test_env_names = list(test_env_tasks.keys())
 
+            self.nb_tasks = len(train_env_names)
+            if self.train_max_steps not in [defaults["train_max_steps"], None]:
+                self.train_steps_per_task = self.train_max_steps // self.nb_tasks
+            elif self.train_steps_per_task is None:
+                self.train_steps_per_task = max_train_steps_per_task
+                self.train_max_steps = self.nb_tasks * self.train_steps_per_task
+
+            if self.test_max_steps in [defaults["test_max_steps"], None]:
+                if self.test_steps_per_task is None:
+                    self.test_steps_per_task = 10_000
+
+            # TODO: Double-check that the train/val/test wrappers are added to each env.
             self.train_envs = [
                 partial(
                     make_metaworld_env,
@@ -259,6 +278,38 @@ class IncrementalRLSetting(IncrementalAssumption, DiscreteTaskAgnosticRLSetting)
             self._using_custom_envs_foreach_task = True
             # TODO: Raise a warning if we're going to overwrite a non-default nb_tasks?
             self.nb_tasks = len(self.train_envs)
+            assert self.train_steps_per_task or self.train_max_steps
+            if self.train_steps_per_task is None:
+                self.train_steps_per_task = self.train_max_steps // self.nb_tasks
+            # TODO: Should we use the task schedules to tell the length of each task?
+            if self.test_steps_per_task in [defaults["test_steps_per_task"], None]:
+                self.test_steps_per_task = self.test_max_steps // self.nb_tasks
+            assert self.test_steps_per_task
+            assert self.train_steps_per_task == self.train_max_steps // self.nb_tasks, (
+                self.train_max_steps,
+                self.train_steps_per_task,
+                self.nb_tasks,
+            )
+
+            task_schedule_keys = np.linspace(
+                0, self.train_max_steps, self.nb_tasks + 1, endpoint=True, dtype=int
+            ).tolist()
+            self.train_task_schedule = self.train_task_schedule or {
+                key: {} for key in task_schedule_keys
+            }
+            self.val_task_schedule = self.train_task_schedule.copy()
+
+            assert self.test_steps_per_task == self.test_max_steps // self.nb_tasks, (
+                self.test_max_steps,
+                self.test_steps_per_task,
+                self.nb_tasks,
+            )
+            test_task_schedule_keys = np.linspace(
+                0, self.test_max_steps, self.nb_tasks + 1, endpoint=True, dtype=int
+            ).tolist()
+            self.test_task_schedule = self.test_task_schedule or {
+                key: {} for key in test_task_schedule_keys
+            }
 
             if not self.val_envs:
                 # TODO: Use a wrapper that sets a different random seed?
@@ -267,13 +318,13 @@ class IncrementalRLSetting(IncrementalAssumption, DiscreteTaskAgnosticRLSetting)
                 # TODO: Use a wrapper that sets a different random seed?
                 self.test_envs = self.train_envs.copy()
             if (
-                self.train_task_schedule
-                or self.val_task_schedule
-                or self.test_task_schedule
+                any(self.train_task_schedule.values())
+                or any(self.val_task_schedule.values())
+                or any(self.test_task_schedule.values())
             ):
                 raise RuntimeError(
-                    "You can either pass `train/valid/test_envs`, or a task schedule, "
-                    "but not both!"
+                    "Can't use a non-empty task schedule when passing the "
+                    "train/valid/test envs."
                 )
 
             self.train_dataset: Union[str, Callable[[], gym.Env]] = self.train_envs[0]
@@ -316,6 +367,22 @@ class IncrementalRLSetting(IncrementalAssumption, DiscreteTaskAgnosticRLSetting)
 
         # FIXME: Really annoying little bugs with these three arguments!
         # self.nb_tasks = self.max_steps // self.steps_per_task
+
+    @property
+    def current_task_id(self) -> int:
+        return self._current_task_id
+
+    @current_task_id.setter
+    def current_task_id(self, value: int) -> None:
+        if value != self._current_task_id:
+            # Set those to False so we re-create the wrappers for each task.
+            self._has_setup_fit = False
+            self._has_setup_validate = False
+            self._has_setup_test = False
+            # TODO: No idea what the difference is between `predict` and test.
+            self._has_setup_predict = False
+            # TODO: There are now also teardown hooks, maybe use them?
+        self._current_task_id = value
 
     @property
     def train_task_lengths(self) -> List[int]:
@@ -400,27 +467,55 @@ class IncrementalRLSetting(IncrementalAssumption, DiscreteTaskAgnosticRLSetting)
                 f"Using custom environments from `self.[train/val/test]_envs` for task "
                 f"{self.current_task_id}."
             )
-            # NOTE: Here is how this supports passing custom envs for each task: We just
-            # switch out the value of this property, and let the
-            # `train/val/test_dataloader` methods work as usual!
-            # TODO: Instantiate the envs if needed.
-            # TODO: Add support for batching these environments:
-            def instantiate_all_envs(envs: List[Union[Callable[[], gym.Env], gym.Env]]) -> List[gym.Env]:
-                return [
-                    env() if not isinstance(env, gym.Env) else env for env in envs
-                ]
-            self.train_envs = instantiate_all_envs(self.train_envs)
-            self.val_envs = instantiate_all_envs(self.val_envs)
-            self.test_envs = instantiate_all_envs(self.test_envs)
 
-            
+            # TODO: Add support for batching these environments:
+            # TODO: This is probably not needed, since most of the wrappers below will
+            # instiate the envs as needed. However this is better for finding bugs, if
+            # any.
+            def instantiate_all_envs_if_needed(
+                envs: List[Union[Callable[[], gym.Env], gym.Env]]
+            ) -> List[gym.Env]:
+                return [
+                    env
+                    if isinstance(env, gym.Env)
+                    else gym.make(env)
+                    if isinstance(env, str)
+                    else env()
+                    for env in envs
+                ]
+
+
             if self.stationary_context:
-                from sequoia.settings.rl.discrete.multienv_wrappers import RandomMultiEnvWrapper, ConcatEnvsWrapper
-                
-               
-                self.train_dataset = RandomMultiEnvWrapper(self.train_envs, add_task_ids=self.task_labels_at_train_time)
-                self.val_dataset = RandomMultiEnvWrapper(self.val_envs, add_task_ids=self.task_labels_at_train_time)
-                self.test_dataset = ConcatEnvsWrapper(self.test_envs, add_task_ids=self.task_labels_at_test_time)
+                from sequoia.settings.rl.discrete.multienv_wrappers import (
+                    ConcatEnvsWrapper,
+                    RandomMultiEnvWrapper,
+                    RoundRobinWrapper
+                )
+                self.train_envs = instantiate_all_envs_if_needed(self.train_envs)
+                self.val_envs = instantiate_all_envs_if_needed(self.val_envs)
+                self.test_envs = instantiate_all_envs_if_needed(self.test_envs)
+
+                # NOTE: Here is how this supports passing custom envs for each task: We
+                # just switch out the value of these properties, and let the
+                # `train/val/test_dataloader` methods work as usual!
+                wrapper_type = RandomMultiEnvWrapper
+                if self.task_labels_at_train_time or "pytest" in sys.modules:
+                    # A RoundRobin wrapper can be used when task labels are available,
+                    # because the task labels are available anyway, so it doesn't matter
+                    # if the Method figures out the pattern in the task IDs.
+                    # A RoundRobinWrapper is also used during testing, because it
+                    # makes it easier to check that things are working correctly.
+                    wrapper_type = RoundRobinWrapper
+
+                self.train_dataset = wrapper_type(
+                    self.train_envs, add_task_ids=self.task_labels_at_train_time
+                )
+                self.val_dataset = wrapper_type(
+                    self.val_envs, add_task_ids=self.task_labels_at_train_time
+                )
+                self.test_dataset = ConcatEnvsWrapper(
+                    self.test_envs, add_task_ids=self.task_labels_at_test_time
+                )
             elif self.known_task_boundaries_at_train_time:
                 self.train_dataset = self.train_envs[self.current_task_id]
                 self.val_dataset = self.val_envs[self.current_task_id]
@@ -428,22 +523,27 @@ class IncrementalRLSetting(IncrementalAssumption, DiscreteTaskAgnosticRLSetting)
                 # work.
                 self.test_dataset = self.test_envs[self.current_task_id]
             else:
-                self.train_dataset = ConcatEnvsWrapper(self.train_envs, add_task_ids=self.task_labels_at_train_time)
-                self.val_dataset = ConcatEnvsWrapper(self.val_envs, add_task_ids=self.task_labels_at_train_time)
-                self.test_dataset = ConcatEnvsWrapper(self.test_envs, add_task_ids=self.task_labels_at_test_time)
+                self.train_dataset = ConcatEnvsWrapper(
+                    self.train_envs, add_task_ids=self.task_labels_at_train_time
+                )
+                self.val_dataset = ConcatEnvsWrapper(
+                    self.val_envs, add_task_ids=self.task_labels_at_train_time
+                )
+                self.test_dataset = ConcatEnvsWrapper(
+                    self.test_envs, add_task_ids=self.task_labels_at_test_time
+                )
             # Check that the observation/action spaces are all the same for all
             # the train/valid/test envs
-            # NOTE: Skipping this check for now.
-            # self._check_all_envs_have_same_spaces(
-            #     envs_or_env_functions=self.train_envs, wrappers=self.train_wrappers,
-            # )
-            # # TODO: Inconsistent naming between `val_envs` and `valid_wrappers` etc.
-            # self._check_all_envs_have_same_spaces(
-            #     envs_or_env_functions=self.val_envs, wrappers=self.valid_wrappers,
-            # )
-            # self._check_all_envs_have_same_spaces(
-            #     envs_or_env_functions=self.test_envs, wrappers=self.test_wrappers,
-            # )
+            self._check_all_envs_have_same_spaces(
+                envs_or_env_functions=self.train_envs, wrappers=self.train_wrappers,
+            )
+            # TODO: Inconsistent naming between `val_envs` and `valid_wrappers` etc.
+            self._check_all_envs_have_same_spaces(
+                envs_or_env_functions=self.val_envs, wrappers=self.val_wrappers,
+            )
+            self._check_all_envs_have_same_spaces(
+                envs_or_env_functions=self.test_envs, wrappers=self.test_wrappers,
+            )
         else:
             # TODO: Should we populate the `self.train_envs`, `self.val_envs` and
             # `self.test_envs` fields here as well, just to be consistent?
@@ -459,12 +559,6 @@ class IncrementalRLSetting(IncrementalAssumption, DiscreteTaskAgnosticRLSetting)
             # assert False, self.train_task_schedule
             pass
 
-    # def _setup_fields_using_temp_env(self, temp_env: MultiTaskEnvironment):
-    #     """ Setup some of the fields on the Setting using a temporary environment.
-
-    #     This temporary environment only lives during the __post_init__() call.
-    #     """
-    #     super()._setup_fields_using_temp_env(temp_env)
     def test_dataloader(
         self, batch_size: Optional[int] = None, num_workers: Optional[int] = None
     ):
@@ -472,8 +566,6 @@ class IncrementalRLSetting(IncrementalAssumption, DiscreteTaskAgnosticRLSetting)
             return super().test_dataloader(
                 batch_size=batch_size, num_workers=num_workers
             )
-
-        # raise NotImplementedError("TODO:")
 
         # IDEA: Pretty hacky, but might be cleaner than adding fields for the moment.
         test_max_steps = self.test_max_steps
@@ -638,10 +730,7 @@ class IncrementalRLSetting(IncrementalAssumption, DiscreteTaskAgnosticRLSetting)
             # at train vs test time, allow the test task schedule to have different
             # ordering than train / valid.
             task = type(self)._task_sampling_function(
-                temp_env,
-                step=step,
-                change_steps=change_steps,
-                seed=seed,
+                temp_env, step=step, change_steps=change_steps, seed=seed,
             )
             task_schedule[step] = task
 
@@ -660,6 +749,7 @@ class IncrementalRLSetting(IncrementalAssumption, DiscreteTaskAgnosticRLSetting)
         if self.stationary_context:
             task_schedule_slice = self.train_task_schedule.copy()
             assert len(task_schedule_slice) >= 2
+            assert self.nb_tasks == len(self.train_task_schedule) - 1
             # Need to pop the last task, so that we don't sample it by accident!
             max_step = max(task_schedule_slice)
             last_task = task_schedule_slice.pop(max_step)
@@ -775,16 +865,27 @@ class IncrementalRLSetting(IncrementalAssumption, DiscreteTaskAgnosticRLSetting)
             )
             task_env.close()
             if task_env.observation_space != first_env.observation_space:
-                raise RuntimeError(
-                    f"Env at task {task_id} doesn't have the same observation "
-                    f"space ({task_env.observation_space}) as the environment of "
-                    f"the first task: {first_env.observation_space}."
+                warnings.warn(
+                    RuntimeWarning(
+                        colorize(
+                            f"Env at task {task_id} doesn't have the same observation "
+                            f"space ({task_env.observation_space}) as the environment of "
+                            f"the first task: {first_env.observation_space}. "
+                            f"This isn't fully supported yet. Don't expect this to work.",
+                            "yellow",
+                        )
+                    )
                 )
             if task_env.action_space != first_env.action_space:
-                raise RuntimeError(
-                    f"Env at task {task_id} doesn't have the same action "
-                    f"space ({task_env.action_space}) as the environment of "
-                    f"the first task: {first_env.action_space}"
+                warnings.warn(
+                    RuntimeWarning(
+                        colorize(
+                            f"Env at task {task_id} doesn't have the same action "
+                            f"space ({task_env.action_space}) as the environment of "
+                            f"the first task: {first_env.action_space}",
+                            "yellow",
+                        )
+                    )
                 )
 
     def _make_wrappers(
@@ -844,7 +945,7 @@ class IncrementalRLSetting(IncrementalAssumption, DiscreteTaskAgnosticRLSetting)
 
                 wrappers.append(
                     partial(
-                        AddTaskIDWrapper,
+                        FixedTaskLabelWrapper,
                         task_label=task_label,
                         task_label_space=task_label_space,
                     )
@@ -870,42 +971,14 @@ class MTEnvAdapterWrapper(TransformObservation):
     #     return observation["env_obs"]
 
 
-from typing import Any
-
-from sequoia.common.gym_wrappers.multi_task_environment import add_task_labels
-from sequoia.common.gym_wrappers.utils import IterableWrapper
-
-
-class AddTaskIDWrapper(IterableWrapper):
-    """ Wrapper that adds always the same given task id to the observations.
-
-    Used when the list of envs for each task is passed, so that each env also has the
-    task id as part of their observation space and in their observations.
-    """
-
-    def __init__(
-        self, env: gym.Env, task_label: Optional[int], task_label_space: gym.Space
-    ):
-        super().__init__(env=env)
-        self.task_label = task_label
-        self.task_label_space = task_label_space
-        self.observation_space = add_task_labels(
-            self.env.observation_space, task_labels=task_label_space
-        )
-
-    def observation(self, observation: Union[IncrementalRLSetting.Observations, Any]):
-        return add_task_labels(observation, self.task_label)
-
-    def step(self, action):
-        obs, reward, done, info = super().step(action)
-        return self.observation(obs), reward, done, info
-
-
 def make_metaworld_env(
     env_class: Type[MetaWorldEnv], tasks: List["Task"]
 ) -> MetaWorldEnv:
     env = env_class()
     env.set_task(tasks[0])
+    # TODO: Could maybe replace this with the 'RoundRobin' or 'Random' wrapper from
+    # `multienv_wrappers.py` by making it appear like it's multiple envs, but actually
+    # share the env instance
     env = MultiTaskEnvironment(
         env,
         task_schedule={

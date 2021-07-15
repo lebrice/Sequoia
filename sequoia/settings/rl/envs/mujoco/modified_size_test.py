@@ -74,9 +74,9 @@ class ModifiedSizeEnvTests:
 
         # setting = IncrementalRLSetting(
         #     train_envs=task_envs,
-        #     steps_per_task=2_000,
+        #     train_steps_per_task=2_000,
         #     train_wrappers=RenderEnvWrapper,
-        #     test_steps=10_000,
+        #     test_max_steps=10_000,
         # )
         # assert setting.nb_tasks == nb_tasks
 

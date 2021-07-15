@@ -98,7 +98,7 @@ def test_with_controllable_episode_lengths(batch_size: int, monkeypatch):
             accumulate_losses_before_backward=False,
         ),
     )
-    # TODO: Simulating as if the output head were attached to a BaselineModel.
+    # TODO: Simulating as if the output head were attached to a BaseModel.
     PolicyHead.base_model_optimizer = torch.optim.Adam(
         output_head.parameters(), lr=1e-3
     )
@@ -230,7 +230,7 @@ def test_loss_is_nonzero_at_episode_end(batch_size: int):
         reward_space=reward_space,
         hparams=PolicyHead.HParams(accumulate_losses_before_backward=False),
     )
-    # TODO: Simulating as if the output head were attached to a BaselineModel.
+    # TODO: Simulating as if the output head were attached to a BaseModel.
     PolicyHead.base_model_optimizer = torch.optim.Adam(head.parameters(), lr=1e-3)
     head.train()
 
@@ -303,7 +303,7 @@ def test_done_is_sometimes_True_when_iterating_through_env(batch_size: int):
         if any(obs["done"]):
             break
     else:
-        assert False, "Never encountered done=True!"
+        pytest.fail(reason="Never encountered done=True!")
 
 
 @pytest.mark.parametrize("batch_size", [1, 2, 5])
@@ -458,7 +458,7 @@ def test_buffers_are_stacked_correctly(monkeypatch):
         actions = output_head(observations.float(), representations.float())
 
         # Wrap things up to pretend like the output head is being used in the
-        # BaselineModel:
+        # BaseModel:
 
         forward_pass = ForwardPass(
             observations=observations, representations=representations, actions=actions,

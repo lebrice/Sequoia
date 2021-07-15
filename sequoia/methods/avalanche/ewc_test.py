@@ -26,6 +26,32 @@ class TestEWCMethod(_TestAvalancheMethod):
     ignored_parameter_differences: ClassVar[List[str]] = _TestAvalancheMethod.ignored_parameter_differences + [
         "decay_factor",
     ]
+    
+    
+    @classmethod
+    @pytest.fixture(params=[
+        SimpleCNN,
+        SimpleMLP,
+        xfail_param(
+            MTSimpleCNN,
+            reason=(
+                "Shape Mismatch between the saved parameter importance and the "
+                "current weight tensor in EWC plugin."
+            ),
+        ),
+        xfail_param(
+            MTSimpleMLP,
+            reason=(
+                "Shape Mismatch between the saved parameter importance and the "
+                "current weight tensor in EWC plugin."
+            ),
+        ),
+    ])
+    def method(cls, config: Config, request) -> AvalancheMethod:
+        """ Fixture that returns the Method instance to use when testing/debugging.
+        """
+        model_type = request.param
+        return cls.Method(model=model_type, train_mb_size=10, train_epochs=1)
 
     @pytest.mark.timeout(60)
     @pytest.mark.parametrize(
@@ -94,73 +120,73 @@ class TestEWCMethod(_TestAvalancheMethod):
         results = short_class_incremental_setting.apply(method, config)
         assert 0.05 < results.average_final_performance.objective
 
-    @pytest.mark.timeout(60)
-    @pytest.mark.parametrize(
-        "model_type",
-        [
-            SimpleCNN,
-            SimpleMLP,
-            xfail_param(
-                MTSimpleCNN,
-                reason=(
-                    "Shape Mismatch between the saved parameter importance and the "
-                    "current weight tensor in EWC plugin."
-                ),
-            ),
-            # MTSimpleMLP,
-            xfail_param(
-                MTSimpleMLP,
-                reason=(
-                    "Shape Mismatch between the saved parameter importance and the "
-                    "current weight tensor in EWC plugin."
-                ),
-            ),
-        ],
-    )
-    def test_short_continual_sl_setting(
-        self,
-        model_type: Type[Module],
-        short_continual_sl_setting: ContinualSLSetting,
-        config: Config,
-    ):
-        super().test_short_continual_sl_setting(
-            model_type=model_type,
-            short_continual_sl_setting=short_continual_sl_setting,
-            config=config,
-        )
+    # @pytest.mark.timeout(60)
+    # @pytest.mark.parametrize(
+    #     "model_type",
+    #     [
+    #         SimpleCNN,
+    #         SimpleMLP,
+    #         xfail_param(
+    #             MTSimpleCNN,
+    #             reason=(
+    #                 "Shape Mismatch between the saved parameter importance and the "
+    #                 "current weight tensor in EWC plugin."
+    #             ),
+    #         ),
+    #         # MTSimpleMLP,
+    #         xfail_param(
+    #             MTSimpleMLP,
+    #             reason=(
+    #                 "Shape Mismatch between the saved parameter importance and the "
+    #                 "current weight tensor in EWC plugin."
+    #             ),
+    #         ),
+    #     ],
+    # )
+    # def test_short_continual_sl_setting(
+    #     self,
+    #     model_type: Type[Module],
+    #     short_continual_sl_setting: ContinualSLSetting,
+    #     config: Config,
+    # ):
+    #     super().test_short_continual_sl_setting(
+    #         model_type=model_type,
+    #         short_continual_sl_setting=short_continual_sl_setting,
+    #         config=config,
+    #     )
 
-    @pytest.mark.timeout(60)
-    @pytest.mark.parametrize(
-        "model_type",
-        [
-            SimpleCNN,
-            SimpleMLP,
-            xfail_param(
-                MTSimpleCNN,
-                reason=(
-                    "Shape Mismatch between the saved parameter importance and the "
-                    "current weight tensor in EWC plugin."
-                ),
-            ),
-            # MTSimpleMLP,
-            xfail_param(
-                MTSimpleMLP,
-                reason=(
-                    "Shape Mismatch between the saved parameter importance and the "
-                    "current weight tensor in EWC plugin."
-                ),
-            ),
-        ],
-    )
-    def test_short_discrete_task_agnostic_sl_setting(
-        self,
-        model_type: Type[Module],
-        short_discrete_task_agnostic_sl_setting: DiscreteTaskAgnosticSLSetting,
-        config: Config,
-    ):
-        super().test_short_discrete_task_agnostic_sl_setting(
-            model_type=model_type,
-            short_discrete_task_agnostic_sl_setting=short_discrete_task_agnostic_sl_setting,
-            config=config,
-        )
+    # @pytest.mark.timeout(60)
+    # @pytest.mark.parametrize(
+    #     "model_type",
+    #     [
+    #         SimpleCNN,
+    #         SimpleMLP,
+    #         xfail_param(
+    #             MTSimpleCNN,
+    #             reason=(
+    #                 "Shape Mismatch between the saved parameter importance and the "
+    #                 "current weight tensor in EWC plugin."
+    #             ),
+    #         ),
+    #         # MTSimpleMLP,
+    #         xfail_param(
+    #             MTSimpleMLP,
+    #             reason=(
+    #                 "Shape Mismatch between the saved parameter importance and the "
+    #                 "current weight tensor in EWC plugin."
+    #             ),
+    #         ),
+    #     ],
+    # )
+    # def test_short_discrete_task_agnostic_sl_setting(
+    #     self,
+    #     model_type: Type[Module],
+    #     short_discrete_task_agnostic_sl_setting: DiscreteTaskAgnosticSLSetting,
+    #     config: Config,
+    # ):
+    #     super().test_short_discrete_task_agnostic_sl_setting(
+    #         model_type=model_type,
+    #         short_discrete_task_agnostic_sl_setting=short_discrete_task_agnostic_sl_setting,
+    #         config=config,
+    #     )
 

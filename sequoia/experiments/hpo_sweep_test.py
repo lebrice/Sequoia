@@ -26,7 +26,7 @@ class MockResults(Results):
     def make_plots(self):
         return {}
 
-    def to_log_dict(self):
+    def to_log_dict(self, verbose: bool = False):
         return {"hparams": self.hparams.to_dict() if isinstance(self.hparams, Serializable) else self.hparams, "objective": self.objective}
 
     def summary(self):
@@ -50,16 +50,19 @@ def set_argv_for_debug(monkeypatch):
     monkeypatch.setattr(sys, "argv", shlex.split("main.py --debug --fast_dev_run"))
 
 
-@pytest.fixture(params=all_methods)
+@pytest.fixture(params=sorted(all_methods, key=str))
 def method_type(request, monkeypatch, set_argv_for_debug):
     method_class: Type[Method] = request.param
     return method_class
 
 
-@pytest.fixture(params=all_settings)
+from sequoia.methods.method_test import key_fn
+@pytest.fixture(params=sorted(all_settings, key=key_fn))
 def setting_type(request, monkeypatch, set_argv_for_debug):
     setting_class: Type[Setting] = request.param
     monkeypatch.setattr(setting_class, "apply", mock_apply)
+    # TODO: Not sure what this was doing, but I think it was important that all methods
+    # get imported here.
     for method_type in setting_class.get_applicable_methods():
         pass
     return setting_class

@@ -258,7 +258,7 @@ def test_last_batch():
     assert perf.n_samples == 110
 
 
-from sequoia.methods.models.baseline_model import BaselineModel
+from sequoia.methods.models.base_model import BaseModel
 
 
 def test_last_batch_baseline_model():
@@ -284,27 +284,23 @@ def test_last_batch_baseline_model():
         env, observations_type=Observations, actions_type=Actions, rewards_type=Rewards
     )
     env = MeasureSLPerformanceWrapper(env, first_epoch_only=True)
+    
+    # FIXME: Hacky setup: Should instead have a way of using a 'test' setting with a
+    # configurable in-memory test dataset.
     setting = ClassIncrementalSetting()
     setting.train_env = env
-    model = BaselineModel(
-        setting=setting, hparams=BaselineModel.HParams(), config=Config(debug=True)
+    model = BaseModel(
+        setting=setting, hparams=BaseModel.HParams(), config=Config(debug=True)
     )
 
     for i, (obs, rew) in enumerate(env):
-        # assert rew is None
-        # if i != 5:
-        #     assert obs.batch_size == 20, i
-        # else:
-        #     assert obs.batch_size == 10, i
-        # actions = Actions(y_pred=torch.arange(i * 20 , (i+1) * 20)[:obs.batch_size])
-        # rewards = env.send(actions)
-        # assert (rewards.y == torch.arange(i * 20 , (i+1) * 20)[:obs.batch_size]).all()
         obs = dataclasses.replace(
             obs, task_labels=torch.ones([obs.x.shape[0]], device=obs.x.device)
         )
         assert rew is None
-        stuff = model.training_step((obs, rew), batch_idx=i)
-        print(stuff)
+        forward_pass = model.training_step((obs, rew), batch_idx=i)
+        loss = model.training_step_end([forward_pass])
+        print(loss)
 
     perf = env.get_average_online_performance()
     assert perf.n_samples == 110

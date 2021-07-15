@@ -207,8 +207,8 @@ def test_task_label_space(dataset_name: str):
 # TODO: This renders, even when we're using the pytest-xvfb plugin, which might
 # mean that it's actually creating a Display somewhere?
 @pytest.mark.timeout(30)
-def test_render():
-    setting = ClassIncrementalSetting(dataset="mnist")
+def test_render(config: Config):
+    setting = ClassIncrementalSetting(dataset="mnist", config=config)
     import matplotlib.pyplot as plt
 
     plt.ion()

@@ -7,16 +7,16 @@ from typing import (Any, Callable, Dict, List, Optional, Sequence, Tuple, Type,
 import gym
 import numpy as np
 from gym import Space, spaces
-from torch import Tensor
-
 from sequoia.common import Batch
 from sequoia.common.gym_wrappers import IterableWrapper, TransformObservation
+from sequoia.common.gym_wrappers.convert_tensors import supports_tensors
 from sequoia.common.spaces import Sparse, TypedDictSpace
 from sequoia.common.spaces.named_tuple import NamedTuple, NamedTupleSpace
 from sequoia.settings.base.environment import Environment
 from sequoia.settings.base.objects import (Actions, ActionType, Observations,
                                            ObservationType, Rewards,
                                            RewardType)
+from torch import Tensor
 
 T = TypeVar("T")
 
@@ -86,8 +86,17 @@ class TypedObjectsWrapper(IterableWrapper, Environment[ObservationType, ActionTy
         return self.Observations(observation)
 
     def action(self, action: ActionType) -> Any:
-        return unwrap(action)
-    
+        # TODO: Assert this eventually
+        # assert isinstance(action, Actions), action
+        if isinstance(action, Actions):
+            action = action.y_pred
+        if isinstance(action, Tensor) and not supports_tensors(self.env.action_space):
+            action = action.detach().cpu().numpy()
+        if action not in self.env.action_space:
+            if isinstance(self.env.action_space, spaces.Tuple):
+                action = tuple(action)
+        return action
+
     def reward(self, reward: Any) -> RewardType:
         return self.Rewards(reward)
 

@@ -34,12 +34,11 @@ class TestDQN(DiscreteActionSpaceMethodTests, OffPolicyMethodTests):
         setting = IncrementalRLSetting(
             dataset="monsterkong",
             nb_tasks=2,
-            steps_per_task=1_000,
+            train_steps_per_task=1_000,
             test_steps_per_task=1_000,
         )
         assert setting.train_max_steps == 2_000
-        assert setting.max_steps == 2_000
-        assert setting.test_steps == 2_000
+        assert setting.test_max_steps == 2_000
         assert setting.nb_tasks == 2
         assert setting.observation_space.x == Image(0, 255, shape=(64, 64, 3), dtype=np.uint8)
         assert setting.observation_space.task_labels.n == 2

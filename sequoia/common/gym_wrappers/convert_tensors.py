@@ -12,6 +12,8 @@ from sequoia.common.spaces.named_tuple import NamedTupleSpace
 from sequoia.common.spaces.typed_dict import TypedDictSpace
 from sequoia.utils.generic_functions import from_tensor, move, to_tensor
 from sequoia.utils.logging_utils import get_logger
+from collections import abc
+from dataclasses import dataclass, is_dataclass, replace
 from .utils import IterableWrapper, StepResult
 
 logger = get_logger(__file__)
@@ -68,9 +70,21 @@ class ConvertToFromTensors(IterableWrapper):
         return to_tensor(self.observation_space, observation, device=self.device)
 
     def action(self, action):
+        if isinstance(self.action_space, spaces.MultiDiscrete) and is_dataclass(action):
+            # TODO: Fixme, the actions don't currently fit their space!
+            action_np = replace(action, y_pred=from_tensor(self.action_space, action.y_pred))
+            # FIXME: for now, unwrapping the actions
+            action = action_np["y_pred"]
+            return action
         return from_tensor(self.action_space, action)
 
     def reward(self, reward):
+        # FIXME: This doesn't exactly work when our 'reward space' isn't a dict and
+        # 'reward' is a Batch object, and might also be the same with the actions above
+        if isinstance(self.reward_space, spaces.MultiDiscrete) and is_dataclass(reward):
+            return replace(
+                reward, y=to_tensor(self.reward_space, reward.y, device=self.device)
+            )
         return to_tensor(self.reward_space, reward, device=self.device)
 
     def step(self, action: Tensor) -> StepResult:
@@ -81,16 +95,21 @@ class ConvertToFromTensors(IterableWrapper):
         observation, reward, done, info = result
         observation = self.observation(observation)
         reward = self.reward(reward)
-        done = torch.as_tensor(done, device=self.device)
+        # NOTE: Not sure this is useful, actually!
+        # done = torch.as_tensor(done, device=self.device)
+        
         # We could actually do this!
         # info = np.ndarray(info)
         if isinstance(result, StepResult):
-            return type(result)(**dict(observation=observation, reward=reward, done=done, info=info))
+            return type(result)(
+                **dict(observation=observation, reward=reward, done=done, info=info)
+            )
         else:
             return StepResult(observation, reward, done, info)
 
 
 def supports_tensors(space: S) -> bool:
+    # TODO: Remove this, instead use a generic function
     return getattr(space, "_supports_tensors", False)
 
 
@@ -99,6 +118,7 @@ def has_tensor_support(space: S) -> bool:
 
 
 def _mark_supports_tensors(space: S) -> None:
+    # TODO: Remove this!
     setattr(space, "_supports_tensors", True)
 
 
@@ -139,7 +159,7 @@ def add_tensor_support(space: S, device: torch.device = None) -> S:
 
 
 @add_tensor_support.register
-def _add_tensor_support(space: Image, device: torch.device = None) -> Image:
+def _(space: Image, device: torch.device = None) -> Image:
     tensor_box = TensorBox(
         space.low, space.high, shape=space.shape, dtype=space.dtype, device=device
     )
@@ -147,21 +167,20 @@ def _add_tensor_support(space: Image, device: torch.device = None) -> Image:
 
 
 @add_tensor_support.register
-def _add_tensor_support(space: spaces.Dict, device: torch.device = None) -> spaces.Dict:
+def _(space: spaces.Dict, device: torch.device = None) -> spaces.Dict:
     space = type(space)(
         **{
             key: add_tensor_support(value, device=device)
             for key, value in space.spaces.items()
         }
     )
+    # TODO: Remove this '_mark_supports_tensors' and instead use a generic function.
     _mark_supports_tensors(space)
     return space
 
 
 @add_tensor_support.register
-def _add_tensor_support(
-    space: TypedDictSpace, device: torch.device = None
-) -> TypedDictSpace:
+def _(space: TypedDictSpace, device: torch.device = None) -> TypedDictSpace:
     space = type(space)(
         {
             key: add_tensor_support(value, device=device)
@@ -174,7 +193,7 @@ def _add_tensor_support(
 
 
 @add_tensor_support.register(NamedTupleSpace)
-def _add_tensor_support(space: Dict, device: torch.device = None) -> Dict:
+def _(space: Dict, device: torch.device = None) -> Dict:
     space = type(space)(
         **{
             key: add_tensor_support(value, device=device)
@@ -187,21 +206,39 @@ def _add_tensor_support(space: Dict, device: torch.device = None) -> Dict:
 
 
 @add_tensor_support.register(spaces.Tuple)
-def _add_tensor_support(space: Dict, device: torch.device = None) -> Dict:
+def _(space: Dict, device: torch.device = None) -> Dict:
     space = type(space)(
         [add_tensor_support(value, device=device) for value in space.spaces]
     )
     _mark_supports_tensors(space)
     return space
 
+# TODO: Should this be moved to the place where these are defined instead?
+from sequoia.common.spaces.tensor_spaces import (
+    TensorBox,
+    TensorDiscrete,
+    TensorMultiDiscrete,
+)
 
-from sequoia.common.spaces.tensor_box import TensorBox
 
-
-@add_tensor_support.register(spaces.Box)
-def _add_tensor_support(space: spaces.Box, device: torch.device = None) -> spaces.Box:
+@add_tensor_support.register
+def _(space: spaces.Box, device: torch.device = None) -> spaces.Box:
     space = TensorBox(
         space.low, space.high, shape=space.shape, dtype=space.dtype, device=device
     )
+    _mark_supports_tensors(space)
+    return space
+
+
+@add_tensor_support.register
+def _(space: spaces.Discrete, device: torch.device = None) -> spaces.Box:
+    space = TensorDiscrete(n=space.n, device=device)
+    _mark_supports_tensors(space)
+    return space
+
+
+@add_tensor_support.register
+def _(space: spaces.MultiDiscrete, device: torch.device = None) -> spaces.Box:
+    space = TensorMultiDiscrete(nvec=space.nvec, device=device)
     _mark_supports_tensors(space)
     return space

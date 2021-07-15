@@ -10,7 +10,7 @@ import pytest
 from gym import spaces
 from sequoia.common.spaces import Image, Sparse, TypedDictSpace
 from sequoia.common.transforms import Transforms
-from sequoia.methods.baseline_method import BaselineMethod
+from sequoia.methods.base_method import BaseMethod
 from sequoia.methods.random_baseline import RandomBaselineMethod
 from sequoia.settings import Setting, all_settings
 from sequoia.settings.rl import IncrementalRLSetting, TaskIncrementalRLSetting
@@ -19,9 +19,9 @@ from sequoia.conftest import slow
 from sequoia.common.metrics.rl_metrics import EpisodeMetrics
 
 from .setting_proxy import SettingProxy
+from sequoia.methods.method_test import key_fn
 
-
-@pytest.mark.parametrize("setting_type", all_settings)
+@pytest.mark.parametrize("setting_type", sorted(all_settings, key=key_fn))
 def test_spaces_match(setting_type: Type[Setting]):
     setting = setting_type()
     s_proxy = SettingProxy(setting_type)
@@ -110,10 +110,10 @@ def test_random_baseline_SL_track():
 @slow
 @pytest.mark.timeout(300)
 def test_baseline_SL_track(config):
-    """ Applies the BaselineMethod on something ressembling the SL track of the
+    """ Applies the BaseMethod on something ressembling the SL track of the
     competition.
     """
-    method = BaselineMethod(max_epochs=1)
+    method = BaseMethod(max_epochs=1)
     import numpy as np
 
     class_order = np.random.permutation(48).tolist()

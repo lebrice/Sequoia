@@ -1,21 +1,21 @@
-@startuml baseline_model
+@startuml base_model
 
 ' !include output_heads.puml
 
-package baseline_model {
+package base_model {
 
-    package base_model {
-        abstract class BaseModel {
-            + hparams: BaseModel.HParams
+    package model {
+        abstract class Model {
+            + hparams: Model.HParams
             + encoder: nn.Module
             + output_head: OutputHead
             + forward(Observations): ForwardPass
             + get_loss(ForwardPass, Rewards): Loss
             + get_actions(observations: Observations, action_space: Space): Actions
         }
-        ' class BaseModel.HParams extends BaseHParams {}
+        ' class Model.HParams extends BaseHParams {}
         ' class BaseHParams {
-        class BaseModel.HParams {
+        class Model.HParams {
             {static} + available_optimizers: Dict[str, Type[Optimizer]]
             {static} + available_encoders: Dict[str, Type[nn.Module]]
 
@@ -34,21 +34,21 @@ package baseline_model {
 
     together {
         package semi_supervised_model {
-            abstract class SemiSupervisedModel extends BaseModel {
+            abstract class SemiSupervisedModel extends Model {
                 + forward(Observations): ForwardPass
                 + get_loss(ForwardPass, Optional[Rewards]): Loss
             }
-            abstract class SemiSupervisedModel.HParams extends BaseModel.HParams {
+            abstract class SemiSupervisedModel.HParams extends Model.HParams {
                 + knn_callback: KnnCallback note (todo: unused atm)
             }
         }
         package self_supervised_model {
-            abstract class SelfSupervisedModel extends BaseModel {
+            abstract class SelfSupervisedModel extends Model {
                 + hparams: SelfSupervisedModel.HParams
                 + tasks: dict[str, AuxiliaryTask]
                 + add_auxiliary_task(task AuxiliaryTask)
             }
-            abstract class SelfSupervisedModel.HParams extends BaseModel.HParams {
+            abstract class SelfSupervisedModel.HParams extends Model.HParams {
                 + simclr: Optional[SimCLRTask.Options]
                 + vae: Optional[VAEReconstructionTask.Options]
                 + ae: Optional[AEReconstructionTask.Options]
@@ -57,34 +57,34 @@ package baseline_model {
         }
 
         package multihead_model {
-            abstract class MultiHeadModel extends BaseModel {
+            abstract class MultiHeadModel extends Model {
                 + output_heads: dict[str, OutputHead]
                 + forward(Observations): ForwardPass
                 + on_task_switch(task_id: Optional[int])
             }
 
-            abstract class MultiHeadModel.HParams extends BaseModel.HParams {
+            abstract class MultiHeadModel.HParams extends Model.HParams {
                 + multihead: Optional[bool]
             }
         }
     }
-    package baseline_model as baseline_model.baseline_model {
-        class BaselineModel extends SemiSupervisedModel, SelfSupervisedModel, MultiHeadModel
+    package base_model as base_model.base_model {
+        class BaseModel extends SemiSupervisedModel, SelfSupervisedModel, MultiHeadModel
         {
-            + hparams: BaselineModel.HParams
+            + hparams: BaseModel.HParams
         }
-        class BaselineModel.HParams extends SelfSupervisedModel.HParams, MultiHeadModel.HParams, SemiSupervisedModel.HParams {
+        class BaseModel.HParams extends SelfSupervisedModel.HParams, MultiHeadModel.HParams, SemiSupervisedModel.HParams {
         }
     }
 
-BaseModel "1" *-- "1" OutputHead
+Model "1" *-- "1" OutputHead
+' Model *-- Model.HParams
 ' BaseModel *-- BaseModel.HParams
-' BaselineModel *-- BaselineModel.HParams
 ' SemiSupervisedModel *-- SemiSupervisedModel.HParams
 ' SelfSupervisedModel *-- SelfSupervisedModel.HParams
 ' MultiHeadModel *-- MultiHeadModel.HParams
 SelfSupervisedModel "1" o-- "many" aux_tasks.AuxiliaryTask
-' BaselineMethod "1" *--> "1" BaselineModel : uses
+' BaseMethod "1" *--> "1" BaseModel : uses
 MultiHeadModel "1" *-- "many" OutputHead
 ' MultiHeadModel "1" *-- "1" OutputHead
 

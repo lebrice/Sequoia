@@ -146,7 +146,7 @@ package settings {
 
                 + dataset: str = "cartpole"
                 + nb_tasks: int = 1
-                + max_steps: int = 10000
+                + train_max_steps: int = 10000
                 + max_episodes: Optional[int] = None
                 + steps_per_task: Optional[int] = None
                 + episodes_per_task: Optional[int] = None

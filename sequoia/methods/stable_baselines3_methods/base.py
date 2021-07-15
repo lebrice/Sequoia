@@ -211,10 +211,12 @@ class StableBaselines3Method(Method, ABC, target_setting=ContinualRLSetting):
             partial(TransformObservation, f=operator.itemgetter("x")),
             # partial(TransformAction, f=operator.itemgetter("y_pred"),
             partial(TransformReward, f=operator.itemgetter("y")),
+            RemoveInfoWrapper,
         ]
         self.extra_valid_wrappers: List[Callable[[gym.Env], gym.Env]] = [
             partial(TransformObservation, f=operator.itemgetter("x")),
             partial(TransformReward, f=operator.itemgetter("y")),
+            RemoveInfoWrapper,
         ]
         # Number of timesteps to train on for each task.
         self.total_timesteps_per_task: int = 0
@@ -414,7 +416,7 @@ class StableBaselines3Method(Method, ABC, target_setting=ContinualRLSetting):
     def clear_buffers(self):
         """ Clears out the experience buffer of the Policy. """
         # I think that's the right way to do it.. not sure.
-        assert False, self.model.replay_buffer.pos
+        # assert False, self.model.replay_buffer.pos
         if self.model:
             # TODO: These are really interesting methods!
             # self.model.save_replay_buffer

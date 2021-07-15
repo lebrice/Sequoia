@@ -39,13 +39,8 @@ class TestIncrementalRLSetting(DiscreteTaskAgnosticRLSettingTests):
     Setting: ClassVar[Type[Setting]] = IncrementalRLSetting
     dataset: pytest.fixture = make_dataset_fixture(IncrementalRLSetting)
 
-    @pytest.fixture(params=[1, 2])
-    def nb_tasks(self, request):
-        n = request.param
-        return n
-
     @pytest.fixture()
-    def setting_kwargs(self, dataset: str, nb_tasks: int):
+    def setting_kwargs(self, dataset: str, nb_tasks: int, config: Config):
         """ Fixture used to pass keyword arguments when creating a Setting. """
         kwargs = {"dataset": dataset, "nb_tasks": nb_tasks, "max_episode_steps": 100}
         if dataset.lower().startswith(
@@ -54,6 +49,9 @@ class TestIncrementalRLSetting(DiscreteTaskAgnosticRLSettingTests):
             # kwargs["train_max_steps"] = 5_000
             # kwargs["max_episode_steps"] = 100
             pass
+        # NOTE: Using 0 workers so I can parallelize the tests without killing my PC.
+        config.num_workers = 0
+        kwargs["config"] = config
         return kwargs
 
     def validate_results(
@@ -111,7 +109,7 @@ class TestIncrementalRLSetting(DiscreteTaskAgnosticRLSettingTests):
         setting = self.Setting(
             dataset="CartPole-v0",
             monitor_training_performance=True,
-            # steps_per_task=500,
+            # train_steps_per_task=500,
             nb_tasks=2,
             train_max_steps=1000,
             test_max_steps=1000,
@@ -160,7 +158,7 @@ class TestIncrementalRLSetting(DiscreteTaskAgnosticRLSettingTests):
             nb_tasks=5,
             train_max_steps=500,
             test_max_steps=500,
-            # steps_per_task=100,
+            # train_steps_per_task=100,
             # test_steps_per_task=100,
             train_transforms=[],
             test_transforms=[],
@@ -288,6 +286,7 @@ def test_mtenv_meta_world_support():
 
 # @pytest.mark.no_xvfb
 # @pytest.mark.xfail(reason="TODO: Rethink how we want to integrate MetaWorld envs.")
+@pytest.mark.skip(reason="BUG: timeout handler seems to be bugged, test lasts forever")
 @metaworld_required
 @pytest.mark.timeout(60)
 def test_metaworld_support(config: Config):
@@ -301,8 +300,6 @@ def test_metaworld_support(config: Config):
     from metaworld import MetaWorldEnv
 
     # TODO: Add option of passing a benchmark instance?
-    # TODO: Make tests better here:
-    # TODO: Add more tests for this?
     setting = IncrementalRLSetting(
         dataset="MT10",
         config=config,
@@ -311,6 +308,12 @@ def test_metaworld_support(config: Config):
         test_max_steps=500,
     )
     assert setting.nb_tasks == len(setting.train_envs)
+    assert setting.nb_tasks == 10
+    assert setting.train_max_steps == 500
+    assert setting.test_max_steps == 500
+    assert setting.train_steps_per_task == 50
+    assert setting.test_steps_per_task == 50
+    
     method = DummyMethod()
     results = setting.apply(method, config=config)
     assert results.summary()
@@ -328,6 +331,13 @@ def test_continual_world_support(dataset: str, config: Config):
     """
     # TODO: Add option of passing a benchmark instance? That might make it quicker to
     # run tests?
+    setting = IncrementalRLSetting(dataset=dataset, config=config,)
+    assert setting.nb_tasks == 10 if dataset == "CW10" else 20
+    assert setting.train_steps_per_task == 1_000_000
+    assert setting.train_max_steps == 1_000_000 * setting.nb_tasks
+    assert setting.test_steps_per_task == 10_000
+    assert setting.test_max_steps == 10_000 * setting.nb_tasks
+
     setting = IncrementalRLSetting(
         dataset=dataset,
         config=config,
@@ -375,7 +385,7 @@ def test_metaworld_auto_task_schedule(pass_env_id_instead_of_env_instance: bool)
     # is used.
     # setting = TaskIncrementalRLSetting(
     #     dataset=env_name if pass_env_id_instead_of_env_instance else env,
-    #     steps_per_task=1000,
+    #     train_steps_per_task=1000,
     # )
     # assert setting.nb_tasks == 50
     # assert setting.steps_per_task == 1000
@@ -476,14 +486,10 @@ class TestPassingEnvsForEachTask:
     use for each task.
     """
 
-    # @pytest.mark.xfail(
-    #     reason="TODO: Check all env spaces to make sure they match, ideally without "
-    #     "having to instiate them."
-    # )
-    def test_raises_error_when_envs_have_different_obs_spaces(self):
+    def test_raises_warning_when_envs_have_different_obs_spaces(self):
         task_envs = ["CartPole-v0", "Pendulum-v0"]
-        with pytest.raises(
-            RuntimeError, match="doesn't have the same observation space"
+        with pytest.warns(
+            RuntimeWarning, match="doesn't have the same observation space"
         ):
             setting = IncrementalRLSetting(train_envs=task_envs)
             setting.train_dataloader()
@@ -554,10 +560,10 @@ class TestPassingEnvsForEachTask:
         assert setting.train_envs == ["CartPole-v0", "Pendulum-v0"]
         # TODO: Not using this:
 
-    def test_raises_error_when_envs_have_different_obs_spaces(self):
+    def test_raises_warning_when_envs_have_different_obs_spaces(self):
         task_envs = ["CartPole-v0", "Pendulum-v0"]
-        with pytest.raises(
-            RuntimeError, match="doesn't have the same observation space"
+        with pytest.warns(
+            RuntimeWarning, match="doesn't have the same observation space"
         ):
             setting = IncrementalRLSetting(train_envs=task_envs)
             setting.train_dataloader()
@@ -613,9 +619,9 @@ def test_incremental_mujoco_like_LPG_FTW():
 
     setting = IncrementalRLSetting(
         train_envs=task_envs,
-        steps_per_task=10_000,
+        train_steps_per_task=10_000,
         train_wrappers=RenderEnvWrapper,
-        test_steps=10_000,
+        test_max_steps=10_000,
     )
     assert setting.nb_tasks == nb_tasks
 

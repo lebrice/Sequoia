@@ -1,5 +1,5 @@
 """ Defines a (hopefully general enough) Output Head class to be used by the
-BaselineMethod when applied on an RL setting.
+BaseMethod when applied on an RL setting.
 
 NOTE: The training procedure is fundamentally on-policy atm, i.e. the
 observation is a single state, not a rollout, and the reward is the
@@ -234,7 +234,7 @@ class PolicyHead(ClassificationHead):
             action_dist=action_dist,
         )
         return actions
-    
+
     T = TypeVar("T")
 
     def to(self: T,
@@ -292,7 +292,7 @@ class PolicyHead(ClassificationHead):
         if self.batch_size != forward_pass.batch_size:
             raise NotImplementedError(
                 "TODO: The batch size changed, because the batch contains different "
-                "tasks. The BaselineModel isn't yet applicable in the setup where "
+                "tasks. The BaseModel isn't yet applicable in the setup where "
                 "there are multiple different tasks in the same batch in RL. "
             )
             # IDEA: Need to get access to the 'original' env indices (before slicing),
@@ -341,39 +341,35 @@ class PolicyHead(ClassificationHead):
                 self.detach_all_buffers()
                 self.num_episodes_since_update[:] = 0
                 return returned_loss
-            else:
-                return Loss(self.name)
-        else:
-            # Perform the backward pass as soon as a loss is available (with
-            # retain_graph=True).
-            if all(self.num_episodes_since_update >= self.hparams.min_episodes_before_update):
-                # Every environment has seen the required number of episodes.
-                # We return the loss for this step, with gradients, to indicate to the
-                # Model that it can perform the backward pass and update the weights.
-                returned_loss = self.loss
-                self.loss = Loss(self.name)
-                self.detach_all_buffers()
-                self.num_episodes_since_update[:] = 0
-                return returned_loss
+            return Loss(self.name)
 
-            elif self.loss.requires_grad:
-                # Not all environments are done, but we have a Loss from one of them.
-                self.loss.backward(retain_graph=True)
-                # self.loss will be reset at each step in the `forward` method above.
-                return self.loss.detach()
+        # Perform the backward pass as soon as a loss is available (with
+        # retain_graph=True).
+        if all(self.num_episodes_since_update >= self.hparams.min_episodes_before_update):
+            # Every environment has seen the required number of episodes.
+            # We return the loss for this step, with gradients, to indicate to the
+            # Model that it can perform the backward pass and update the weights.
+            returned_loss = self.loss
+            self.loss = Loss(self.name)
+            self.detach_all_buffers()
+            self.num_episodes_since_update[:] = 0
+            return returned_loss
 
-            else:
-                # TODO: Why is self.loss non-zero here?
-                if self.loss.loss != 0.:
-                    # BUG: This is a weird edge-case, where at least one env produced
-                    # a loss, but that loss doesn't require grad.
-                    # This should only happen if the model isn't in training mode, for
-                    # instance.
-                    # assert not self.training, self.loss
-                    # return self.loss
-                    pass
-                return self.loss
-        assert False, f"huh? {self.loss}"
+        if self.loss.requires_grad:
+            # Not all environments are done, but we have a Loss from one of them.
+            self.loss.backward(retain_graph=True)
+            # self.loss will be reset at each step in the `forward` method above.
+            return self.loss.detach()
+
+        # TODO: Why is self.loss non-zero here?
+        if self.loss.loss != 0.:
+            # BUG: This is a weird edge-case, where at least one env produced
+            # a loss, but that loss doesn't require grad.
+            # This should only happen if the model isn't in training mode, for
+            # instance.
+            # assert not self.training, self.loss
+            # return self.loss
+            pass
         return self.loss
 
     def on_episode_end(self, env_index: int) -> None:

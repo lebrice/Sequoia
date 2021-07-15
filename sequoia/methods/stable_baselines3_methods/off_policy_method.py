@@ -142,10 +142,10 @@ class OffPolicyMethod(StableBaselines3Method, ABC):
 
         # NOTE: Need to change some attributes depending on the maximal number of steps
         # in the environment allowed in the given Setting.
-        if setting.max_steps:
+        if setting.train_max_steps:
             logger.info(
-                f"Total training steps are limited to {setting.steps_per_task} steps "
-                f"per task, {setting.max_steps} steps in total."
+                f"Total training steps are limited to {setting.train_steps_per_task} "
+                f"steps per task, {setting.train_max_steps} steps in total."
             )
             ten_percent_of_step_budget = setting.steps_per_phase // 10
 
@@ -162,7 +162,7 @@ class OffPolicyMethod(StableBaselines3Method, ABC):
                     f"The model was originally going to use the first "
                     f"{self.hparams.learning_starts} steps for pure random "
                     f"exploration, but the setting has a max number of steps set to "
-                    f"{setting.max_steps}, therefore we will limit the number of "
+                    f"{setting.train_max_steps}, therefore we will limit the number of "
                     f"exploration steps to 10% of that 'step budget' = "
                     f"{ten_percent_of_step_budget} steps."
                 )

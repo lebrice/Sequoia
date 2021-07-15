@@ -61,17 +61,16 @@ class EnvDataset(
         max_episodes: Optional[int] = None,
         max_steps_per_episode: Optional[int] = None,
     ):
-        # TODO: Add an ActionLimit wrapper for max_steps and the EpisodeLimit wrapper
-        # for max_episodes.
+        # TODO: Remove these options
         if max_steps:
             from .action_limit import ActionLimit
             env = ActionLimit(env, max_steps=max_steps)
+        self._max_steps = max_steps
         if max_episodes:
             from .episode_limit import EpisodeLimit
             env = EpisodeLimit(env, max_episodes=max_episodes)
+        self._max_episodes = max_episodes
 
-        self.max_steps = getattr(env, "max_steps", max_steps)
-        self.max_episodes = getattr(env, "max_episodes", max_episodes)
 
         super().__init__(env=env)
         if isinstance(env.unwrapped, VectorEnv):
@@ -85,10 +84,10 @@ class EnvDataset(
                 )
 
         # Maximum number of episodes
-        # self.max_episodes = None
+        # self._max_episodes = None
         # Maximum number of steps per iteration.
-        # self.max_steps = None
-        self.max_steps_per_episode = max_steps_per_episode
+        # self._max_steps = None
+        self._max_steps_per_episode = max_steps_per_episode
 
         # Number of steps performed in the current episode.
         self.n_steps_in_episode_: int = 0
@@ -132,11 +131,11 @@ class EnvDataset(
         if self.closed_ or self.is_closed():
             if self.reached_episode_limit:
                 raise gym.error.ClosedEnvironmentError(
-                    f"Env has already reached episode limit ({self.max_episodes}) and is closed."
+                    f"Env has already reached episode limit ({self._max_episodes}) and is closed."
                 )
             elif self.reached_step_limit:
                 raise gym.error.ClosedEnvironmentError(
-                    f"Env has already reached step limit ({self.max_steps}) and is closed."
+                    f"Env has already reached step limit ({self._max_steps}) and is closed."
                 )
             else:
                 raise gym.error.ClosedEnvironmentError(f"Can't call step on closed env. ({self.n_steps_})")
@@ -251,11 +250,11 @@ class EnvDataset(
         if self.closed_ or self.is_closed():
             if self.reached_episode_limit:
                 raise gym.error.ClosedEnvironmentError(
-                    f"Env has already reached episode limit ({self.max_episodes}) and is closed."
+                    f"Env has already reached episode limit ({self._max_episodes}) and is closed."
                 )
             elif self.reached_step_limit:
                 raise gym.error.ClosedEnvironmentError(
-                    f"Env has already reached step limit ({self.max_steps}) and is closed."
+                    f"Env has already reached step limit ({self._max_steps}) and is closed."
                 )
             else:
                 raise gym.error.ClosedEnvironmentError(
@@ -281,7 +280,7 @@ class EnvDataset(
                 f"observation. (env = {self})"
             )
 
-        # logger.debug(f"episode {self.n_episodes_}/{self.max_episodes}")
+        # logger.debug(f"episode {self.n_episodes_}/{self._max_episodes}")
 
         while not any(
             [
@@ -291,7 +290,7 @@ class EnvDataset(
                 self.is_closed(),
             ]
         ):
-            # logger.debug(f"step {self.n_steps_}/{self.max_steps},  (episode {self.n_episodes_})")
+            # logger.debug(f"step {self.n_steps_}/{self._max_steps},  (episode {self.n_episodes_})")
 
             # Set those to None to force the user to call .send()
             self.action_ = None
@@ -319,21 +318,21 @@ class EnvDataset(
 
     @property
     def reached_step_limit(self) -> bool:
-        if self.max_steps is None:
+        if self._max_steps is None:
             return False
-        return self.n_steps_ >= self.max_steps
+        return self.n_steps_ >= self._max_steps
 
     @property
     def reached_episode_limit(self) -> bool:
-        if self.max_episodes is None:
+        if self._max_episodes is None:
             return False
-        return self.n_episodes_ >= self.max_episodes
+        return self.n_episodes_ >= self._max_episodes
 
     @property
     def reached_episode_length_limit(self) -> bool:
-        if self.max_steps_per_episode is None:
+        if self._max_steps_per_episode is None:
             return False
-        return self.n_steps_in_episode_ >= self.max_steps_per_episode
+        return self.n_steps_in_episode_ >= self._max_steps_per_episode
 
     # @property
     def done_is_true(self) -> bool:
@@ -374,7 +373,7 @@ class EnvDataset(
 
     def close(self) -> None:
         # This will stop the iterator on the next step.
-        # self.max_steps = 0
+        # self._max_steps = 0
         self.closed_ = True
         self.action_ = None
         self.observation_ = None
@@ -385,9 +384,9 @@ class EnvDataset(
     # behave the same exact way as an IterableDataset)
 
     # def __len__(self) -> Optional[int]:
-    #     if self.max_steps is None:
+    #     if self._max_steps is None:
     #         raise RuntimeError(f"The dataset has no length when max_steps is None.")
-    #     return self.max_steps
+    #     return self._max_steps
 
     def __add__(self, other):
         from sequoia.utils.generic_functions import concatenate

@@ -1,3 +1,24 @@
+""" Methods: solutions to research problems (Settings).
+
+Methods contain the logic related to the training of the algorithm. Methods are
+encouraged to use a model to keep the networks / architecture / engineering code
+separate from the training loop.
+
+Sequoia includes a `BaseMethod`, along with an accompanying `Model`, which can be
+used as a jumping-off point for new users. 
+You're obviously also free to write your own method/model from scratch if you want!
+
+The recommended way to start is by creating a new subclass of the Base
+The best way to do so is to create your new model as a subclass of the `Model`,
+which already has some neat capabilities, and can easily be extended/customized.
+
+This `Model` is an instance of Pytorch-Lightning's `LightningModule` class, and can be
+trained on the environments/dataloaders of Sequoia with a `pl.Trainer`, enabling all the
+goodies associated with Pytorch-Lightning.
+
+You can also easily add callbacks to measure your own metrics and such as you would in
+Pytorch-Lightning.
+"""
 import glob
 import inspect
 import os
@@ -38,8 +59,8 @@ def register_method(new_method: Type[Method]) -> Type[Method]:
             if method.get_name() == name:
                 # BUG: There's this weird double-import thing happening during
                 # testing, where some methods are import twice, first as
-                # methods.baseline_method.BaselineMethod, for instance, then again
-                # as SSCL.methods.baseline_method.BaselineMethod
+                # methods.base_method.BaseMethod, for instance, then again
+                # as SSCL.methods.base_method.BaseMethod
                 from os.path import abspath
                 method_source_file = inspect.getsourcefile(method)
                 assert isinstance(method_source_file, str), f"cant find source file of {method}?"
@@ -62,8 +83,13 @@ def register_method(new_method: Type[Method]) -> Type[Method]:
     return new_method
 
 # NOTE: Even though these methods would be dynamically registered (see below),
-# we still import them so we can do `from methods import BaselineMethod`.
-from .baseline_method import BaselineMethod
+# we still import them so we can do `from methods import BaseMethod`.
+from .base_method import BaseMethod
+
+# Keeping a pointer to the old name, just to help with backward-compatibility a little
+# bit?
+BaselineMethod = BaseMethod
+
 from .random_baseline import RandomBaselineMethod
 from .pnn import PnnMethod
 

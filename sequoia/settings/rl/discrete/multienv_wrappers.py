@@ -35,7 +35,7 @@ class MultiEnvWrapper(IterableWrapper, ABC):
     """
 
     def __init__(self, envs: List[gym.Env], add_task_ids: bool = False):
-        self._envs = envs
+        self._envs = envs.copy()
         self._current_task_id = 0
         self.nb_tasks = len(envs)
         self._envs_is_closed: Sequence[bool] = np.zeros([self.nb_tasks], dtype=bool)
@@ -153,6 +153,9 @@ class MultiEnvWrapper(IterableWrapper, ABC):
         env_seeds = self.rng.integers(0, 1e8, size=len(self._envs)).tolist()
         seeds = env_seeds.copy()
         for index, env_seed in enumerate(env_seeds):
+            # NOTE: Would be nice to be able to NOT instantiate all the envs and just
+            # seed them when they get created, but then we wouldn't be able to return
+            # the seeds from all envs here (which I'm not 100% sure its thaaat useful..)
             self._instantiate_env(index)
             env = self._envs[index]
             env_seeds: Optional[List[int]] = env.seed(env_seed)
@@ -181,11 +184,16 @@ class ConcatEnvsWrapper(MultiEnvWrapper):
         super().__init__(envs, add_task_ids=add_task_ids)
         self.on_task_switch_callback = on_task_switch_callback
 
+    def set_task(self, task_id: int) -> None:
+        # NOTE: If any wrappers try to store things onto the unwrapped env, then those
+        # would need to be transfered over to the new env here.
+        super().set_task(task_id)
+
     def reset(self):
         old_task = self._current_task_id
         observation = super().reset()
         new_task = self._current_task_id
-        if old_task != new_task and self.on_task_switch_callback:
+        if self.on_task_switch_callback and old_task != new_task:
             self.on_task_switch_callback(new_task if self._add_task_labels else None)
         return observation
 
@@ -197,54 +205,10 @@ class ConcatEnvsWrapper(MultiEnvWrapper):
         return (self._current_task_id + 1) % self.nb_tasks
 
     def __iter__(self):
-        # BUG: iterating over a MultiEnvWrapper
         return super().__iter__()
-        
-        # current_env_id = self._current_task_id
-        # if self.is_closed(current_env_id):
-        #     assert False, "huh?"
-        # self.observation_ = self.reset()
-        # self.done_ = False
-        # self.action_ = None
-        # self.reward_ = None
-
-        # yield self.observation_
-        # if self.action_ is None:
-        #     raise RuntimeError(
-        #         f"You have to send an action using send() after every "
-        #         f"observation. (env = {self})"
-        #     )
-
-        # while not self.done_:
-        #     self.action_ = None
-        #     self.reward_ = None
-        #     yield self.observation_
-        #     if self.action_ is None:
-        #         raise RuntimeError(
-        #             f"You have to send an action using send() between every "
-        #             f"observation. (env = {self})"
-        #         )
-
-        # # return super().__iter__()
-        # if self.is_closed():
-        #     self.close()
-        # elif self.is_closed(current_env_id):
-        #     self.set_task(self.next_task())
-        # self.observation_ = self.reset()
 
     def send(self, action):
-        # return super().send(action)
-        self.action_ = action
-        self.observation_, self.reward_, self.done_, self.info_ = self.step(action)
-        return self.reward_
-
-    #     if not self.is_closed(env_id):
-    #         self.observation_ = env.reset()
-    #         return super().__iter__(self)
-    #     for env_id, env in enumerate(self._envs):
-
-    # yield from super().__iter__()
-    # self.observation_ = self.reset()
+        return super().send(action)
 
 
 # Register this as a 'concat' handler for gym environments!

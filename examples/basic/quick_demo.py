@@ -241,16 +241,16 @@ class DemoMethod(Method, target_setting=DomainIncrementalSLSetting):
 
 def demo_simple():
     """ Simple demo: Creating and applying a Method onto a Setting. """
-    from sequoia.settings import DomainIncrementalSetting
+    from sequoia.settings.sl import DomainIncrementalSLSetting
 
     ## 1. Creating the setting:
-    setting = DomainIncrementalSetting(dataset="fashionmnist", batch_size=32)
+    setting = DomainIncrementalSLSetting(dataset="fashionmnist", batch_size=32)
     ## 2. Creating the Method
     method = DemoMethod()
     # (Optional): You can also create a Config, which holds other fields like
     # `log_dir`, `debug`, `device`, etc. which aren't specific to either the
     # Setting or the Method.
-    config = Config(debug=True, render=False)
+    config = Config(debug=True, render=False, device="cpu")
     ## 3. Applying the method to the setting: (optionally passing a Config to
     # use for that run)
     results = setting.apply(method, config=config)

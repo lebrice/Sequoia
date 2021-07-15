@@ -1,5 +1,5 @@
 """ Demo where we add the same regularization loss from the other examples, but
-this time as an `AuxiliaryTask` on top of the BaselineMethod.
+this time as an `AuxiliaryTask` on top of the BaseMethod.
 
 This makes it easy to create CL methods that apply to both RL and SL Settings!
 """
@@ -18,11 +18,12 @@ from torch import Tensor
 # This "hack" is required so we can run `python examples/custom_baseline_demo.py`
 sys.path.extend([".", ".."])
 
-from sequoia.common.config import Config, TrainerConfig
+from sequoia.common.config import Config
 from sequoia.common.loss import Loss
-from sequoia.methods import BaselineMethod
+from sequoia.methods import BaseMethod
+from sequoia.methods.trainer import TrainerConfig
 from sequoia.methods.aux_tasks import AuxiliaryTask, SimCLRTask
-from sequoia.methods.models import BaselineModel, ForwardPass
+from sequoia.methods.models import BaseModel, ForwardPass
 from sequoia.settings import Setting, Environment, RLSetting
 from sequoia.utils import camel_case, dict_intersection, get_logger
 
@@ -31,10 +32,10 @@ logger = get_logger(__file__)
 
 class SimpleRegularizationAuxTask(AuxiliaryTask):
     """ Same regularization loss as in the previous examples, this time
-    implemented as an `AuxiliaryTask`, which gets added to the BaselineModel,
+    implemented as an `AuxiliaryTask`, which gets added to the BaseModel,
     making it applicable to both RL and SL.
     
-    This adds a CL regularizaiton loss to the BaselineModel.
+    This adds a CL regularizaiton loss to the BaseModel.
     
     The most important methods of `AuxiliaryTask` is `get_loss`, which should
     return a `Loss` for the given forward pass and resulting rewards/labels.
@@ -118,9 +119,9 @@ class SimpleRegularizationAuxTask(AuxiliaryTask):
         self.n_switches += 1
 
 
-class CustomizedBaselineModel(BaselineModel):
+class CustomizedBaselineModel(BaseModel):
     @dataclass
-    class HParams(BaselineModel.HParams):
+    class HParams(BaseModel.HParams):
         """ Hyper-parameters of our customized baseline model.
         """
 
@@ -150,13 +151,13 @@ class CustomizedBaselineModel(BaselineModel):
 
 
 @dataclass
-class CustomMethod(BaselineMethod, target_setting=Setting):
+class CustomMethod(BaseMethod, target_setting=Setting):
     """ Example methods which adds regularization to the baseline in RL and SL.
     
-    This extends the `BaselineMethod` by adding the simple regularization
-    auxiliary task defined above to the `BaselineModel`.
+    This extends the `BaseMethod` by adding the simple regularization
+    auxiliary task defined above to the `BaseModel`.
     
-    NOTE: Since this class inherits from `BaselineMethod`, which targets the
+    NOTE: Since this class inherits from `BaseMethod`, which targets the
     `Setting` setting, i.e. the "root" node, it is applicable to all settings,
     both in RL and SL. However, you could customize the `target_setting`
     argument above to limit this to any particular subtree (only SL, only RL,
@@ -245,14 +246,14 @@ def demo_manual():
             0: {"gravity": 10, "length": 0.5},
             5000: {"gravity": 10, "length": 1.0},
         },
-        max_steps=10_000,
+        train_max_steps=10_000,
     )
 
-    ## Create the BaselineMethod:
+    ## Create the BaseMethod:
     config = Config(debug=True)
     trainer_options = TrainerConfig(max_epochs=1)
-    hparams = BaselineModel.HParams()
-    base_method = BaselineMethod(
+    hparams = BaseModel.HParams()
+    base_method = BaseMethod(
         hparams=hparams, config=config, trainer_options=trainer_options
     )
 
@@ -270,8 +271,8 @@ def demo_manual():
     ## Get the results for the 'improved' method:
     new_results = setting.apply(new_method, config=config)
 
-    print(f"\n\nComparison: BaselineMethod vs CustomMethod")
-    print("\n BaselineMethod results: ")
+    print(f"\n\nComparison: BaseMethod vs CustomMethod")
+    print("\n BaseMethod results: ")
     print(base_results.summary())
 
     print("\n CustomMethod results: ")
@@ -305,9 +306,9 @@ def demo_command_line():
     setting: ClassIncrementalSetting = args.setting
     config: Config = args.config
 
-    # Create the BaselineMethod:
-    base_method = BaselineMethod.from_argparse_args(args, dest="method")
-    # Get the results of the BaselineMethod:
+    # Create the BaseMethod:
+    base_method = BaseMethod.from_argparse_args(args, dest="method")
+    # Get the results of the BaseMethod:
     base_results = setting.apply(base_method, config=config)
 
     ## Create the CustomMethod:
@@ -315,7 +316,7 @@ def demo_command_line():
     # Get the results for the CustomMethod:
     new_results = setting.apply(new_method, config=config)
 
-    print(f"\n\nComparison: BaselineMethod vs CustomMethod:")
+    print(f"\n\nComparison: BaseMethod vs CustomMethod:")
     print(base_results.summary())
     print(new_results.summary())
 

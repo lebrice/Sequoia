@@ -105,9 +105,9 @@ sudo chown root /tmp/.X11-unix/
 
 ```python
 from sequoia.settings import TaskIncrementalSLSetting
-from sequoia.methods import BaselineMethod
+from sequoia.methods import BaseMethod
 setting = TaskIncrementalSLSetting(dataset="mnist")
-method = BaselineMethod(max_epochs=1)
+method = BaseMethod(max_epochs=1)
 
 results = setting.apply(method)
 print(results.summary())
@@ -118,9 +118,9 @@ print(results.summary())
 sequoia --setting <some_setting> --method <some_method>  (arguments)
 ```
 For example:
-- Run the BaselineMethod on task-incremental MNIST, with one epoch per task, and without wandb:
+- Run the BaseMethod on task-incremental MNIST, with one epoch per task, and without wandb:
     ```console
-    sequoia --setting task_incremental --dataset mnist --method baseline --max_epochs 1 --no_wandb
+    sequoia --setting task_incremental --dataset mnist --method baseline --max_epochs 1
     ```
 - Run the PPO Method from stable-baselines3 on an incremental RL setting, with the default dataset (CartPole) and 5 tasks: 
     ```console

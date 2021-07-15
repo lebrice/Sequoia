@@ -24,7 +24,7 @@ from pytorch_lightning.callbacks.early_stopping import EarlyStopping
 from simple_parsing import mutable_field
 from wandb.wandb_run import Run
 
-from sequoia.common import Config, TrainerConfig
+from sequoia.common import Config
 from sequoia.common.spaces import Image
 from sequoia.settings import RLSetting, SLSetting
 from sequoia.settings.rl.continual import ContinualRLSetting
@@ -38,61 +38,23 @@ from sequoia.utils import Parseable, Serializable, compute_identity, get_logger
 from sequoia.methods import register_method
 from sequoia.settings.sl.continual import ContinualSLSetting
 
-from .models import BaselineModel, ForwardPass
+from .models import BaseModel, ForwardPass
+from .trainer import Trainer, TrainerConfig
 
 logger = get_logger(__file__)
 
-from pytorch_lightning import Trainer
-from pytorch_lightning.trainer.connectors.data_connector import DataConnector
 from sequoia.common.gym_wrappers.utils import IterableWrapper, has_wrapper
 from sequoia.settings.rl.continual.environment import GymDataLoader
 
 
-class PatchedDataConnector(DataConnector):
-    def _with_is_last(self, iterable):
-        """ Patch for this 'with_is_last' which messes up iterating over an RL env.
-        """
-        if isinstance(iterable, gym.Env) and has_wrapper(iterable, GymDataLoader):
-            env = iterable
-            assert isinstance(env, IterableWrapper), env
-            while not env.is_closed():
-                for step, obs in enumerate(env):
-                    if env.is_closed():
-                        yield obs, True
-                        break
-                    else:
-                        yield obs, False
-        else:
-            yield from super()._with_is_last(iterable)
-            # it = iter(iterable)
-            # last = next(it)
-            # if hasattr(last, "done"):
-            #     end_of_episode = last["done"]
-            #     yield last, end_of_episode
-            # for val in it:
-            #     # yield last and has next
-            #     if hasattr(last, "done"):
-            #         end_of_episode = last["done"]
-            #         yield last, end_of_episode
-            #     else:
-            #         yield last, False
-            #     last = val
-            # yield last, no longer has next
-            # yield last, True
-
-import pytorch_lightning.trainer.connectors.data_connector
-setattr(pytorch_lightning.trainer.connectors.data_connector, "DataConnector", PatchedDataConnector)
-pytorch_lightning.trainer.connectors.data_connector.DataConnector = PatchedDataConnector
-
-    
 @register_method
 @dataclass
-class BaselineMethod(Method, Serializable, Parseable, target_setting=Setting):
-    """ Versatile Baseline method which targets all settings.
+class BaseMethod(Method, Serializable, Parseable, target_setting=Setting):
+    """ Versatile Base method which targets all settings.
 
     Uses pytorch-lightning's Trainer for training and LightningModule as model.
 
-    Uses a [BaselineModel](methods/models/baseline_model/baseline_model.py), which
+    Uses a [BaseModel](methods/models/base_model/base_model.py), which
     can be used for:
     - Self-Supervised training with modular auxiliary tasks;
     - Semi-Supervised training on partially labeled batches;
@@ -101,7 +63,7 @@ class BaselineMethod(Method, Serializable, Parseable, target_setting=Setting):
 
     # NOTE: these two fields are also used to create the command-line arguments.
     # HyperParameters of the method.
-    hparams: BaselineModel.HParams = mutable_field(BaselineModel.HParams)
+    hparams: BaseModel.HParams = mutable_field(BaseModel.HParams)
     # Configuration options.
     config: Config = mutable_field(Config)
     # Options for the Trainer object.
@@ -109,17 +71,17 @@ class BaselineMethod(Method, Serializable, Parseable, target_setting=Setting):
 
     def __init__(
         self,
-        hparams: BaselineModel.HParams = None,
+        hparams: BaseModel.HParams = None,
         config: Config = None,
         trainer_options: TrainerConfig = None,
         **kwargs,
     ):
-        """ Creates a new BaselineMethod, using the provided configuration options.
+        """ Creates a new BaseMethod, using the provided configuration options.
 
         Parameters
         ----------
-        hparams : BaselineModel.HParams, optional
-            Hyper-parameters of the BaselineModel used by this Method. Defaults to None.
+        hparams : BaseModel.HParams, optional
+            Hyper-parameters of the BaseModel used by this Method. Defaults to None.
 
         config : Config, optional
             Configuration dataclass with options like log_dir, device, etc. Defaults to
@@ -135,18 +97,18 @@ class BaselineMethod(Method, Serializable, Parseable, target_setting=Setting):
 
         ## Examples:
         ```
-        method = BaselineMethod(hparams=BaselineModel.HParams(learning_rate=0.01))
-        method = BaselineMethod(learning_rate=0.01) # Same as above
+        method = BaseMethod(hparams=BaseModel.HParams(learning_rate=0.01))
+        method = BaseMethod(learning_rate=0.01) # Same as above
 
-        method = BaselineMethod(config=Config(debug=True))
-        method = BaselineMethod(debug=True) # Same as above
+        method = BaseMethod(config=Config(debug=True))
+        method = BaseMethod(debug=True) # Same as above
 
-        method = BaselineMethod(hparams=BaselineModel.HParams(learning_rate=0.01),
+        method = BaseMethod(hparams=BaseModel.HParams(learning_rate=0.01),
                                 config=Config(debug=True))
-        method = BaselineMethod(learning_rate=0.01, debug=True) # Same as above
+        method = BaseMethod(learning_rate=0.01, debug=True) # Same as above
         ```
         """
-        # TODO: When creating a Method from a script, like `BaselineMethod()`,
+        # TODO: When creating a Method from a script, like `BaseMethod()`,
         # should we expect the hparams to be passed? Should we create them from
         # the **kwargs? Should we parse them from the command-line?
 
@@ -199,7 +161,7 @@ class BaselineMethod(Method, Serializable, Parseable, target_setting=Setting):
         # NOTE: This right here doesn't create the fields, it just gives some
         # type information for static type checking.
         self.trainer: Trainer
-        self.model: BaselineModel
+        self.model: BaseModel
 
         self.additional_train_wrappers: List[Callable] = []
         self.additional_valid_wrappers: List[Callable] = []
@@ -214,9 +176,6 @@ class BaselineMethod(Method, Serializable, Parseable, target_setting=Setting):
 
         Args:
             setting (SettingType): The setting the method will be evaluated on.
-
-        TODO: For the Challenge, this should be some kind of read-only proxy to the
-        actual Setting.
         """
         # Note: this here is temporary, just tinkering with wandb atm.
         method_name: str = self.get_name()
@@ -271,6 +230,7 @@ class BaselineMethod(Method, Serializable, Parseable, target_setting=Setting):
 
         if isinstance(setting, ContinualRLSetting):
             setting.add_done_to_observations = True
+            setting.prefer_tensors = True
             if isinstance(setting.observation_space.x, Image):
                 if self.hparams.encoder is None:
                     self.hparams.encoder = "simple_convnet"
@@ -291,20 +251,20 @@ class BaselineMethod(Method, Serializable, Parseable, target_setting=Setting):
             # TODO: Select which output head to use from the command-line?
             # Limit the number of epochs so we never iterate on a closed env.
             # TODO: Would multiple "epochs" be possible?
-            if setting.max_steps is not None:
+            if setting.train_max_steps is not None:
                 self.trainer_options.max_epochs = 1
-                self.trainer_options.limit_train_batches = setting.max_steps // (
+                self.trainer_options.limit_train_batches = setting.train_max_steps // (
                     setting.batch_size or 1
                 )
                 self.trainer_options.limit_val_batches = min(
-                    setting.max_steps // (setting.batch_size or 1), 1000
+                    setting.train_max_steps // (setting.batch_size or 1), 1000
                 )
                 # TODO: Test batch size is limited to 1 for now.
                 # NOTE: This isn't used, since we don't call `trainer.test()`.
-                self.trainer_options.limit_test_batches = setting.max_steps
+                self.trainer_options.limit_test_batches = setting.train_max_steps
 
-        self.model = self.create_model(setting)
-        assert self.hparams is self.model.hp
+        # TODO: Debug the multi-GPU setup with DP accelerator and pytorch lightning.
+        self.model = self.create_model(setting).to(self.config.device)
 
         # The PolicyHead actually does its own backward pass, so we disable
         # automatic optimization when using it.
@@ -372,8 +332,8 @@ class BaselineMethod(Method, Serializable, Parseable, target_setting=Setting):
         assert action_numpy in action_space, (action_numpy, action_space)
         return actions
 
-    def create_model(self, setting: SettingType) -> BaselineModel[SettingType]:
-        """Creates the BaselineModel (a LightningModule) for the given Setting.
+    def create_model(self, setting: SettingType) -> BaseModel[SettingType]:
+        """Creates the BaseModel (a LightningModule) for the given Setting.
 
         You could extend this to customize which model is used depending on the
         setting.
@@ -386,11 +346,11 @@ class BaselineMethod(Method, Serializable, Parseable, target_setting=Setting):
             setting (SettingType): An experimental setting.
 
         Returns:
-            BaselineModel[SettingType]: The BaselineModel that is to be applied
+            BaseModel[SettingType]: The BaseModel that is to be applied
             to that setting.
         """
         # Create the model, passing the setting, hparams and config.
-        return BaselineModel(setting=setting, hparams=self.hparams, config=self.config)
+        return BaseModel(setting=setting, hparams=self.hparams, config=self.config)
 
     def create_trainer(self, setting: SettingType) -> Trainer:
         """Creates a Trainer object from pytorch-lightning for the given setting.
@@ -404,7 +364,8 @@ class BaselineMethod(Method, Serializable, Parseable, target_setting=Setting):
             Trainer: the Trainer object.
         """
         # We use this here to create loggers!
-        callbacks = self.create_callbacks(setting)
+        # No need to use this, we can use 
+        callbacks = self.configure_callbacks(setting)
         loggers = []
         if setting.wandb and setting.wandb.project:
             wandb_logger = setting.wandb.make_logger()
@@ -495,8 +456,9 @@ class BaselineMethod(Method, Serializable, Parseable, target_setting=Setting):
         experiment_id: str = None,
         database_path: Union[str, Path] = None,
         max_runs: int = None,
+        hpo_algorithm: Union[str, Dict] = "BayesianOptimizer",
         debug: bool = False,
-    ) -> Tuple[BaselineModel.HParams, float]:
+    ) -> Tuple[BaseModel.HParams, float]:
         # Setting max epochs to 1, just to keep runs somewhat short.
         # NOTE: Now we're actually going to have the max_epochs as a tunable
         # hyper-parameter, so we're not hard-setting this value anymore. 
@@ -515,6 +477,7 @@ class BaselineMethod(Method, Serializable, Parseable, target_setting=Setting):
             database_path=database_path,
             max_runs=max_runs,
             debug = debug or self.config.debug,
+            hpo_algorithm=hpo_algorithm,
         )
 
     def receive_results(self, setting: Setting, results: Results):
@@ -523,7 +486,7 @@ class BaselineMethod(Method, Serializable, Parseable, target_setting=Setting):
         """
         super().receive_results(setting, results=results)
 
-    def create_callbacks(self, setting: SettingType) -> List[Callback]:
+    def configure_callbacks(self, setting: SettingType=None) -> List[Callback]:
         """Create the PytorchLightning Callbacks for this Setting.
 
         These callbacks will get added to the Trainer in `create_trainer`.
@@ -538,11 +501,12 @@ class BaselineMethod(Method, Serializable, Parseable, target_setting=Setting):
         List[Callback]
             A List of `Callaback` objects to use during training.
         """
+        setting = setting or self.setting
         # TODO: Move this to something like a `configure_callbacks` method in the model,
         # once PL adds it.
         # from sequoia.common.callbacks.vae_callback import SaveVaeSamplesCallback
         return [
-            EarlyStopping(monitor="loss")
+            EarlyStopping(monitor="val/loss"),
             # self.hparams.knn_callback,
             # SaveVaeSamplesCallback(),
         ]
@@ -586,7 +550,7 @@ class BaselineMethod(Method, Serializable, Parseable, target_setting=Setting):
         if not is_dataclass(cls):
             logger.critical(
                 UserWarning(
-                    f"The BaselineMethod subclass {cls} should be decorated with "
+                    f"The BaseMethod subclass {cls} should be decorated with "
                     f"@dataclass!\n"
                     f"While this isn't strictly necessary for things to work, it is"
                     f"highly recommended, as any dataclass-style class attributes "
@@ -625,3 +589,4 @@ class BaselineMethod(Method, Serializable, Parseable, target_setting=Setting):
         # Need to check wether this causes any issues.
         # run.config["hparams"] = self.hparams.to_dict()
         # run.config["trainer_config"] = self.trainer_options
+

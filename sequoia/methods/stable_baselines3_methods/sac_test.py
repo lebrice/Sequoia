@@ -36,7 +36,7 @@ class TestSAC(ContinuousActionSpaceMethodTests):
         setting = Setting(
             dataset="MountainCarContinuous-v0",
             nb_tasks=2,
-            steps_per_task=1_000,
+            train_steps_per_task=1_000,
             test_steps_per_task=1_000,
         )
         results: ContinualRLSetting.Results = setting.apply(

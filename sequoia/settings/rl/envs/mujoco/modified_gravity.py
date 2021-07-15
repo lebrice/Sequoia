@@ -2,6 +2,9 @@ import warnings
 from typing import ClassVar
 
 from gym.envs.mujoco import MujocoEnv
+from sequoia.utils.logging_utils import get_logger
+
+logger = get_logger(__file__)
 
 
 class ModifiedGravityEnv(MujocoEnv):
@@ -19,13 +22,14 @@ class ModifiedGravityEnv(MujocoEnv):
     def __init__(self, model_path: str, frame_skip: int, gravity: float = -9.81, **kwargs):
         super().__init__(model_path=model_path, frame_skip=frame_skip, **kwargs)
         # self.model.opt.gravity = (mujoco_py.mjtypes.c_double * 3)(*[0., 0., gravity])
-        self.model.opt.gravity[2] = gravity
-        # self.model._compute_subtree()
-        # self.model.forward()
-        self.sim.forward()
-        # self.sim: MjSim
-        print(f"Setting initial gravity to {self.gravity}")
-    
+        if gravity != -9.81:
+            self.model.opt.gravity[2] = gravity
+            # self.model._compute_subtree()
+            # self.model.forward()
+            self.sim.forward()
+            # self.sim: MjSim
+            logger.info(f"Setting initial gravity to {self.gravity}")
+        
     @property
     def gravity(self) -> float:
         return self.model.opt.gravity[2]

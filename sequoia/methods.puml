@@ -11,9 +11,9 @@
 ' !include settings/base.puml
 
 package methods {
-    package baseline_method {
-        class BaselineMethod implements Method {
-            + hparams: BaselineModel.HParams
+    package base_method {
+        class BaseMethod implements Method {
+            + hparams: BaseModel.HParams
             + config: Config
             + trainer_options: TrainerConfig
             + trainer: Trainer

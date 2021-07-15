@@ -1,53 +1,92 @@
-"""Base class for the Model to be used as part of a Method.
+"""Base for the model used by the `BaseMethod`.
 
-This is meant
-
-TODO: There is a bunch of work to be done here.
+This model is basically just an encoder and an output head. Both of these can be
+switched out/customized as needed.
 """
 from dataclasses import dataclass
-from typing import Any, Dict, Generic, Optional, Tuple, Type, TypeVar
+from typing import (
+    Any,
+    ClassVar,
+    Dict,
+    Generic,
+    List,
+    Optional,
+    Tuple,
+    Type,
+    TypeVar,
+    Union,
+)
+import dataclasses
 
 import gym
 import numpy as np
 import torch
+import torchvision.models as tv_models
 from gym import Space, spaces
 from gym.spaces.utils import flatdim
 from pytorch_lightning import LightningModule
-from pytorch_lightning.core.decorators import auto_move_data
 from pytorch_lightning.core.lightning import ModelSummary, log
-from simple_parsing import choice
-from simple_parsing.helpers.serialization import register_decoding_fn
-from torch import Tensor, nn
-from torch.optim.optimizer import Optimizer
-
 from sequoia.common.config import Config
 from sequoia.common.gym_wrappers.convert_tensors import add_tensor_support
+from sequoia.common.hparams import HyperParameters, categorical, log_uniform, uniform
 from sequoia.common.loss import Loss
 from sequoia.common.spaces import Image
 from sequoia.common.transforms import SplitBatch
-from sequoia.settings.rl import RLSetting, ContinualRLSetting
+from sequoia.methods.models.output_heads import OutputHead
 from sequoia.settings.assumptions.incremental import IncrementalAssumption
 from sequoia.settings.base import Environment
 from sequoia.settings.base.setting import Actions, Observations, Rewards
+from sequoia.settings.rl import ContinualRLSetting, RLSetting
 from sequoia.settings.sl import SLSetting
+from sequoia.utils import Parseable, Serializable
 from sequoia.utils.logging_utils import get_logger
+from sequoia.utils.pretrained_utils import get_pretrained_encoder
+from simple_parsing import choice, mutable_field
+from simple_parsing.helpers.hparams import HyperParameters
+from simple_parsing.helpers.serialization import register_decoding_fn
+from torch import Tensor, nn, optim
+from torch.optim.optimizer import Optimizer  # type: ignore
 
 from ..fcnet import FCNet
 from ..forward_pass import ForwardPass
-from ..output_heads import (ActorCriticHead, ClassificationHead, OutputHead,
-                            PolicyHead, RegressionHead)
+from ..output_heads import (
+    ActorCriticHead,
+    ClassificationHead,
+    OutputHead,
+    PolicyHead,
+    RegressionHead,
+)
 from ..output_heads.rl.episodic_a2c import EpisodicA2C
-from .base_hparams import BaseHParams
+from ..simple_convnet import SimpleConvNet
+
 
 logger = get_logger(__file__)
 SettingType = TypeVar("SettingType", bound=IncrementalAssumption)
 
+available_optimizers: Dict[str, Type[Optimizer]] = {
+    "sgd": optim.SGD,
+    "adam": optim.Adam,
+    "rmsprop": optim.RMSprop,
+}
+available_encoders: Dict[str, Type[nn.Module]] = {
+    "vgg16": tv_models.vgg16,
+    "resnet18": tv_models.resnet18,
+    "resnet34": tv_models.resnet34,
+    "resnet50": tv_models.resnet50,
+    "resnet101": tv_models.resnet101,
+    "resnet152": tv_models.resnet152,
+    "alexnet": tv_models.alexnet,
+    "densenet": tv_models.densenet161,
+    # TODO: Add the self-supervised pl modules here!
+    "simple_convnet": SimpleConvNet,
+}
 
-class BaseModel(LightningModule, Generic[SettingType]):
-    """ Base model LightningModule (nn.Module extended by pytorch-lightning)
 
-    WIP: (@lebrice): Trying to tidy up the hierarchy of the different kinds of
-    models a little bit.
+class Model(LightningModule, Generic[SettingType]):
+    """ Basic Model to be used by a Method.
+    
+    Based on the `LightningModule` (nn.Module extended by pytorch-lightning).
+    This Model can be trained on either Supervised or Reinforcement Learning environments.
 
     This model splits the learning task into a representation-learning problem
     and a downstream task (output head) applied on top of it.
@@ -58,8 +97,58 @@ class BaseModel(LightningModule, Generic[SettingType]):
     """
 
     @dataclass
-    class HParams(BaseHParams):
+    class HParams(HyperParameters):
         """ HParams of the Model. """
+
+        # Class variable versions of the above dicts, for easier subclassing.
+        # NOTE: These don't get parsed from the command-line.
+        available_optimizers: ClassVar[
+            Dict[str, Type[Optimizer]]
+        ] = available_optimizers.copy()
+        available_encoders: ClassVar[
+            Dict[str, Type[nn.Module]]
+        ] = available_encoders.copy()
+
+        # Learning rate of the optimizer.
+        learning_rate: float = log_uniform(1e-6, 1e-2, default=1e-3)
+        # L2 regularization term for the model weights.
+        weight_decay: float = log_uniform(1e-12, 1e-3, default=1e-6)
+        # Which optimizer to use.
+        optimizer: Type[Optimizer] = categorical(
+            available_optimizers, default=optim.Adam
+        )
+        # Use an encoder architecture from the torchvision.models package.
+        encoder: Type[nn.Module] = categorical(
+            available_encoders,
+            default=tv_models.resnet18,
+            # TODO: Only using these two by default when performing a sweep.
+            probabilities={"resnet18": 0.5, "simple_convnet": 0.5},
+        )
+
+        # Batch size to use during training and evaluation.
+        batch_size: Optional[int] = None
+
+        # Number of hidden units (before the output head).
+        # When left to None (default), the hidden size from the pretrained
+        # encoder model will be used. When set to an integer value, an
+        # additional Linear layer will be placed between the outputs of the
+        # encoder in order to map from the pretrained encoder's output size H_e
+        # to this new hidden size `new_hidden_size`.
+        new_hidden_size: Optional[int] = None
+        # Retrain the encoder from scratch.
+        train_from_scratch: bool = False
+        # Wether we should keep the weights of the pretrained encoder frozen.
+        freeze_pretrained_encoder_weights: bool = False
+
+        # Settings for the output head.
+        # TODO: This could be overwritten in a subclass to do classification or
+        # regression or RL, etc.
+        output_head: OutputHead.HParams = mutable_field(OutputHead.HParams)
+
+        # Wether the output head should be detached from the representations.
+        # In other words, if the gradients from the downstream task should be
+        # allowed to affect the representations.
+        detach_output_head: bool = False
 
         # Which algorithm to use for the output head when in an RL setting.
         # TODO: Run the PolicyHead in the following conditions:
@@ -79,7 +168,7 @@ class BaseModel(LightningModule, Generic[SettingType]):
     def __init__(self, setting: SettingType, hparams: HParams, config: Config):
         super().__init__()
         self.setting: SettingType = setting
-        self.hp: BaseModel.HParams = hparams
+        self.hp: Model.HParams = hparams
 
         self.Observations: Type[Observations] = setting.Observations
         self.Actions: Type[Actions] = setting.Actions
@@ -96,13 +185,9 @@ class BaseModel(LightningModule, Generic[SettingType]):
         self.input_shape = self.observation_space.x.shape
         self.reward_shape = self.reward_space.shape
 
-        # TODO: Remove this:
-        self.split_batch_transform = SplitBatch(
-            observation_type=self.Observations, reward_type=self.Rewards
-        )
         self.config: Config = config
-        # TODO: Decided to Not set this property, so the trainer doesn't
-        # fallback to using it instead of the passed datamodules/dataloaders.
+        # NOTE: do NOT set the `datamodule` property, otherwise the trainer will ignore
+        # the passed train/val/test dataloader from the Setting.
         # self.datamodule: LightningDataModule = setting
 
         # (Testing) Setting this attribute is supposed to help with ddp/etc
@@ -132,9 +217,7 @@ class BaseModel(LightningModule, Generic[SettingType]):
             )
             self.hidden_size = output_dims
         else:
-            # TODO: Refactor this 'make_encoder' being on the hparams, its a bit
-            # weird.
-            self.encoder, self.hidden_size = self.hp.make_encoder()
+            self.encoder, self.hidden_size = self.make_encoder()
             # TODO: Check that the outputs of the encoders are actually
             # flattened. I'm not sure they all are, which case the samples
             # wouldn't match with this space.
@@ -156,7 +239,29 @@ class BaseModel(LightningModule, Generic[SettingType]):
         # Then, create the 'default' output head.
         self.output_head: OutputHead = self.create_output_head(task_id=0)
 
-    @auto_move_data
+    def make_encoder(self) -> Tuple[nn.Module, int]:
+        """Creates an Encoder model and returns the number of output dimensions.
+
+        Returns:
+            Tuple[nn.Module, int]: the encoder and the hidden size.
+            
+        TODO: Could instead return its output space, in case we didn't necessarily want
+        to flatten the representations (e.g. for image segmentation tasks).
+        """
+        # Get the chosen type of encoder
+        encoder_type: Type[nn.Module] = self.hp.encoder
+        # This does a few things:
+        # 1. Instantiate the model (with pretrained weights if desired)
+        # 2. Infer the output size of the model
+        # 3. Remove the output fully-connected layer, if present.
+        encoder, hidden_size = get_pretrained_encoder(
+            encoder_model=encoder_type,
+            pretrained=not self.hp.train_from_scratch,
+            freeze_pretrained_weights=self.hp.freeze_pretrained_encoder_weights,
+            new_hidden_size=self.hp.new_hidden_size,
+        )
+        return encoder, hidden_size
+
     def forward(self, observations: IncrementalAssumption.Observations) -> ForwardPass:
         """ Forward pass of the Model.
 
@@ -179,8 +284,13 @@ class BaseModel(LightningModule, Generic[SettingType]):
         actions = self.output_head(
             observations=observations, representations=representations
         )
+        # NOTE: Need to put a `rewards` field in this forward_pass, so we can pass it
+        # to the training_step_end method, which will calculate and aggregate the loss
         forward_pass = ForwardPass(
-            observations=observations, representations=representations, actions=actions,
+            observations=observations,
+            representations=representations,
+            actions=actions,
+            rewards=None,
         )
         return forward_pass
 
@@ -303,73 +413,157 @@ class BaseModel(LightningModule, Generic[SettingType]):
         raise NotImplementedError(f"Unsupported action space: {setting.action_space}")
 
     def training_step(
-        self, batch: Tuple[Observations, Optional[Rewards]], batch_idx: int, **kwargs
-    ):
+        self,
+        batch: Tuple[Observations, Optional[Rewards]],
+        batch_idx: int,
+        environment: Environment = None,
+        dataloader_idx: int = None,
+        optimizer_idx: int = None,
+    ) -> ForwardPass:
         return self.shared_step(
             batch,
-            batch_idx,
-            environment=self.setting.train_env,
-            loss_name="train",
-            **kwargs,
+            batch_idx=batch_idx,
+            environment=environment or self.setting.train_env,
+            phase="train",
+            dataloader_idx=dataloader_idx,
+            optimizer_idx=optimizer_idx,
         )
 
     def validation_step(
-        self, batch: Tuple[Observations, Optional[Rewards]], batch_idx: int, **kwargs
-    ):
+        self,
+        batch: Tuple[Observations, Optional[Rewards]],
+        batch_idx: int,
+        environment: Environment = None,
+        dataloader_idx: int = None,
+    ) -> ForwardPass:
         return self.shared_step(
             batch,
             batch_idx=batch_idx,
-            environment=self.setting.val_env,
-            loss_name="val",
-            **kwargs,
+            environment=environment or self.setting.val_env,
+            phase="val",
+            dataloader_idx=dataloader_idx,
         )
 
     def test_step(
-        self, batch: Tuple[Observations, Optional[Rewards]], batch_idx: int, **kwargs
-    ):
+        self,
+        batch: Tuple[Observations, Optional[Rewards]],
+        batch_idx: int,
+        environment: Environment = None,
+        dataloader_idx: int = None,
+    ) -> ForwardPass:
         return self.shared_step(
             batch,
             batch_idx=batch_idx,
-            environment=self.setting.test_env,
-            loss_name="test",
-            **kwargs,
+            environment=environment or self.setting.test_env,
+            phase="test",
+            dataloader_idx=dataloader_idx,
         )
 
     def shared_step(
         self,
-        batch: Tuple[Observations, Rewards],
+        batch: Tuple[Observations, Optional[Rewards]],
         batch_idx: int,
         environment: Environment,
-        loss_name: str,
+        phase: str,
         dataloader_idx: int = None,
         optimizer_idx: int = None,
-    ) -> Dict:
-        """
-        This is the shared step for this 'example' LightningModule.
-        Feel free to customize/change it if you want!
-        """
-        if dataloader_idx is not None:
-            assert isinstance(dataloader_idx, int)
-            loss_name += f"/{dataloader_idx}"
+    ) -> ForwardPass:
+        """ Main logic of the "forward pass".
 
-        # Split the batch into observations and rewards.
-        # NOTE: Only in the case of the Supervised settings do we ever get the
-        # Rewards at the same time as the Observations.
-        # TODO: It would be nice if we could actually do the same things for
-        # both sides of the tree here..
-        observations, rewards = self.split_batch(batch)
+        This is used as part of `training_step`, `validation_step` and `test_step`.
+        See the PL docs for `training_step` for more info. 
 
-        # FIXME: Remove this, debugging:
-        assert isinstance(observations, Observations), observations
-        assert isinstance(observations.x, Tensor), observations.shapes
+        NOTE: The prediction / environment interaction / loss calculation has been
+        moved into the `shared_step_end` method for DP to also work.
+        """
+
+        # Split the batch into observations and (maybe) rewards.
+        observations: Observations
+        rewards: Optional[Rewards]
+        if isinstance(batch, tuple) and len(batch) == 2:
+            observations, rewards = batch
+        else:
+            assert isinstance(batch, self.Observations), batch
+            observations, rewards = batch, None
+
         # Get the forward pass results, containing:
         # - "observation": the augmented/transformed/processed observation.
         # - "representations": the representations for the observations.
         # - "actions": The actions (predictions)
         forward_pass: ForwardPass = self(observations)
+        if rewards is not None:
+            forward_pass = dataclasses.replace(forward_pass, rewards=rewards)
+        return forward_pass
+
+    def training_step_end(self, step_outputs: Union[Loss, List[Loss]]) -> Loss:
+        loss_object: Loss = self.shared_step_end(
+            step_outputs=step_outputs, phase="train", environment=self.setting.train_env
+        )
+        loss = loss_object.loss
+        if not isinstance(loss, Tensor) or not loss.requires_grad:
+            # NOTE: There might be no loss at some steps, because for instance
+            # we haven't reached the end of an episode in an RL setting.
+            return None
+
+        # NOTE In RL, we can only update the model's weights on steps where the output
+        # head has as loss, because the output head has buffers of tensors whose grads
+        # would become invalidated if we performed the optimizer step.
+        if loss.requires_grad and not self.automatic_optimization:
+            output_head_loss = loss_object.losses.get(self.output_head.name)
+            update_model = (
+                output_head_loss is not None and output_head_loss.requires_grad
+            )
+            optimizer = self.optimizers()
+
+            self.manual_backward(loss, optimizer, retain_graph=not update_model)
+            if update_model:
+                optimizer.step()
+                optimizer.zero_grad()
+        # BUG: Need to return this dict, otherwise the optimizer closure in the DP
+        # accelerator fails (it only expects to get `dict` or `Tensor` values for
+        # `training_step_output` in `_process_training_step_output`)
+        # return loss
+        # NOTE: the 'hidden' key isn't currently used, but it could be in the future if
+        # we added support for BBPT, i.e. recurrent policies or output heads, etc.
+        return {"loss": loss, "hidden": loss_object.tensors.get("hidden")}
+
+    def validation_step_end(
+        self, step_outputs: Union[ForwardPass, List[ForwardPass]]
+    ) -> Loss:
+        return self.shared_step_end(
+            step_outputs=step_outputs, phase="val", environment=self.setting.val_env
+        )
+
+    def test_step_end(
+        self, step_outputs: Union[ForwardPass, List[ForwardPass]]
+    ) -> Loss:
+        return self.shared_step_end(
+            step_outputs=step_outputs, phase="test", environment=self.setting.test_env
+        )
+
+    def shared_step_end(
+        self,
+        step_outputs: Union[ForwardPass, List[ForwardPass]],
+        phase: str,
+        environment: Environment,
+    ) -> Loss:
+        """ Called with the outputs of each replica's `[train/validation/test]_step`:
+
+        - Sends the Actions from each worker to the environment to obtain rewards, if
+          necessary;
+        - Calculates the loss, given the merged forward pass and the rewards/labels; 
+        - Aggregates the losses/metrics from each replica, logs the relevant values, and
+          returns the aggregated losses and metrics (a single Loss object).
+        """
+        forward_pass: ForwardPass
+        if isinstance(step_outputs, list):
+            forward_pass = ForwardPass.concatenate(step_outputs)
+        else:
+            forward_pass = step_outputs
 
         # get the actions from the forward pass:
         actions = forward_pass.actions
+        rewards: Optional[Rewards] = forward_pass.rewards
 
         if rewards is None:
             # Get the reward from the environment (the dataloader).
@@ -377,15 +571,27 @@ class BaseModel(LightningModule, Generic[SettingType]):
                 environment.render("human")
                 # import matplotlib.pyplot as plt
                 # plt.waitforbuttonpress(10)
-
+            assert isinstance(actions, Actions), actions
             rewards = environment.send(actions)
             assert rewards is not None
 
-        loss: Loss = self.get_loss(forward_pass, rewards, loss_name=loss_name)
-        return {
-            "loss": loss.loss,
-            "loss_object": loss,
-        }
+        # Now that we have the rewards, we calculate the loss.
+        
+        loss: Loss = self.get_loss(forward_pass, rewards, loss_name=phase)
+        loss_tensor: Tensor = loss.loss
+        if loss_tensor == 0.:
+            return loss
+        loss_pbar_dict = loss.to_pbar_message()
+        for key, value in loss_pbar_dict.items():
+            assert not isinstance(value, dict), "shouldn't be nested at this point!"
+            self.log(key, value, prog_bar=self.config.debug, logger=False)
+            logger.debug(f"{key}: {value}")
+
+        loss_log_dict = loss.to_log_dict(verbose=self.config.verbose)
+        for key, value in loss_log_dict.items():
+            assert not isinstance(value, dict), "shouldn't be nested at this point!"
+            self.log(key, value, prog_bar=False, logger=True)
+        return loss
 
     def split_batch(self, batch: Any) -> Tuple[Observations, Optional[Rewards]]:
         """ Splits the batch into the observations and the rewards.
@@ -405,7 +611,9 @@ class BaseModel(LightningModule, Generic[SettingType]):
             observations, rewards = batch
 
         assert isinstance(observations, self.Observations), (
-            observations, type(observations), self.Observations,
+            observations,
+            type(observations),
+            self.Observations,
         )
         # Move the observations to the right device, and convert numpy arrays to
         # tensors.
@@ -487,7 +695,16 @@ class BaseModel(LightningModule, Generic[SettingType]):
         return reward
 
     def configure_optimizers(self):
-        return self.hp.make_optimizer(self.parameters())
+        optimizer_class: Type[Optimzier] = self.hp.optimizer
+        options = {
+            "lr": self.hp.learning_rate,
+            "weight_decay": self.hp.weight_decay,
+        }
+        return optimizer_class(
+            self.parameters(),
+            lr=self.hp.learning_rate,
+            weight_decay=self.hp.weight_decay,
+        )
 
     @property
     def batch_size(self) -> int:

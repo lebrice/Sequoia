@@ -286,7 +286,7 @@ class IncrementalSLSetting(IncrementalAssumption, DiscreteTaskAgnosticSLSetting)
         if wandb.run:
             test_dir = wandb.run.dir
         else:
-            test_dir = "results"
+            test_dir = self.config.log_dir
 
         test_loop_max_steps = len(dataset) // (env.batch_size or 1)
         # TODO: Fix this: iteration doesn't ever end for some reason.

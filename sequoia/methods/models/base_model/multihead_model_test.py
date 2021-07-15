@@ -21,7 +21,7 @@ from torch.utils.data import DataLoader, Dataset
 from sequoia.common import Loss
 from sequoia.common.config import Config
 from sequoia.common.gym_wrappers import MultiTaskEnvironment
-from sequoia.methods.baseline_method import BaselineMethod
+from sequoia.methods.base_method import BaseMethod
 from sequoia.methods.models.forward_pass import ForwardPass
 from sequoia.methods.models.output_heads.rl.episodic_a2c import EpisodicA2C
 from sequoia.settings import ClassIncrementalSetting, TraditionalRLSetting, RLSetting
@@ -29,7 +29,7 @@ from sequoia.settings.base import Environment
 from sequoia.settings.rl import IncrementalRLSetting
 from sequoia.utils import take
 
-from .baseline_model import BaselineModel
+from .base_model import BaseModel
 from .multihead_model import MultiHeadModel, OutputHead, get_task_indices
 
 
@@ -161,7 +161,7 @@ def test_multitask_rl_bug_without_PL(monkeypatch):
     # setting = RLSetting.load_benchmark("monsterkong")
     config = Config(debug=True, verbose=True, seed=123)
     config.seed_everything()
-    model = BaselineModel(
+    model = BaseModel(
         setting=setting,
         hparams=MultiHeadModel.HParams(
             multihead=True,
@@ -269,7 +269,7 @@ def test_multitask_rl_bug_with_PL(monkeypatch, config: Config):
 
     # setting = RLSetting.load_benchmark("monsterkong")
     cpu_config.seed_everything()
-    model = BaselineModel(
+    model = BaseModel(
         setting=setting,
         hparams=MultiHeadModel.HParams(
             multihead=True,
@@ -287,7 +287,7 @@ def test_multitask_rl_bug_with_PL(monkeypatch, config: Config):
     # Import this and use it to create the Trainer, rather than creating the Trainer
     # directly, so we don't get the same bug (due to with_is_last in PL) from the
     # DataConnector.
-    from sequoia.methods.baseline_method import TrainerConfig
+    from sequoia.methods.base_method import TrainerConfig
 
     # NOTE: We only do this so that the Model has a self.trainer attribute and so the
     # model.training_step below can be used:
@@ -328,7 +328,8 @@ def test_multitask_rl_bug_with_PL(monkeypatch, config: Config):
             from sequoia.utils.generic_functions import to_tensor
 
             print(step, env.is_closed())
-            step_results = model.training_step(batch=obs, batch_idx=step)
+            forward_pass = model.training_step(batch=obs, batch_idx=step)
+            step_results: Optional[Loss] = model.training_step_end([forward_pass])
             loss_tensor: Optional[Tensor] = None
 
             if step > 0 and step % 5 == 0:
@@ -436,9 +437,9 @@ def test_task_inference_sl(
 
 @pytest.mark.timeout(120)
 def test_task_inference_rl_easy(config: Config):
-    from sequoia.methods.baseline_method import BaselineMethod
+    from sequoia.methods.base_method import BaseMethod
 
-    method = BaselineMethod(config=config)
+    method = BaseMethod(config=config)
     from sequoia.settings.rl import IncrementalRLSetting
 
     setting = IncrementalRLSetting(
@@ -457,7 +458,7 @@ def test_task_inference_rl_easy(config: Config):
 @pytest.mark.timeout(120)
 def test_task_inference_rl_hard(config: Config):
 
-    method = BaselineMethod(config=config)
+    method = BaseMethod(config=config)
 
     setting = IncrementalRLSetting(
         dataset="cartpole",
@@ -471,7 +472,7 @@ def test_task_inference_rl_hard(config: Config):
     # assert False, results.to_log_dict()
 
 
-from sequoia.methods.baseline_method import BaselineMethod
+from sequoia.methods.base_method import BaseMethod
 from sequoia.settings.sl import TraditionalSLSetting
 from sequoia.settings.sl.continual.setting import subset
 
@@ -483,7 +484,7 @@ def test_task_inference_multi_task_sl(config: Config):
     # settings:
     dataset_length = 1000
     # TODO: Shorten the train/test datasets?
-    method = BaselineMethod(config=config, max_epochs=1)
+    method = BaseMethod(config=config, max_epochs=1)
     setting.setup()
     setting.train_datasets = [
         subset(dataset, list(range(dataset_length)))

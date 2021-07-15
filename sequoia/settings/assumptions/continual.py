@@ -62,9 +62,9 @@ class ContinualResults(TaskResults[MetricsType]):
             ] = self.online_performance_metrics.to_log_dict(verbose=verbose)
         return log_dict
 
-    def summary(self):
+    def summary(self, verbose: bool = False) -> str:
         s = StringIO()
-        print(json.dumps(self.to_log_dict(), indent="\t"), file=s)
+        print(json.dumps(self.to_log_dict(verbose=verbose), indent="\t"), file=s)
         s.seek(0)
         return s.read()
 
@@ -106,12 +106,6 @@ class ContinualAssumption(AssumptionBase):
     # from Incremental, rather than this!
 
     Results: ClassVar[Type[ContinualResults]] = ContinualResults
-
-    # WIP: When True, a Monitor-like wrapper will be applied to the training environment
-    # and monitor the 'online' performance during training. Note that in SL, this will
-    # also cause the Rewards (y) to be withheld until actions are passed to the `send`
-    # method of the Environment.
-    monitor_training_performance: bool = flag(False)
 
     # Options related to Weights & Biases (wandb). Turned Off by default. Passing any of
     # its arguments will enable wandb.
@@ -225,13 +219,6 @@ class ContinualAssumption(AssumptionBase):
                         )
 
                 action = method.get_actions(obs, action_space)
-
-                # logger.debug(f"action: {action}")
-                # TODO: Remove this:
-                if isinstance(action, Actions):
-                    action = action.y_pred
-                if isinstance(action, Tensor):
-                    action = action.detach().cpu().numpy()
 
                 if test_env.is_closed():
                     break
@@ -366,6 +353,7 @@ class TestEnvironment(gym.wrappers.Monitor, IterableWrapper[EnvType], ABC):
         **kwargs,
     ):
         super().__init__(env, directory, *args, **kwargs)
+        logger.info(f"Creating test env (Monitor) with log directory {self.directory}")
         self.step_limit = step_limit
         self.no_rewards = no_rewards
         self._closed = False

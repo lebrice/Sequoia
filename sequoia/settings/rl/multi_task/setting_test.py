@@ -20,7 +20,7 @@ class TestMultiTaskRLSetting(TaskIncrementalRLSettingTests):
     #     setting = self.Setting(
     #         dataset="CartPole-v0",
     #         nb_tasks=5,
-    #         # steps_per_task=100,
+    #         # train_steps_per_task=100,
     #         train_max_steps=500,
     #         test_max_steps=500,
     #     )

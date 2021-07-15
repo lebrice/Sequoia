@@ -10,13 +10,18 @@ from gym.wrappers import TimeLimit
 
 from sequoia.common.gym_wrappers import MultiTaskEnvironment
 from sequoia.common.spaces import TypedDictSpace
-from sequoia.conftest import monsterkong_required, param_requires_monsterkong, atari_py_required
+from sequoia.conftest import (
+    monsterkong_required,
+    param_requires_monsterkong,
+    atari_py_required,
+)
 from sequoia.settings import RLSetting
 from sequoia.utils.utils import dict_union
 
 from .multi_task_environment import MultiTaskEnvironment
 
 supported_environments: List[str] = ["CartPole-v0"]
+
 
 def test_task_schedule():
     original: CartPoleEnv = gym.make("CartPole-v0")
@@ -68,7 +73,6 @@ def test_multi_task(environment_name: str):
     plt.close()
 
 
-
 @pytest.mark.skip(reason="This generates some output, uncomment this to run it.")
 @pytest.mark.parametrize("environment_name", supported_environments)
 def test_monitor_env(environment_name):
@@ -89,6 +93,7 @@ def test_monitor_env(environment_name):
     task_param_values: List[Dict] = []
     default_length: float = env.length
     from gym.wrappers import Monitor
+
     for task_id in range(20):
         for i in range(100):
             observation, reward, done, info = env.step(env.action_space.sample())
@@ -137,9 +142,7 @@ def test_add_task_dict_to_info():
         30: dict(gravity=0.9),
     }
     env = MultiTaskEnvironment(
-        original,
-        task_schedule=task_schedule,
-        add_task_dict_to_info=True,
+        original, task_schedule=task_schedule, add_task_dict_to_info=True,
     )
     env.seed(123)
     env.reset()
@@ -165,7 +168,6 @@ def test_add_task_dict_to_info():
     env.close()
 
 
-
 def test_add_task_id_to_obs():
     """ Test that the 'info' dict contains the task dict. """
     original: CartPoleEnv = gym.make("CartPole-v0")
@@ -178,18 +180,14 @@ def test_add_task_id_to_obs():
         30: dict(gravity=0.9),
     }
     env = MultiTaskEnvironment(
-        original,
-        task_schedule=task_schedule,
-        add_task_id_to_obs=True,
+        original, task_schedule=task_schedule, add_task_id_to_obs=True,
     )
     env.seed(123)
     env.reset()
 
     assert env.observation_space == spaces.Dict(
-        x=original.observation_space,
-        task_labels=spaces.Discrete(4),
+        x=original.observation_space, task_labels=spaces.Discrete(4),
     )
-
 
     for step in range(100):
         obs, _, done, info = env.step(env.action_space.sample())
@@ -216,7 +214,6 @@ def test_add_task_id_to_obs():
         if done:
             obs = env.reset()
             assert isinstance(obs, dict)
-
 
     env.close()
 
@@ -245,8 +242,7 @@ def test_starting_step_and_max_step():
     env.reset()
 
     assert env.observation_space == spaces.Dict(
-        x=original.observation_space,
-        task_labels=spaces.Discrete(4),
+        x=original.observation_space, task_labels=spaces.Discrete(4),
     )
 
     # Trying to set the 'steps' to something smaller than the starting step
@@ -292,16 +288,12 @@ def test_task_id_is_added_even_when_no_known_task_schedule():
     """
     # Breakout doesn't have default task params.
     original: CartPoleEnv = gym.make("Breakout-v0")
-    env = MultiTaskEnvironment(
-        original,
-        add_task_id_to_obs=True,
-    )
+    env = MultiTaskEnvironment(original, add_task_id_to_obs=True,)
     env.seed(123)
     env.reset()
 
     assert env.observation_space == spaces.Dict(
-        x=original.observation_space,
-        task_labels=spaces.Discrete(1),
+        x=original.observation_space, task_labels=spaces.Discrete(1),
     )
     for step in range(0, 100):
         obs, _, done, info = env.step(env.action_space.sample())
@@ -316,19 +308,23 @@ def test_task_id_is_added_even_when_no_known_task_schedule():
     env.close()
 
 
-
 @monsterkong_required
 def test_task_schedule_monsterkong():
     env: MetaMonsterKongEnv = gym.make("MetaMonsterKong-v1")
     from gym.wrappers import TimeLimit
+
     env = TimeLimit(env, max_episode_steps=10)
-    env = MultiTaskEnvironment(env, task_schedule={
-        0: {"level": 0},
-        100: {"level": 1},
-        200: {"level": 2},
-        300: {"level": 3},
-        400: {"level": 4},
-    }, add_task_id_to_obs=True)
+    env = MultiTaskEnvironment(
+        env,
+        task_schedule={
+            0: {"level": 0},
+            100: {"level": 1},
+            200: {"level": 2},
+            300: {"level": 3},
+            400: {"level": 4},
+        },
+        add_task_id_to_obs=True,
+    )
     obs = env.reset()
 
     img, task_labels = obs["x"], obs["task_labels"]
@@ -367,16 +363,22 @@ def test_task_schedule_with_callables():
     """
     env: MetaMonsterKongEnv = gym.make("MetaMonsterKong-v1")
     from gym.wrappers import TimeLimit
+
     env = TimeLimit(env, max_episode_steps=10)
 
     from operator import methodcaller
-    env = MultiTaskEnvironment(env, task_schedule={
-        0:   methodcaller("set_level", 0),
-        100: methodcaller("set_level", 1),
-        200: methodcaller("set_level", 2),
-        300: methodcaller("set_level", 3),
-        400: methodcaller("set_level", 4),
-    }, add_task_id_to_obs=True)
+
+    env = MultiTaskEnvironment(
+        env,
+        task_schedule={
+            0: methodcaller("set_level", 0),
+            100: methodcaller("set_level", 1),
+            200: methodcaller("set_level", 2),
+            300: methodcaller("set_level", 3),
+            400: methodcaller("set_level", 4),
+        },
+        add_task_id_to_obs=True,
+    )
     obs = env.reset()
 
     # img, task_labels = obs
@@ -410,6 +412,7 @@ def test_task_schedule_with_callables():
 def test_random_task_on_each_episode():
     env: MetaMonsterKongEnv = gym.make("MetaMonsterKong-v1")
     from gym.wrappers import TimeLimit
+
     env = TimeLimit(env, max_episode_steps=10)
     env = MultiTaskEnvironment(
         env,
@@ -443,6 +446,7 @@ def test_random_task_on_each_episode():
 
     env.close()
 
+
 from sequoia.conftest import monsterkong_required
 
 
@@ -452,12 +456,11 @@ def test_random_task_on_each_episode_and_only_one_task_in_schedule():
     """
     env: MetaMonsterKongEnv = gym.make("CartPole-v1")
     from gym.wrappers import TimeLimit
+
     env = TimeLimit(env, max_episode_steps=10)
     env = MultiTaskEnvironment(
         env,
-        task_schedule={
-            0: {"length": 0.1},
-        },
+        task_schedule={0: {"length": 0.1},},
         add_task_id_to_obs=True,
         new_random_task_on_reset=True,
     )
@@ -483,7 +486,7 @@ def env_fn_monsterkong() -> gym.Env:
     env = MultiTaskEnvironment(
         env,
         task_schedule={
-            0:   {"level": 1},
+            0: {"level": 1},
             100: {"level": 2},
             200: {"level": 3},
             300: {"level": 4},
@@ -501,7 +504,7 @@ def env_fn_cartpole() -> gym.Env:
     env = MultiTaskEnvironment(
         env,
         task_schedule={
-            0:   {"length": 0.1},
+            0: {"length": 0.1},
             100: {"length": 0.2},
             200: {"length": 0.3},
             300: {"length": 0.4},
@@ -523,7 +526,9 @@ def test_task_sequence_is_reproducible(env: str):
     elif env == "monsterkong":
         env_fn = env_fn_monsterkong
     else:
-        assert False, f"just testing on cartpole and monsterkong for now, but got env {env}"
+        assert (
+            False
+        ), f"just testing on cartpole and monsterkong for now, but got env {env}"
 
     batch_size = 1
 
@@ -565,3 +570,37 @@ def test_task_sequence_is_reproducible(env: str):
             # Make sure that the results from this run are equivalent to the others with
             # the same seed:
             assert task_ids_and_lengths == first_results
+
+
+from sequoia.common.gym_wrappers import EnvDataset
+from sequoia.utils.utils import unique_consecutive_with_index
+
+
+def test_iteration():
+    nb_tasks = 5
+    steps_per_task = 10
+    task_schedule = task_schedule = {
+        i * steps_per_task: dict(length=0.1 + i * 0.2) for i in range(5)
+    }
+    env = gym.make("CartPole-v0")
+    env = MultiTaskEnvironment(env, task_schedule=task_schedule)
+    env = TimeLimit(env, max_episode_steps=14)
+    env = EnvDataset(env)
+    lengths = []
+    total_steps = 0
+    for episode in range(10):
+        for step, obs in enumerate(env):
+            # print(total_steps, episode, step, obs, env.length)
+            lengths.append(env.length)
+            rewards = env.send(env.action_space.sample())
+            total_steps += 1
+
+        if total_steps > 100:
+            break
+
+    actual_task_schedule = dict(unique_consecutive_with_index(lengths))
+    # NOTE: The keys won't necessarily be the same, since episodes might be shorter
+    # than `n_steps_per_task`.
+    length_schedule = {k: v["length"] for k, v in task_schedule.items()}
+    assert list(actual_task_schedule.values()) == list(length_schedule.values())
+    # assert False, actual_task_schedule

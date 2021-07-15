@@ -41,6 +41,9 @@ def concatenate(
         # If this was called like concatenate(tensor_list), then we just split off
         # the list of items.
         assert isinstance(first_item, (list, tuple))
+        if len(first_item) == 1:
+            # Called like `concatenate([some_tensor])` -> returns `some_tensor`.
+            return first_item[0]
         assert len(first_item) > 1
         items = first_item
         return concatenate(items[0], *items[1:], **kwargs)

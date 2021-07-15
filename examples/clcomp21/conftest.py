@@ -2,7 +2,7 @@ import pytest
 
 from sequoia.client.setting_proxy import SettingProxy
 from sequoia.settings.sl import ClassIncrementalSetting
-from sequoia.settings.rl import IncrementalRLSetting, RLSetting
+from sequoia.settings.rl import IncrementalRLSetting, TraditionalRLSetting
 
 
 @pytest.fixture()
@@ -39,11 +39,11 @@ def sl_track_setting():
 @pytest.fixture()
 def cartpole_state_setting():
     setting = SettingProxy(
-        RLSetting,
+        TraditionalRLSetting,
         dataset="cartpole",
-        max_steps=5_000,
-        test_steps=2_000,
-        monitor_training_performance=True,
+        train_max_steps=5_000,
+        test_max_steps=2_000,
+        nb_tasks=1,
     )
     return setting
 
@@ -53,10 +53,9 @@ def incremental_cartpole_state_setting():
     setting = SettingProxy(
         IncrementalRLSetting,
         dataset="cartpole",
-        max_steps=10_000,
+        train_max_steps=10_000,
         nb_tasks=2,
-        test_steps=2_000,
-        monitor_training_performance=True,
+        test_max_steps=2_000,
     )
     return setting
 
@@ -80,9 +79,8 @@ def rl_track_setting(tmp_path):
             6: {"level": 30},
             7: {"level": 31},
         },
-        steps_per_task=2_000,  # Reduced length for testing
+        train_steps_per_task=2_000,  # Reduced length for testing
         test_steps_per_task=2_000,
-        monitor_training_performance=True,
         task_labels_at_train_time=True,
     )
     assert setting.steps_per_phase == 2000

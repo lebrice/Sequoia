@@ -1,31 +1,26 @@
 from inspect import Parameter, Signature, getsourcefile, signature
 from pathlib import Path
-from typing import Type
-
-from typing import ClassVar, Type, Dict
-
-import pytest
-from sequoia.common.config import Config
-from sequoia.conftest import monsterkong_required
-from sequoia.settings.rl import IncrementalRLSetting, RLSetting, TraditionalRLSetting
-from sequoia.settings.base import Results
-
-from .off_policy_method import OffPolicyMethod, OffPolicyModel
+from typing import ClassVar, Dict, Type
 
 import pytest
 from stable_baselines3 import A2C, DDPG, DQN, PPO, SAC, TD3
 from stable_baselines3.common.off_policy_algorithm import OffPolicyAlgorithm
 from stable_baselines3.common.on_policy_algorithm import OnPolicyAlgorithm
 
+from sequoia.common.config import Config
+from sequoia.conftest import monsterkong_required
+from sequoia.methods.method_test import MethodTests
+from sequoia.settings.base import Results
 from sequoia.settings.rl import (
-    RLSetting,
     ContinualRLSetting,
     DiscreteTaskAgnosticRLSetting,
     IncrementalRLSetting,
     MultiTaskRLSetting,
+    RLSetting,
     TaskIncrementalRLSetting,
     TraditionalRLSetting,
 )
+
 
 from . import (
     A2CMethod,
@@ -38,7 +33,7 @@ from . import (
     TD3Method,
 )
 from .base import BaseAlgorithm, StableBaselines3Method
-
+from .off_policy_method import OffPolicyMethod, OffPolicyModel
 
 # @pytest.mark.parametrize(
 #     "MethodType, AlgoType",
@@ -55,22 +50,22 @@ from .base import BaseAlgorithm, StableBaselines3Method
 # )
 
 
-class BaseTests:
-    Method: ClassVar[Type[StableBaselines3Method]]
+class StableBaselines3MethodTests(MethodTests):
+    Method: ClassVar[Type[StableBaselines3Method]] = StableBaselines3Method
     Model: ClassVar[Type[BaseAlgorithm]]
     SB3_Algo: ClassVar[Type[BaseAlgorithm]]
-    debug_dataset: ClassVar[str]
     debug_kwargs: ClassVar[Dict] = {}
 
     @pytest.mark.parametrize("clear_buffers", [False, True])
     def test_clear_buffers_between_tasks(self, clear_buffers: bool, config: Config):
-        setting = DiscreteTaskAgnosticRLSetting(
-            dataset=self.debug_dataset,
+        setting_kwargs = dict(
             nb_tasks=2,
-            steps_per_task=1_000,
+            train_steps_per_task=1_000,
             test_steps_per_task=1_000,
             config=config,
         )
+        setting_kwargs.update(self.setting_kwargs)
+        setting = DiscreteTaskAgnosticRLSetting(**setting_kwargs)
         setting.setup()
         assert setting.train_max_steps == 2_000
         assert setting.test_max_steps == 2_000
@@ -134,66 +129,35 @@ class BaseTests:
                 f"Path to SB3 implementation: {getsourcefile(AlgoType)}\n"
             )
 
-    @pytest.mark.parametrize(
-        "setting_type",
-        [
-            ContinualRLSetting,
-            DiscreteTaskAgnosticRLSetting,
-            IncrementalRLSetting,
-            MultiTaskRLSetting,
-            TaskIncrementalRLSetting,
-            TraditionalRLSetting,
-        ],
-    )
-    def test_debug(self, setting_type: Type[ContinualRLSetting], config: Config):
-        method = self.Method(**self.debug_kwargs)
-        # TODO: Fix this test setup, nb_tasks should be something low like 2, and
-        # perhaps use max_episode_steps to limit episode length
-        setting: ContinualRLSetting = setting_type(
-            dataset=self.debug_dataset,
-            # nb_tasks=2,
-            train_max_steps=1_000,
-            test_max_steps=1_000,
-            # steps_per_task=2_000,
-            # test_steps_per_task=1_000,
-            config=config,
-        )
-        assert setting.train_max_steps == 1_000
-        assert setting.steps_per_phase == setting.train_max_steps // setting.phases
-        results: Results = setting.apply(method)
+    @classmethod
+    @pytest.fixture
+    def method(cls, config: Config) -> StableBaselines3Method:
+        """ Fixture that returns the Method instance to use when testing/debugging.
+        """
+        return cls.Method(**cls.debug_kwargs)
+
+    def validate_results(
+        self,
+        setting: RLSetting,
+        method: StableBaselines3Method,
+        results: RLSetting.Results,
+    ) -> None:
+        assert results
+        assert results.objective
+        # TODO: Set some 'reasonable' bounds on the performance here, depending on the
+        # setting/dataset.
+
+    def test_debug(self, method: StableBaselines3Method, setting: RLSetting, config: Config):
+        results: Results = setting.apply(method, config=config)
         assert results.objective is not None
         print(results.summary())
+        self.validate_results(setting=setting, method=method, results=results)
 
 
-class DiscreteActionSpaceMethodTests(BaseTests):
-    debug_dataset: ClassVar[str] = "cartpole"
+class DiscreteActionSpaceMethodTests(StableBaselines3MethodTests):
     debug_kwargs: ClassVar[Dict] = {}
     expected_debug_mean_episode_reward: ClassVar[float] = 135
-
-    # def test_classic_control_state(self, config: Config):
-    #     method = self.Method(**self.debug_kwargs)
-    #     setting = TraditionalRLSetting(
-    #         dataset=self.debug_dataset, steps_per_task=5_000, test_steps_per_task=1_000,
-    #     )
-    #     results = setting.apply(method, config=config)
-    #     print(results.summary())
-    #     assert (
-    #         self.expected_debug_mean_episode_reward
-    #         < results.average_final_performance.mean_episode_reward
-    #     )
-
-    # def test_incremental_classic_control_state(self, config: Config):
-    #     method = self.Method(**self.debug_kwargs)
-    #     setting = IncrementalRLSetting(
-    #         dataset=self.debug_dataset,
-    #         nb_tasks=2,
-    #         steps_per_task=2_000,
-    #         test_steps_per_task=1_000,
-    #         config=config,
-    #     )
-    #     results: IncrementalRLSetting.Results = setting.apply(method)
-    #     assert 89 < results.average_final_performance.mean_episode_reward
-    #     print(results.summary())
+    setting_kwargs: ClassVar[str] = {"dataset": "CartPole-v0"}
 
     @pytest.mark.timeout(120)
     @monsterkong_required
@@ -202,7 +166,7 @@ class DiscreteActionSpaceMethodTests(BaseTests):
         setting = IncrementalRLSetting(
             dataset="monsterkong",
             nb_tasks=2,
-            steps_per_task=1_000,
+            train_steps_per_task=1_000,
             test_steps_per_task=1_000,
         )
         results: IncrementalRLSetting.Results = setting.apply(
@@ -232,31 +196,5 @@ def _(algo: OnPolicyAlgorithm):
     return algo.rollout_buffer.pos
 
 
-class ContinuousActionSpaceMethodTests(BaseTests):
-    debug_dataset: ClassVar[str] = "MountainCarContinuous-v0"
-
-    # @pytest.mark.parametrize(
-    #     "Setting",
-    #     [
-    #         ContinualRLSetting,
-    #         DiscreteTaskAgnosticRLSetting,
-    #         IncrementalRLSetting,
-    #         MultiTaskRLSetting,
-    #         TaskIncrementalRLSetting,
-    #         TraditionalRLSetting,
-    #     ],
-    # )
-    # @pytest.mark.parametrize("observe_state", [True, False])
-    # def test_continuous_mountaincar(
-    #     self, Setting: Type[RLSetting], observe_state: bool, config: Config
-    # ):
-    #     method = self.Method()
-    #     setting = Setting(
-    #         dataset=self.debug_dataset,
-    #         nb_tasks=2,
-    #         steps_per_task=1_000,
-    #         test_steps_per_task=1_000,
-    #     )
-    #     results: ContinualRLSetting.Results = setting.apply(method, config=config)
-    #     assert False, results.summary()
-    #     print(results.summary())
+class ContinuousActionSpaceMethodTests(StableBaselines3MethodTests):
+    setting_kwargs: ClassVar[str] = {"dataset": "MountainCarContinuous-v0"}

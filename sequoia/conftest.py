@@ -23,7 +23,8 @@ import gym
 import pytest
 from simple_parsing import Serializable
 
-from sequoia.common.config import Config, TrainerConfig
+from sequoia.methods.trainer import TrainerConfig
+from sequoia.common.config import Config
 from sequoia.settings import Method, Setting
 
 
@@ -61,8 +62,9 @@ def trainer_config(tmp_path_factory):
 @pytest.fixture()
 def config(tmp_path: Path):
     # TODO: Set the results dir somehow with the value of this `tmp_path` fixture.
-    data_dir = Path(os.environ.get("SLURM_TMPDIR", os.environ.get("DATA_DIR", "data")))
-    return Config(debug=True, data_dir=data_dir, seed=123, log_dir=tmp_path)
+    tmp_results_dir = tmp_path / "tmp_results"
+    tmp_results_dir.mkdir()
+    return Config(debug=True, seed=123, log_dir=tmp_results_dir)
 
 
 def id_fn(params: Any) -> str:
@@ -90,7 +92,7 @@ def get_all_dataset_names(method_class: Type[Method] = None) -> List[str]:
     dataset_names: Iterable[List[str]] = map(
         lambda s: list(s.available_datasets), method_class.get_applicable_settings()
     )
-    return list(set(sum(dataset_names, [])))
+    return sorted(list(set(sum(dataset_names, []))))
 
 
 def get_dataset_params(
@@ -204,7 +206,7 @@ def parametrize_test_datasets(metafunc):
                 )
             )
             test_datasets = default_test_datasets
-
+    test_datasets = sorted(test_datasets)
     logger.info(
         f"Parametrizing the '{func_param_name}' param of test "
         f"{module_name} :: {function_name} with {test_datasets}."

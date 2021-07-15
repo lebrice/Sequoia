@@ -73,8 +73,8 @@ class IIDResults(IncrementalSLResults):
     #     s.seek(0)
     #     return s.read()
 
-    def to_log_dict(self) -> Dict[str, float]:
-        results = super().to_log_dict()
+    def to_log_dict(self, verbose: bool = False) -> Dict[str, float]:
+        results = super().to_log_dict(verbose=verbose)
         # Remove the useless 2-levels of nesting from the log_dict
         results.update(results.pop("Task 0").pop("Task 0"))
         # assert False, json.dumps(results, indent="\t")

@@ -1,7 +1,7 @@
-"""Defines the EWC method, as a subclass of the BaselineMethod.
+"""Defines the EWC method, as a subclass of the BaseMethod.
 
 Likewise, defines the `EwcModel`, which is a very simple subclass of the
-`BaselineModel`, adding in the Ewc auxiliary task (`EWCTask`).
+`BaseModel`, adding in the Ewc auxiliary task (`EWCTask`).
 
 For a more detailed view of exactly how the EwcTask calculates its loss, see
 the `sequoia.methods.aux_tasks.ewc.EwcTask`.
@@ -14,19 +14,19 @@ from gym.utils import colorize
 from simple_parsing import ArgumentParser, mutable_field
 
 from sequoia.common.config import Config
-from sequoia.common.config.trainer_config import TrainerConfig
 from sequoia.methods import register_method
 from sequoia.methods.aux_tasks.ewc import EWCTask
-from sequoia.methods.baseline_method import BaselineMethod, BaselineModel
+from sequoia.methods.base_method import BaseMethod, BaseModel
+from sequoia.methods.trainer import TrainerConfig
 from sequoia.settings import Setting, TaskIncrementalRLSetting
 from sequoia.settings.assumptions.incremental import IncrementalAssumption
 
 
-class EwcModel(BaselineModel):
-    """ Modified version of the BaselineModel, which adds the EWC auxiliary task. """
+class EwcModel(BaseModel):
+    """ Modified version of the BaseModel, which adds the EWC auxiliary task. """
 
     @dataclass
-    class HParams(BaselineModel.HParams):
+    class HParams(BaseModel.HParams):
         """ Hyper-parameters of the `EwcModel`. """
 
         # Hyper-parameters related to the EWC auxiliary task.
@@ -43,8 +43,8 @@ class EwcModel(BaselineModel):
 
 @register_method
 @dataclass
-class EwcMethod(BaselineMethod, target_setting=IncrementalAssumption):
-    """ Subclass of the BaselineMethod, which adds the EWCTask to the `BaselineModel`.
+class EwcMethod(BaseMethod, target_setting=IncrementalAssumption):
+    """ Subclass of the BaseMethod, which adds the EWCTask to the `BaseModel`.
 
     This Method is applicable to any CL setting (RL or SL) where there are clear task
     boundaries, regardless of if the task labels are given or not.
@@ -92,7 +92,7 @@ class EwcMethod(BaselineMethod, target_setting=IncrementalAssumption):
         """Create the Model to use for the given Setting.
 
         In this case, we want to return an `EwcModel` (our customized version of the
-        BaselineModel).
+        BaseModel).
 
         Parameters
         ----------

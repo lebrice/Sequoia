@@ -25,7 +25,7 @@ class TestDiscreteTaskAgnosticRLSetting(ContinualRLSettingTests):
     Setting: ClassVar[Type[Setting]] = DiscreteTaskAgnosticRLSetting
     dataset: pytest.fixture = make_dataset_fixture(DiscreteTaskAgnosticRLSetting)
 
-    @pytest.fixture(params=[1, 2])
+    @pytest.fixture(params=[1, 3])
     def nb_tasks(self, request):
         n = request.param
         return n
@@ -113,7 +113,7 @@ class TestDiscreteTaskAgnosticRLSetting(ContinualRLSettingTests):
             train_max_steps=train_max_steps,
             train_task_schedule=train_task_schedule,
         )
-        # for give_nb_task, give_max_steps, give_task_schedule in itertools.product(*[[True, False] for _ in range(3)]):
+        # TODO: Should also pass nothing, and expect an error to be raised?
         kwargs = full_kwargs.copy()
         if not give_nb_tasks:
             kwargs.pop("nb_tasks")
@@ -164,7 +164,7 @@ def test_fit_and_on_task_switch_calls():
     setting = DiscreteTaskAgnosticRLSetting(
         dataset="CartPole-v0",
         # nb_tasks=5,
-        # steps_per_task=100,
+        # train_steps_per_task=100,
         train_max_steps=500,
         test_max_steps=500,
         # test_steps_per_task=100,

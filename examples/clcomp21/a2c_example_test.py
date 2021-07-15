@@ -2,11 +2,12 @@ import pytest
 from sequoia.client.setting_proxy import SettingProxy
 from sequoia.settings.rl import IncrementalRLSetting, RLSetting
 from sequoia.settings.sl import ClassIncrementalSetting
+from sequoia.conftest import slow
 
 from .dummy_method import DummyMethod
 from .a2c_example import ExampleA2CMethod
 
-
+@slow
 @pytest.mark.timeout(120)
 def test_cartpole_state(cartpole_state_setting: SettingProxy[RLSetting]):
     """ Applies this Method to a simple cartpole-state setting.
@@ -23,6 +24,7 @@ def test_cartpole_state(cartpole_state_setting: SettingProxy[RLSetting]):
     assert 5 < results.average_final_performance.mean_episode_length
 
 
+@slow
 @pytest.mark.timeout(120)
 def test_incremental_cartpole_state(
     incremental_cartpole_state_setting: SettingProxy[IncrementalRLSetting],
@@ -39,6 +41,7 @@ def test_incremental_cartpole_state(
     assert 5 <= results.average_final_performance.objective
 
 
+@slow
 @pytest.mark.timeout(300)
 def test_RL_track(rl_track_setting: SettingProxy[IncrementalRLSetting]):
     """ Applies this Method to the Setting of the sl track of the competition.
