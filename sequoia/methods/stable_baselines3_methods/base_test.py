@@ -60,7 +60,7 @@ class StableBaselines3MethodTests(MethodTests):
     def test_clear_buffers_between_tasks(self, clear_buffers: bool, config: Config):
         setting_kwargs = dict(
             nb_tasks=2,
-            steps_per_task=1_000,
+            train_steps_per_task=1_000,
             test_steps_per_task=1_000,
             config=config,
         )
@@ -166,7 +166,7 @@ class DiscreteActionSpaceMethodTests(StableBaselines3MethodTests):
         setting = IncrementalRLSetting(
             dataset="monsterkong",
             nb_tasks=2,
-            steps_per_task=1_000,
+            train_steps_per_task=1_000,
             test_steps_per_task=1_000,
         )
         results: IncrementalRLSetting.Results = setting.apply(

@@ -122,7 +122,7 @@ def test_on_task_switch_is_called_multi_task():
     setting = MultiTaskSLSetting(
         dataset="mnist",
         nb_tasks=5,
-        # steps_per_task=100,
+        # train_steps_per_task=100,
         # max_steps=500,
         # test_steps_per_task=100,
         train_transforms=[],

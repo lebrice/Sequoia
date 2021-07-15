@@ -164,7 +164,7 @@ def test_fit_and_on_task_switch_calls():
     setting = DiscreteTaskAgnosticRLSetting(
         dataset="CartPole-v0",
         # nb_tasks=5,
-        # steps_per_task=100,
+        # train_steps_per_task=100,
         train_max_steps=500,
         test_max_steps=500,
         # test_steps_per_task=100,

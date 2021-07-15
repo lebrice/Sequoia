@@ -282,12 +282,10 @@ class ContinualRLSetting(RLSetting, ContinualAssumption):
     num_workers: Optional[int] = field(default=None, cmd=False)
 
     # Maximum number of training steps per task.
-    # NOTE: In this particular setting, since there aren't clear 'tasks' to speak of, we
-    # don't expose this option on the command-line.
+    # NOTE: In this particular setting there aren't clear 'tasks' to speak of.
     train_steps_per_task: Optional[int] = None
     # Number of test steps per task.
-    # NOTE: In this particular setting, since there aren't clear 'tasks' to speak of, we
-    # don't expose this option on the command-line.
+    # NOTE: In this particular setting there aren't clear 'tasks' to speak of.
     test_steps_per_task: Optional[int] = None
 
     # # Deprecated: use `train_max_steps` instead.

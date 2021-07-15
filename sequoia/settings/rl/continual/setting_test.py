@@ -129,7 +129,7 @@ class TestContinualRLSetting:
         assert setting.train_max_steps == 456
 
         with pytest.warns(DeprecationWarning):
-            setting = self.Setting(nb_tasks=5, test_steps=123)
+            setting = self.Setting(nb_tasks=5, test_max_steps=123)
         assert setting.test_max_steps == 123
 
         with pytest.warns(DeprecationWarning):
@@ -647,7 +647,7 @@ def test_fit_and_on_task_switch_calls():
     setting = ContinualRLSetting(
         dataset="CartPole-v0",
         # nb_tasks=5,
-        # steps_per_task=100,
+        # train_steps_per_task=100,
         train_max_steps=500,
         test_max_steps=500,
         # test_steps_per_task=100,

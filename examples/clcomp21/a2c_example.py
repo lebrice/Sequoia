@@ -176,10 +176,7 @@ class ExampleA2CMethod(Method, target_setting=RLSetting):
         episode = 0
         total_steps = 0
 
-        while (
-            not train_env.is_closed()
-            and total_steps < self.max_training_steps
-        ):
+        while not train_env.is_closed() and total_steps < self.max_training_steps:
             episode += 1
 
             log_probs: List[Tensor] = []
@@ -243,9 +240,7 @@ class ExampleA2CMethod(Method, target_setting=RLSetting):
                 )
 
             if total_steps >= self.max_training_steps:
-                print(
-                    f"Reached the limit of {self.max_training_steps} steps."
-                )
+                print(f"Reached the limit of {self.max_training_steps} steps.")
                 break
 
             # compute Q values
@@ -338,20 +333,18 @@ if __name__ == "__main__":
 
     # Create the Setting.
 
-    # CartPole-state for debugging:
-    from sequoia.settings.rl import RLSetting
+    # CartPole for debugging:
+    from sequoia.settings.rl import TraditionalRLSetting
 
-    setting = RLSetting(dataset="CartPole-v0")
+    setting = TraditionalRLSetting(
+        dataset="CartPole-v0", nb_tasks=1, train_max_steps=10_000
+    )
 
-    # OR: Incremental CartPole-state:
+    # OR: Incremental CartPole:
     from sequoia.settings.rl import IncrementalRLSetting
 
     setting = IncrementalRLSetting(
-        dataset="CartPole-v0",
-        monitor_training_performance=True,
-        nb_tasks=1,
-        steps_per_task=1_000,
-        test_steps=2000,
+        dataset="CartPole-v0", nb_tasks=5, train_steps_per_task=10_000
     )
 
     # OR: Setting of the RL Track of the competition:

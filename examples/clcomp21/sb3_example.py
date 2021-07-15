@@ -72,8 +72,8 @@ if __name__ == "__main__":
         dataset="CartPole-v0",
         monitor_training_performance=True,
         nb_tasks=1,
-        steps_per_task=1_000,
-        test_steps=2000,
+        train_steps_per_task=1_000,
+        test_max_steps=2000,
     )
 
     # OR: Setting of the RL Track of the competition:

@@ -119,7 +119,7 @@ class MethodTests(ABC):
                 nb_tasks=2,
                 train_max_steps=1_000,
                 test_max_steps=1_000,
-                # steps_per_task=2_000,
+                # train_steps_per_task=2_000,
                 # test_steps_per_task=1_000,
                 config=session_config,
             )

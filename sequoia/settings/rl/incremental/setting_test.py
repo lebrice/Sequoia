@@ -109,7 +109,7 @@ class TestIncrementalRLSetting(DiscreteTaskAgnosticRLSettingTests):
         setting = self.Setting(
             dataset="CartPole-v0",
             monitor_training_performance=True,
-            # steps_per_task=500,
+            # train_steps_per_task=500,
             nb_tasks=2,
             train_max_steps=1000,
             test_max_steps=1000,
@@ -158,7 +158,7 @@ class TestIncrementalRLSetting(DiscreteTaskAgnosticRLSettingTests):
             nb_tasks=5,
             train_max_steps=500,
             test_max_steps=500,
-            # steps_per_task=100,
+            # train_steps_per_task=100,
             # test_steps_per_task=100,
             train_transforms=[],
             test_transforms=[],
@@ -385,7 +385,7 @@ def test_metaworld_auto_task_schedule(pass_env_id_instead_of_env_instance: bool)
     # is used.
     # setting = TaskIncrementalRLSetting(
     #     dataset=env_name if pass_env_id_instead_of_env_instance else env,
-    #     steps_per_task=1000,
+    #     train_steps_per_task=1000,
     # )
     # assert setting.nb_tasks == 50
     # assert setting.steps_per_task == 1000
@@ -619,9 +619,9 @@ def test_incremental_mujoco_like_LPG_FTW():
 
     setting = IncrementalRLSetting(
         train_envs=task_envs,
-        steps_per_task=10_000,
+        train_steps_per_task=10_000,
         train_wrappers=RenderEnvWrapper,
-        test_steps=10_000,
+        test_max_steps=10_000,
     )
     assert setting.nb_tasks == nb_tasks
 
