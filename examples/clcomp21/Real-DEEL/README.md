@@ -84,19 +84,13 @@ main.py --cl_method_name=der --learning_rate=0.00034 --max_epochs_per_task=7 --m
 |Final/CL Score: | 0.87|
 
 <p align="center">
-<figure class="image">
-    <img src="plots/results.png" alt="Final Performance" >
-    <figcaption>Final Performance</figcaption>
-    </figure>
 
-<figure class="image">
-    <img src="plots/test_average.png" alt="Evolution of Final test average" >
-    <figcaption>Evolution of Final test average</figcaption>
-    </figure>
-<figure class="image">
-    <img src="plots/dark_loss_pertask.png" alt="Dark Loss" >
-    <figcaption>Evolution of Dark Loss during training</figcaption>
-    </figure> 
+![Final Performance](plots/results.png)
+
+![Evolution of Final test average](plots/test_average.png)
+
+![Evolution of Dark Loss during training](plots/dark_loss_pertask.png)
+
 </p>
 
 ## Acknowledgements
