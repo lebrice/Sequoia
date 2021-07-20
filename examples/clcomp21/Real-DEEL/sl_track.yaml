@@ -1,0 +1,7 @@
+dataset: synbols
+nb_tasks: 12
+known_task_boundaries_at_train_time: true
+known_task_boundaries_at_test_time: false
+task_labels_at_train_time: true
+task_labels_at_test_time: false
+monitor_training_performance: true

@@ -1,0 +1,24 @@
+dataset: monsterkong
+known_task_boundaries_at_train_time: true
+known_task_boundaries_at_test_time: false
+task_labels_at_train_time: true
+task_labels_at_test_time: false
+monitor_training_performance: true
+nb_tasks: 8
+train_task_schedule:
+  0:
+    level: 0
+  1:
+    level: 1
+  2:
+    level: 10
+  3:
+    level: 11
+  4:
+    level: 20
+  5:
+    level: 21
+  6:
+    level: 30
+  7:
+    level: 31
