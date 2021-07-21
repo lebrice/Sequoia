@@ -6,7 +6,7 @@ from typing import Optional, Type
 
 import pytest
 from sequoia.common.config import Config
-from sequoia.methods import Method, all_methods
+from sequoia.methods import Method, get_all_methods
 from sequoia.methods.random_baseline import RandomBaselineMethod
 from sequoia.settings import Results, Setting, all_settings
 from sequoia.utils.serialization import Serializable
@@ -50,7 +50,7 @@ def set_argv_for_debug(monkeypatch):
     monkeypatch.setattr(sys, "argv", shlex.split("main.py --debug --fast_dev_run"))
 
 
-@pytest.fixture(params=sorted(all_methods, key=str))
+@pytest.fixture(params=sorted(get_all_methods(), key=str))
 def method_type(request, monkeypatch, set_argv_for_debug):
     method_class: Type[Method] = request.param
     return method_class

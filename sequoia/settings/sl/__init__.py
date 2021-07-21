@@ -1,5 +1,7 @@
 from .. import Results
 from .environment import PassiveEnvironment
+# TODO: Replace all uses of 'PassiveEnvironment' with 'SLEnvironment'
+SLEnvironment = PassiveEnvironment
 from .setting import SLSetting
 from .continual import ContinualSLSetting
 from .discrete import DiscreteTaskAgnosticSLSetting

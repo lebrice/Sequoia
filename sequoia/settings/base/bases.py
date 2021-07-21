@@ -170,9 +170,9 @@ class SettingABC:
     def get_applicable_methods(cls) -> List[Type["Method"]]:
         """ Returns all the Methods applicable on this Setting. """
         applicable_methods: List[Method] = []
-        from sequoia.methods import all_methods
+        from sequoia.methods import get_all_methods
 
-        for method_type in all_methods:
+        for method_type in get_all_methods():
             if method_type.is_applicable(cls):
                 applicable_methods.append(method_type)
         return applicable_methods
@@ -602,6 +602,17 @@ class Method(Generic[SettingType], Parseable, ABC):
         sb3/DQN versus pl_bolts/DQN, sequoia/EWC vs avalanche/EWC, etc.
         """
         return getattr(cls, "family", None)
+
+    @classmethod
+    def get_full_name(cls) -> str:
+        """ Gets the 'full name' of a method, which is the "{family}.{name}" if the
+        family is set, and just the name otherwise. 
+
+        The full name is used as the option on the command-line.
+        """
+        name = cls.get_name()
+        family = cls.get_family()
+        return f"{family}.{name}" if family is not None else name
 
     def __init_subclass__(
         cls, target_setting: Type[SettingType] = None, **kwargs

@@ -23,7 +23,7 @@ from simple_parsing import (
 )
 
 from sequoia.common.config import Config, WandbConfig
-from sequoia.methods import Method, all_methods
+from sequoia.methods import Method, get_all_methods
 from sequoia.settings import (
     Results,
     Setting,
@@ -41,34 +41,10 @@ source_dir = Path(os.path.dirname(__file__))
 
 
 def get_method_names() -> Dict[str, Type[Method]]:
-    names_to_method_type: Dict[str, Type[Method]] = {}
-    for method_type in all_methods:
-        name = method_type.get_name()
-        family = method_type.get_family()
-        key = name if family is None else f"{family}.{name}"
-        if key in names_to_method_type:
-            existing_method = names_to_method_type[key]
-            if family is None:
-                raise RuntimeError(
-                    f"There is already a method registered with name {name} in "
-                    f"{existing_method.get_path_to_source_file()}!\n"
-                    f"(Consider adding a 'family' field to your method, or "
-                    f"implementing the `get_family()` classmethod."
-                )
-            raise RuntimeError(
-                f"There is already a method registered with name {name} in method "
-                f"family {family} (defined in "
-                f"{existing_method.get_path_to_source_file()}!"
-            )
-        names_to_method_type[key] = method_type
-            # # Take out the existing entry and replace its key.
-        # existing_entry = names_to_method_type.pop(name)
-        # new_name = f"{existing_entry.get_family()}.{name}"
-        # names_to_method_type[new_name] = existing_entry
-        # # Put `new_method` in at the right key.
-        # new_name = f"{method_type.get_family()}.{name}"
-        # names_to_method_type[new_name] = method_type
-    return names_to_method_type
+    all_methods = get_all_methods()
+    return {
+        method.get_full_name(): method for method in all_methods
+    }
 
 
 @dataclass
@@ -530,7 +506,7 @@ def main():
         f"- {setting.get_name()}: {setting} ({setting.get_path_to_source_file()})" for setting in all_settings
     ))
     logger.debug("Registered Methods: \n" + "\n".join(
-        f"- {method.get_name()}: {method} ({method.get_path_to_source_file()})" for method in all_methods
+        f"- {method.get_name()}: {method} ({method.get_path_to_source_file()})" for method in get_all_methods()
     ))
 
     Experiment.main()
