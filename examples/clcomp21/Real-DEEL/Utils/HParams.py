@@ -21,7 +21,7 @@ class BaseHParams(HyperParameters):
     """ Hyper-parameters of the demo model. """
 
     # method to use
-    cl_method_name: str = "mixder"
+    cl_method_name: str = "der"
     # Learning rate of the optimizer.
     learning_rate: float = 0.0003  # log_uniform(1e-6, 1e-2, default=0.0004)
     # L2 regularization coefficient.
@@ -30,7 +30,7 @@ class BaseHParams(HyperParameters):
     # Maximum number of training epochs per task.
     max_epochs_per_task: int = 7
     # reload best model from task
-    reload_best: bool = True
+    reload_best: bool = False
     early_stop: bool = False
     # Number of epochs with increasing validation loss after which we stop training.
     early_stop_patience: int = 3
