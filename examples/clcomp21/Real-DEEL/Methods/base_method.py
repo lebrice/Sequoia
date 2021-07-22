@@ -140,8 +140,6 @@ class BaseMethod(Method, target_setting=Setting):
 
         self.task_type = "RL" if self._is_rl else "SL"
         self.iteration_name = "step" if self._is_rl else "epoch"
-        # configuration called specifically to each method inheritting base method
-        self._method_specific_configure(setting)
 
     def setup_wandb(self, run: Run) -> None:
         run.config.update(self.hparams.__dict__)

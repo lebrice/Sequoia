@@ -12,7 +12,7 @@ from sequoia.settings.passive.cl.objects import (
 )
 from dataclasses import dataclass
 from Utils import BaseHParams
-from sequoia.settings import ClassIncrementalSetting
+from sequoia.settings import SettingType
 from Utils import Buffer
 
 
@@ -27,13 +27,14 @@ class DER(BaseMethod):
 
     def __init__(self, hparams: HParams = None) -> None:
         super().__init__(hparams=hparams or self.HParams())
-
-    def _method_specific_configure(self, setting: ClassIncrementalSetting):
+    
+    def configure(self, setting: SettingType):
         """Method specific initialization used for vars and settings needed per method
 
         Args:
             setting (ClassIncrementalSetting): Setting used in the configuration
         """  
+        super().configure(setting)
         self.buffer = Buffer(
             self.hparams.buffer_size,
             loss_priority=self.hparams.priority_reservoir,
