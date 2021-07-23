@@ -9,7 +9,7 @@ from sequoia.settings import Setting
 from sequoia.settings.base.setting_test import SettingTests
 from pathlib import Path
 
-from .setting import ContinualSLSetting, smooth_task_boundaries_concat
+from .setting import ContinualSLSetting, smooth_task_boundaries_concat, random_subset
 
 
 from continuum.tasks import TaskSet, concat
@@ -33,15 +33,51 @@ class TestContinualSLSetting(SettingTests):
     Setting: ClassVar[Type[Setting]] = ContinualSLSetting
 
     # The kwargs to be passed to the Setting when we want to create a 'short' setting.
+    # TODO: Transform this into a fixture instead.
     fast_dev_run_kwargs: ClassVar[Dict[str, Any]] = dict(
         dataset="mnist", batch_size=64,
     )
 
-    # @pytest.fixture
-    # def setting_kwargs(self):
+    @pytest.fixture(scope="session")
+    def short_setting(self, session_config):
+        kwargs = self.fast_dev_run_kwargs.copy()
+        kwargs["config"] = session_config
+
+        setting = self.Setting(**kwargs)
+        setting.config = session_config
+        setting.prepare_data()
+        setting.setup()
+
+        # Testing this out: Shortening the train datasets:
+        setting.train_datasets = [
+            random_subset(task_dataset, 100) for task_dataset in setting.train_datasets
+        ]
+        setting.val_datasets = [
+            random_subset(task_dataset, 100) for task_dataset in setting.val_datasets
+        ]
+        setting.test_datasets = [
+            random_subset(task_dataset, 100) for task_dataset in setting.test_datasets
+        ]
+        assert len(setting.train_datasets) == 5
+        assert len(setting.val_datasets) == 5
+        assert len(setting.test_datasets) == 5
+        assert all(len(dataset) == 100 for dataset in setting.train_datasets)
+        assert all(len(dataset) == 100 for dataset in setting.val_datasets)
+        assert all(len(dataset) == 100 for dataset in setting.test_datasets)
+
+        # Assert that calling setup doesn't overwrite the datasets.
+        setting.setup()
+        assert len(setting.train_datasets) == 5
+        assert len(setting.val_datasets) == 5
+        assert len(setting.test_datasets) == 5
+        assert all(len(dataset) == 100 for dataset in setting.train_datasets)
+        assert all(len(dataset) == 100 for dataset in setting.val_datasets)
+        assert all(len(dataset) == 100 for dataset in setting.test_datasets)
+        return setting
 
     def test_shared_action_space(self, config: Config):
-        kwargs = dict(dataset="mnist", config=config)
+        kwargs = self.fast_dev_run_kwargs.copy()
+        kwargs["config"] = config
         if (
             isinstance(self.Setting, functools.partial)
             and not self.Setting.args[0].shared_action_space
@@ -55,7 +91,7 @@ class TestContinualSLSetting(SettingTests):
         setting = self.Setting(**kwargs)
         y_counter = Counter()
         t_counter = Counter()
-        test_env = setting.test_dataloader(batch_size=128, num_workers=4)
+        test_env = setting.test_dataloader()
         for obs, rewards in test_env:
             if rewards is None:
                 action = test_env.action_space.sample()
@@ -90,9 +126,9 @@ class TestContinualSLSetting(SettingTests):
         # assert y_counter == {1: 27456, 0: 26546}
         # assert False, c
 
-    def test_only_one_epoch(self, config: Config):
-        setting = self.Setting(dataset="mnist", config=config)
-        train_env = setting.train_dataloader(batch_size=100, num_workers=4)
+    def test_only_one_epoch(self, short_setting):
+        setting = short_setting
+        train_env = setting.train_dataloader()
 
         for _ in train_env:
             pass
@@ -101,6 +137,8 @@ class TestContinualSLSetting(SettingTests):
             with pytest.raises(gym.error.ClosedEnvironmentError):
                 for _ in train_env:
                     pass
+        else:
+            assert not train_env.is_closed()
 
     @pytest.mark.no_xvfb
     @pytest.mark.timeout(20)

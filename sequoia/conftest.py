@@ -74,6 +74,13 @@ def config(tmp_path: Path):
     return Config(debug=True, seed=123, log_dir=tmp_results_dir)
 
 
+@pytest.fixture(scope="session")
+def session_config(tmp_path_factory: Path):
+    test_log_dir = tmp_path_factory.mktemp("test_log_dir")
+    # TODO: Set the results dir somehow with the value of this `tmp_path` fixture.
+    return Config(debug=True, seed=123, log_dir=test_log_dir)
+
+
 def id_fn(params: Any) -> str:
     """Creates a 'name' for an execution of a parametrized test.
 

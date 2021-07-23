@@ -136,12 +136,6 @@ class ContinualAssumption(AssumptionBase):
         logger.info(f"Finished Training.")
 
         results = self.test_loop(method)
-        if not isinstance(results, ContinualResults):
-            from dataclasses import fields
-            # Bump-up the results?
-            results = ContinualResults(**{f.name: getattr(results, f.name) for f in fields(results)})
-
-        assert isinstance(results, ContinualResults)
 
         if self.monitor_training_performance:
             results._online_training_performance = train_env.get_online_performance()
