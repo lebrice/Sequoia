@@ -17,6 +17,7 @@ from continuum.datasets import MNIST
 from continuum.scenarios import ClassIncremental
 from sequoia.common.config import Config
 from sequoia.settings.sl.continual.setting import shuffle
+from .wrappers import ShowLabelDistributionWrapper
 
 
 def test_shuffle(config: Config):
@@ -108,58 +109,28 @@ class TestContinualSLSetting(SettingTests):
         import matplotlib.pyplot as plt
         from functools import partial
 
-        fig, axes = plt.subplots(2, 3)
+        # fig, axes = plt.subplots(2, 3)
         name_to_env_fn = {
             "train": setting.train_dataloader,
             "valid": setting.val_dataloader,
             "test": setting.test_dataloader,
         }
+        # TODO: Maybe add these plots as part of the results for ContinualSL? How much
+        # memory would actually be needed to store these here?
         for i, (name, env_fn) in enumerate(name_to_env_fn.items()):
             env = env_fn(batch_size=100, num_workers=4)
+            env = ShowLabelDistributionWrapper(env, env_name=name)
+            # Iterate through the env.
+            for obs, rewards in env:
+                if rewards is None:
+                    rewards = env.send(env.action_space.sample())
 
-            y_counters: List[Counter] = []
-            t_counters: List[Counter] = []
+            fig = env.make_figure()
+            fig.set_size_inches((6, 4), forward=False)
+            save_path = Path(f"temp/{self.Setting.__name__}_{name}.png")
+            save_path.parent.mkdir(exist_ok=True)
+            fig.savefig(save_path)
 
-            for obs, reward in env:
-                if reward is None:
-                    reward = env.send(env.action_space.sample())
-                y = reward.y.cpu().numpy()
-                t = obs.task_labels
-                if t is None:
-                    t = [None for _ in y]
-                y_count = Counter(y.tolist())
-                t_count = Counter(t)
-
-                y_counters.append(y_count)
-                t_counters.append(t_count)
-
-            classes = list(set().union(*y_counters))
-            task_ids = list(set().union(*t_counters))
-
-            nb_classes = len(classes)
-            x = np.arange(len(env))
-
-            for label in range(nb_classes):
-                y = [y_counter.get(label) for y_counter in y_counters]
-                axes[0, i].plot(x, y, label=f"y={label}")
-            axes[0, i].legend()
-            axes[0, i].set_title(f"{name} y")
-            axes[0, i].set_xlabel("Batch index")
-            axes[0, i].set_ylabel("Count in batch")
-
-            for task_id in task_ids:
-                y = [t_counter.get(task_id) for t_counter in t_counters]
-                axes[1, i].plot(x, y, label=f"task_id={task_id}")
-            axes[1, i].legend()
-            axes[1, i].set_title(f"{name} task_id")
-            axes[1, i].set_xlabel("Batch index")
-            axes[1, i].set_ylabel("Count in batch")
-
-        plt.legend()
-
-        Path("temp").mkdir(exist_ok=True)
-        fig.set_size_inches((6, 4), forward=False)
-        plt.savefig(f"temp/{self.Setting.__name__}.png")
         # plt.waitforbuttonpress(10)
         # plt.show()
 
