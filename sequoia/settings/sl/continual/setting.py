@@ -257,7 +257,6 @@ class ContinualSLSetting(SLSetting, ContinualAssumption):
         # 2. Test the method on test_env.
         # Return the results, as reported by the test environment.
         results: ContinualSLResults = super().main_loop(method)
-        logger.info(results.summary())
         method.receive_results(self, results=results)
         return results
 
@@ -441,7 +440,7 @@ class ContinualSLSetting(SLSetting, ContinualAssumption):
         if wandb.run:
             test_dir = wandb.run.dir
         else:
-            test_dir = "results"
+            test_dir = self.config.log_dir
 
         test_loop_max_steps = len(dataset) // (env.batch_size or 1)
         test_env = ContinualSLTestEnvironment(

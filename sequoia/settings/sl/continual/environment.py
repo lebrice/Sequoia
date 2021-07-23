@@ -239,9 +239,8 @@ from sequoia.settings.assumptions.incremental_results import (
     TaskSequenceResults,
 )
 from sequoia.utils.logging_utils import get_logger
-
+from sequoia.common.gym_wrappers import has_wrapper
 from .results import ContinualSLResults
-
 
 class ContinualSLTestEnvironment(TestEnvironment[ContinualSLEnvironment]):
     def __init__(
@@ -254,6 +253,9 @@ class ContinualSLTestEnvironment(TestEnvironment[ContinualSLEnvironment]):
         config: Config = None,
         **kwargs,
     ):
+        from .wrappers import ShowLabelDistributionWrapper
+        if not has_wrapper(env, ShowLabelDistributionWrapper):
+            env = ShowLabelDistributionWrapper(env, env_name="test")
         super().__init__(
             env,
             directory=directory,
@@ -270,13 +272,16 @@ class ContinualSLTestEnvironment(TestEnvironment[ContinualSLEnvironment]):
         self.env.unwrapped.hide_task_labels = False
 
         self._steps = 0
-        self.results: TaskResults = TaskResults()
+        self.results = ContinualSLResults()
         self._reset = False
         self.action_: Optional[ActionType] = None
         from collections import deque
         self.observation_queue = deque(maxlen=3)
 
     def get_results(self) -> ContinualSLResults:
+        from .wrappers import ShowLabelDistributionWrapper
+        if has_wrapper(self, ShowLabelDistributionWrapper):
+            self.results.plots_dict["Label distribution"] = self.env.make_figure()
         return self.results
 
     def __iter__(self):

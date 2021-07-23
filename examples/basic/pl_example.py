@@ -221,11 +221,11 @@ class ExampleMethod(Method, target_setting=SLSetting):
         """ Can be called by the Setitng when a task boundary is reached.
         
         This will be called if `setting.known_task_boundaries_at_[train/test]_time` is
-        True, depending on if this is called during `fit` or during `test`.
+        True, depending on if this is called during training or during testing.
         """
         if task_id != self.current_task:
             phase = "training" if self.training else "testing"
-            print(f"Switching tasks! {self.current_task} -> {task_id} ({phase})")
+            print(f"Switching tasks during {phase}: {self.current_task} -> {task_id}")
             self.current_task = task_id
 
 
@@ -234,7 +234,14 @@ if __name__ == "__main__":
     from sequoia.common.config import Config
     setting = ContinualSLSetting(dataset="mnist", monitor_training_performance=True)
     method = ExampleMethod()
-    config = Config(debug=True)
+
+    # Create a config for the experiment
+    config = Config(debug=True, log_dir="results/pl_example")
+
     results = setting.apply(method, config=config)
     print(results.summary())
-    print(results.make_plots())
+
+    for figure_name, figure in results.make_plots().items():
+        print("Figure:", figure_name)
+        figure.show()
+        # figure.waitforbuttonpress(10)

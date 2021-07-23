@@ -136,8 +136,10 @@ class ContinualAssumption(AssumptionBase):
         logger.info(f"Finished Training.")
 
         results = self.test_loop(method)
-        if isinstance(results, TaskResults):
-            results = ContinualResults(metrics=results.metrics)
+        if not isinstance(results, ContinualResults):
+            from dataclasses import fields
+            # Bump-up the results?
+            results = ContinualResults(**{f.name: getattr(results, f.name) for f in fields(results)})
 
         assert isinstance(results, ContinualResults)
 
@@ -149,6 +151,7 @@ class ContinualAssumption(AssumptionBase):
         self._end_time = time.process_time()
         runtime = self._end_time - self._start_time
         results._runtime = runtime
+
         logger.info(f"Finished main loop in {runtime} seconds.")
         self.log_results(method, results)
         return results

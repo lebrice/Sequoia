@@ -105,6 +105,7 @@ class TestContinualSLSetting(SettingTests):
     )
     def test_show_distributions(self, config: Config):
         setting = self.Setting(dataset="mnist", config=config)
+        figures_dir = Path("temp")
 
         import matplotlib.pyplot as plt
         from functools import partial
@@ -127,7 +128,7 @@ class TestContinualSLSetting(SettingTests):
 
             fig = env.make_figure()
             fig.set_size_inches((6, 4), forward=False)
-            save_path = Path(f"temp/{self.Setting.__name__}_{name}.png")
+            save_path = Path(f"{figures_dir}/{setting.get_name()}_{name}.png")
             save_path.parent.mkdir(exist_ok=True)
             fig.savefig(save_path)
 
