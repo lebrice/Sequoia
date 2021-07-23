@@ -1,7 +1,10 @@
-""" WIP: Continual SL environment. (smooth task boundaries, etc)
+""" Continual SL environment. (smooth task boundaries, etc)
 """
-from typing import Any, Callable, Dict, List, Tuple, Type, Union, Sequence, Optional
+import itertools
+import warnings
 from functools import partial
+from typing import Any, Callable, Dict, List, Optional, Sequence, Tuple, Type, Union
+
 import gym
 import numpy as np
 from continuum.datasets import (
@@ -24,17 +27,19 @@ from continuum.datasets import (
     _ContinuumDataset,
 )
 from gym import Space, spaces
+from torch import Tensor
+from torch.nn import functional as F
+from torch.utils.data import DataLoader, Dataset, IterableDataset, Subset
+
+from sequoia.common.gym_wrappers.batch_env.tile_images import tile_images
 from sequoia.common.gym_wrappers.convert_tensors import (
     add_tensor_support as tensor_space,
 )
-import itertools
 from sequoia.common.spaces import Image, TypedDictSpace
+from sequoia.common.transforms import Transforms
 from sequoia.settings.sl.environment import PassiveEnvironment
 from sequoia.utils.logging_utils import get_logger
-from torch import Tensor
-from torch.utils.data import DataLoader, Dataset, IterableDataset, Subset
-from sequoia.common.transforms import Transforms
-from sequoia.common.gym_wrappers.batch_env.tile_images import tile_images
+
 from .objects import (
     Actions,
     ActionType,
@@ -43,7 +48,6 @@ from .objects import (
     Rewards,
     RewardType,
 )
-from torch.nn import functional as F
 
 logger = get_logger(__file__)
 
@@ -232,6 +236,7 @@ from typing import Optional
 
 import torch
 from sequoia.common.config import Config
+from sequoia.common.gym_wrappers import has_wrapper
 from sequoia.common.metrics import ClassificationMetrics, Metrics, MetricsType
 from sequoia.settings.assumptions.continual import TestEnvironment
 from sequoia.settings.assumptions.incremental_results import (
@@ -239,8 +244,9 @@ from sequoia.settings.assumptions.incremental_results import (
     TaskSequenceResults,
 )
 from sequoia.utils.logging_utils import get_logger
-from sequoia.common.gym_wrappers import has_wrapper
+
 from .results import ContinualSLResults
+
 
 class ContinualSLTestEnvironment(TestEnvironment[ContinualSLEnvironment]):
     def __init__(
@@ -254,6 +260,7 @@ class ContinualSLTestEnvironment(TestEnvironment[ContinualSLEnvironment]):
         **kwargs,
     ):
         from .wrappers import ShowLabelDistributionWrapper
+
         if not has_wrapper(env, ShowLabelDistributionWrapper):
             env = ShowLabelDistributionWrapper(env, env_name="test")
         super().__init__(
@@ -276,10 +283,12 @@ class ContinualSLTestEnvironment(TestEnvironment[ContinualSLEnvironment]):
         self._reset = False
         self.action_: Optional[ActionType] = None
         from collections import deque
+
         self.observation_queue = deque(maxlen=3)
 
     def get_results(self) -> ContinualSLResults:
         from .wrappers import ShowLabelDistributionWrapper
+
         if has_wrapper(self, ShowLabelDistributionWrapper):
             self.results.plots_dict["Label distribution"] = self.env.make_figure()
         return self.results
@@ -333,16 +342,15 @@ class ContinualSLTestEnvironment(TestEnvironment[ContinualSLEnvironment]):
         if not isinstance(reward, Rewards):
             reward = Rewards(y=torch.as_tensor(reward))
 
-        batch_size = reward.y.shape[0]
+        batch_size = reward.batch_size
 
         action = self.action_
         assert action is not None
 
-        if isinstance(
-            self.action_space, (spaces.MultiDiscrete, spaces.MultiBinary)
-        ):
+        if isinstance(self.action_space, (spaces.MultiDiscrete, spaces.MultiBinary)):
             n_classes = self.action_space.nvec[0]
             from sequoia.settings.assumptions.task_type import ClassificationActions
+
             if not isinstance(action, ClassificationActions):
                 if isinstance(action, Actions):
                     y_pred = action.y_pred
@@ -356,6 +364,15 @@ class ContinualSLTestEnvironment(TestEnvironment[ContinualSLEnvironment]):
                 f"TODO: Remove the assumption here that the env is a classification env "
                 f"({self.action_space}, {self.reward_space})"
             )
+
+        if action.batch_size != reward.batch_size:
+            warnings.warn(
+                RuntimeWarning(
+                    f"Truncating the action since its batch size {action.batch_size} "
+                    f"is larger than the rewards': ({reward.batch_size})"
+                )
+            )
+            action = action[:, :reward.batch_size]
 
         # TODO: Use some kind of generic `get_metrics(actions: Actions, rewards: Rewards)`
         # function instead.
@@ -381,7 +398,7 @@ class ContinualSLTestEnvironment(TestEnvironment[ContinualSLEnvironment]):
             self._flush()
 
         # Record stats: (TODO: accuracy serves as the 'reward'!)
-        reward_for_stats =  metric.accuracy
+        reward_for_stats = metric.accuracy
         self.stats_recorder.after_step(observation, reward_for_stats, done, info)
 
         # Record video

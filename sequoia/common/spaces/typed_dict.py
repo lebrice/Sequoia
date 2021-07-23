@@ -5,11 +5,31 @@ import dataclasses
 from inspect import isclass
 from collections import OrderedDict
 from collections.abc import Mapping as MappingABC
-from dataclasses import (_PARAMS, Field, _DataclassParams, dataclass, fields,
-                         is_dataclass, make_dataclass)
+from dataclasses import (
+    _PARAMS,
+    Field,
+    _DataclassParams,
+    dataclass,
+    fields,
+    is_dataclass,
+    make_dataclass,
+)
 import typing
-from typing import (Any, Dict, Generic, Iterable, KeysView, List, Mapping,
-                    Sequence, Tuple, Type, TypeVar, Union, get_type_hints)
+from typing import (
+    Any,
+    Dict,
+    Generic,
+    Iterable,
+    KeysView,
+    List,
+    Mapping,
+    Sequence,
+    Tuple,
+    Type,
+    TypeVar,
+    Union,
+    get_type_hints,
+)
 from dataclasses import _is_classvar
 from copy import deepcopy
 import numpy as np
@@ -158,12 +178,24 @@ class TypedDictSpace(spaces.Dict, Mapping[str, Space], Generic[M]):
             for attribute, type_annotation in class_typed_attributes.items():
                 if _is_classvar(type_annotation, typing=typing):
                     continue
+
+                is_space = False
+                if isclass(type_annotation) and issubclass(type_annotation, gym.Space):
+                    is_space = True
+                else:
+                    origin = typing.get_origin(type_annotation)
+                    is_space = (
+                        origin is not None
+                        and isclass(origin)
+                        and issubclass(origin, gym.Space)
+                    )
+
                 # NOTE: emulate a 'required argument' when there is a type
                 # annotation, but no value.
                 # TODO: How about a None value, is that ok?
-                if isclass(type_annotation) and issubclass(type_annotation, gym.Space):
+                if is_space:
                     _missing = object()
-                    value = getattr(cls, attribute, _missing)                    
+                    value = getattr(cls, attribute, _missing)
                     if value is _missing and attribute not in spaces_from_args:
                         raise TypeError(
                             f"Space of type {type(self)} requires a '{attribute}' item!"
@@ -179,7 +211,9 @@ class TypedDictSpace(spaces.Dict, Mapping[str, Space], Generic[M]):
         # regular dict.
         spaces = OrderedDict()  # Need to use this for 3.6.x
         spaces.update(spaces_from_annotations)
-        spaces.update(spaces_from_args)  # Arguments overwrite the spaces from the annotations.
+        spaces.update(
+            spaces_from_args
+        )  # Arguments overwrite the spaces from the annotations.
 
         if not spaces:
             raise TypeError(
@@ -265,7 +299,6 @@ class TypedDictSpace(spaces.Dict, Mapping[str, Space], Generic[M]):
         return True
         # return super().contains(x)
 
-
     def __repr__(self) -> str:
         return (
             f"{str(type(self).__name__)}("
@@ -295,7 +328,7 @@ def register_variant(module, module_fn_name: str):
     work.
     """
     module_function = getattr(module, module_fn_name)
-    
+
     # Convert the function to a singledispatch callable.
     if not _is_singledispatch(module_function):
         module_function = singledispatch(module_function)
@@ -305,12 +338,14 @@ def register_variant(module, module_fn_name: str):
     def wrapper(function):
         module_function.register(TypedDictSpace, function)
         return function
+
     return wrapper
 
 
 import gym.vector.utils
-from gym.vector.utils.shared_memory import \
-    read_from_shared_memory as read_from_shared_memory_
+from gym.vector.utils.shared_memory import (
+    read_from_shared_memory as read_from_shared_memory_,
+)
 
 
 @batch_space.register(TypedDictSpace)
@@ -320,6 +355,7 @@ def _batch_typed_dict_space(space: TypedDictSpace, n: int = 1) -> spaces.Dict:
         {key: batch_space(subspace, n=n) for (key, subspace) in space.spaces.items()},
         dtype=space.dtype,
     )
+
 
 @concatenate.register(TypedDictSpace)
 # @register_variant(gym.vector.utils, "concatenate")

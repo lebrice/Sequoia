@@ -35,7 +35,7 @@ from sequoia.common.gym_wrappers.convert_tensors import add_tensor_support
 from sequoia.common.gym_wrappers.convert_tensors import (
     add_tensor_support as tensor_space,
 )
-from sequoia.common.spaces import Image, Sparse, TypedDictSpace
+from sequoia.common.spaces import Image, Sparse, TypedDictSpace, TensorMultiDiscrete
 from sequoia.common.transforms import Compose, Transforms
 from sequoia.settings.assumptions.continual import ContinualAssumption
 from sequoia.settings.base import Method, SettingABC
@@ -56,10 +56,13 @@ from .environment import (
 from .objects import (
     Actions,
     ActionType,
+    ActionSpace,
     Observations,
     ObservationType,
+    ObservationSpace,
     Rewards,
     RewardType,
+    RewardSpace,
 )
 from .results import ContinualSLResults
 from .wrappers import relabel
@@ -93,6 +96,7 @@ class ContinualSLSetting(SLSetting, ContinualAssumption):
     Observations: ClassVar[Type[Observations]] = Observations
     Actions: ClassVar[Type[Actions]] = Actions
     Rewards: ClassVar[Type[Rewards]] = Rewards
+    ObservationSpace: ClassVar[Type[ObservationSpace]] = ObservationSpace
 
     Environment: ClassVar[Type[SLSetting.Environment]] = ContinualSLEnvironment[
         Observations, Actions, Rewards
@@ -597,7 +601,7 @@ class ContinualSLSetting(SLSetting, ContinualAssumption):
             raise NotImplementedError
 
     @property
-    def observation_space(self) -> TypedDictSpace[Observations]:
+    def observation_space(self) -> ObservationSpace[Observations]:
         """ The un-batched observation space, based on the choice of dataset and
         the transforms at `self.transforms` (which apply to the train/valid/test
         environments).
@@ -627,7 +631,7 @@ class ContinualSLSetting(SLSetting, ContinualAssumption):
             task_label_space = Sparse(task_label_space, 1.0)
         task_label_space = add_tensor_support(task_label_space)
 
-        return TypedDictSpace(
+        return self.ObservationSpace(
             x=x_space, task_labels=task_label_space, dtype=self.Observations,
         )
 

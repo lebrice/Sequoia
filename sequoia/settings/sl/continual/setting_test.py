@@ -58,7 +58,12 @@ class TestContinualSLSetting(SettingTests):
         test_env = setting.test_dataloader(batch_size=128, num_workers=4)
         for obs, rewards in test_env:
             if rewards is None:
-                rewards = test_env.send(test_env.action_space.sample())
+                action = test_env.action_space.sample()
+                # NOTE: On the last batch, the rewards might have a smaller batch size
+                # than the action space.
+                # TODO: Add tests to check that the envs can explicitly handle this, so
+                # that we don't give the burden to the Method.
+                rewards = test_env.send(action)
 
             y = rewards.y.tolist()
             t = (
