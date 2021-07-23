@@ -43,6 +43,7 @@ from .objects import (
     Rewards,
     RewardType,
 )
+from torch.nn import functional as F
 
 logger = get_logger(__file__)
 
@@ -272,9 +273,39 @@ class ContinualSLTestEnvironment(TestEnvironment[ContinualSLEnvironment]):
         self.results: TaskResults = TaskResults()
         self._reset = False
         self.action_: Optional[ActionType] = None
+        from collections import deque
+        self.observation_queue = deque(maxlen=3)
 
     def get_results(self) -> ContinualSLResults:
         return self.results
+
+    def __iter__(self):
+        """ BUG: The iter/send type of test loop doesn't produce any results! """
+        assert self.unwrapped.pretend_to_be_active
+        # obs = self.reset()
+        # self.observations = obs
+        # yield obs, None
+        self._before_reset()
+        for i, (obs, rewards) in enumerate(self.env.__iter__()):
+            if i == 0:
+                self._after_reset(obs)
+            if len(self.observation_queue) == self.observation_queue.maxlen:
+                raise RuntimeError(
+                    f"Can't consume more than {self.observation_queue.maxlen} batches "
+                    f"in a row without sending an action!"
+                )
+            self.observation_queue.append(obs)
+            assert rewards is None
+            yield obs, rewards
+
+    def send(self, actions):
+        self._before_step(actions)
+        rewards = self.env.send(actions)
+        obs = self.observation_queue.popleft()
+        info = getattr(obs, "info", {})
+        done = False
+        self._after_step(obs, rewards, done, info)
+        return rewards
 
     def reset(self):
         if not self._reset:
@@ -282,7 +313,9 @@ class ContinualSLTestEnvironment(TestEnvironment[ContinualSLEnvironment]):
             self._reset = True
             return super().reset()
         else:
-            logger.debug("Resetting the env closes it.")
+            # TODO: Why is this a good thing again? Why not just let an 'EpisodeLimit'
+            # wrapper handle this?
+            logger.debug("Resetting the env closes it. (only one episode in SL)")
             self.close()
             return None
 
@@ -291,27 +324,40 @@ class ContinualSLTestEnvironment(TestEnvironment[ContinualSLEnvironment]):
         return super()._before_step(action)
 
     def _after_step(self, observation, reward, done, info):
+        # TODO: Fix this once we actually use a ClassificationAction!
+        if not isinstance(reward, Rewards):
+            reward = Rewards(y=torch.as_tensor(reward))
 
-        assert isinstance(reward, Tensor)
+        batch_size = reward.y.shape[0]
+
         action = self.action_
         assert action is not None
-        actions = torch.as_tensor(action)
 
-        batch_size = reward.shape[0]
-        assert isinstance(
+        if isinstance(
             self.action_space, (spaces.MultiDiscrete, spaces.MultiBinary)
-        ), (
-            f"TODO: Remove the assumption here that the env is a classification env "
-            f"({self.action_space})"
-        )
-        # TODO: Switch this out for a generic function.
-        fake_logits = torch.zeros([batch_size, self.action_space.nvec[0]], dtype=int)
-        # FIXME: There must be a smarter way to do this indexing.
-        for i, action in enumerate(actions):
-            fake_logits[i, action] = 1
-        actions = fake_logits
-        metric = ClassificationMetrics(y=reward, y_pred=actions)
-        reward = metric.accuracy
+        ):
+            n_classes = self.action_space.nvec[0]
+            from sequoia.settings.assumptions.task_type import ClassificationActions
+            if not isinstance(action, ClassificationActions):
+                if isinstance(action, Actions):
+                    y_pred = action.y_pred
+                    # 'upgrade', creating some fake logits.
+                else:
+                    y_pred = torch.as_tensor(action)
+                fake_logits = F.one_hot(y_pred, n_classes)
+                action = ClassificationActions(y_pred=y_pred, logits=fake_logits)
+        else:
+            raise NotImplementedError(
+                f"TODO: Remove the assumption here that the env is a classification env "
+                f"({self.action_space}, {self.reward_space})"
+            )
+
+        # TODO: Use some kind of generic `get_metrics(actions: Actions, rewards: Rewards)`
+        # function instead.
+        y = reward.y
+        logits = action.logits
+        y_pred = action.y_pred
+        metric = ClassificationMetrics(y=y, logits=logits, y_pred=y_pred)
 
         self.results.metrics.append(metric)
         self._steps += 1
@@ -329,8 +375,9 @@ class ContinualSLTestEnvironment(TestEnvironment[ContinualSLEnvironment]):
             self.episode_id += 1
             self._flush()
 
-        # Record stats
-        self.stats_recorder.after_step(observation, reward, done, info)
+        # Record stats: (TODO: accuracy serves as the 'reward'!)
+        reward_for_stats =  metric.accuracy
+        self.stats_recorder.after_step(observation, reward_for_stats, done, info)
 
         # Record video
         if self.config.render:

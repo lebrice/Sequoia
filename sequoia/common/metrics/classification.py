@@ -50,6 +50,7 @@ class ClassificationMetrics(Metrics):
     # NOTE: These wont become attributes on the object, just args to postinit.
     x:      InitVar[Optional[Tensor]] = None
     h_x:    InitVar[Optional[Tensor]] = None
+    logits: InitVar[Optional[Tensor]] = None
     y_pred: InitVar[Optional[Tensor]] = None
     y:      InitVar[Optional[Tensor]] = None
     num_classes: InitVar[Optional[int]] = None
@@ -57,14 +58,15 @@ class ClassificationMetrics(Metrics):
     def __post_init__(self,
                       x: Tensor = None,
                       h_x: Tensor = None,
+                      logits: Tensor = None,
                       y_pred: Tensor = None,
                       y: Tensor = None,
                       num_classes: int = None):
 
-        super().__post_init__(x=x, h_x=h_x, y_pred=y_pred, y=y)
+        super().__post_init__(x=x, h_x=h_x, logits=logits, y_pred=y_pred, y=y)
 
-        if self.confusion_matrix is None and y_pred is not None and y is not None:
-            self.confusion_matrix = get_confusion_matrix(y_pred=y_pred, y=y, num_classes=num_classes)
+        if self.confusion_matrix is None and (y_pred is not None or logits is not None) and y is not None:
+            self.confusion_matrix = get_confusion_matrix(y_pred=logits if logits is not None else y_pred, y=y, num_classes=num_classes)
 
         #TODO: add other useful metrics (potentially ones using x or h_x?)
         if self.confusion_matrix is not None:

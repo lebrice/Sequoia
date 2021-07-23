@@ -37,7 +37,7 @@ class Metrics(Serializable):
         """
         # get the batch size:
         for tensor in tensors.values():
-            if isinstance(tensor, (np.ndarray, Tensor)):
+            if isinstance(tensor, (np.ndarray, Tensor)) and tensor.shape:
                 self.n_samples = tensor.shape[0]
                 break
 
