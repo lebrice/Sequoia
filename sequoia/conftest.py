@@ -46,6 +46,13 @@ def skip_param(*args, reason: str):
 def skipif_param(condition, *args, reason: str):
     return pytest.param(*args, marks=pytest.mark.skipif(condition, reason=reason))
 
+import numpy as np
+
+
+@pytest.fixture(autouse=True)
+def add_np(doctest_namespace):
+    doctest_namespace["np"] = np
+
 
 @pytest.fixture()
 def trainer_config(tmp_path_factory):
