@@ -26,7 +26,7 @@ from torch import Tensor
 
 logger = get_logger(__file__)
 
-B = TypeVar("B", bound="Batch")
+B = TypeVar("B", bound="Batch", covariant=True)
 T = TypeVar("T", Tensor, np.ndarray, "Batch")
 V = TypeVar("V")
 

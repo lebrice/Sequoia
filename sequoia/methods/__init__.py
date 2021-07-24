@@ -138,7 +138,7 @@ def get_external_methods() -> Dict[str, Type[Method]]:
                 f"{exc}"
             )
         else:
-            logger.info(
+            logger.debug(
                 f"Imported an external Method: '{entry_point.name}', from package "
                 f"{entry_point.dist.project_name}, (version = {entry_point.dist.version})."
             )

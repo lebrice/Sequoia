@@ -7,6 +7,10 @@ from typing import List, Any, Dict
 import numpy as np
 import torch
 from functools import partial
+import matplotlib.pyplot as plt
+from sequoia.common.gym_wrappers import IterableWrapper
+from torch import Tensor
+from itertools import accumulate
 
 
 @singledispatch
@@ -82,4 +86,65 @@ class SharedActionSpaceWrapper(IterableWrapper):
     def __init__(self, env: gym.Env, task_classes: List[int]):
         self.task_classes = task_classes
         super().__init__(env=env, f=partial(relabel, task_classes=self.task_classes))
+
+import typing
+
+from .environment import ContinualSLEnvironment
+from .objects import ObservationType, ActionType, RewardType
+from collections import Counter
+
+
+class ShowLabelDistributionWrapper(IterableWrapper[ContinualSLEnvironment]):
+    """ Wrapper around a SL environment that shows the distribution of the labels.
+
+    Shows the distributions of the task labels, if applicable.
+    """
+    def __init__(self, env: ContinualSLEnvironment, env_name: str):
+        super().__init__(env=env)
+        self.env_name = env_name
+        # IDEA: Could use bins for continuous values ?
+        # IDEA: Also use a counter for the actions?
+        self.counters: Dict[str, List[Counter]] = {
+            "y": [],
+            "t": [],
+        }
+
+    def observation(self, observation: ObservationType) -> ObservationType:
+        t = observation.task_labels
+        if t is None:
+            t = [None] * observation.batch_size
+        if isinstance(t, Tensor):
+            t = t.cpu().numpy()
+        t_count = Counter(t)
+        self.counters["t"].append(t_count)
+        return observation
+
+    def reward(self, reward: RewardType) -> RewardType:
+        y = reward.y.cpu().numpy()
+        y_count = Counter(y)
+        self.counters["y"].append(y_count)
+        return reward
+
+    def make_figure(self) -> plt.Figure:
+        fig: plt.Figure
+        axes: List[plt.Axes]
+        fig, axes = plt.subplots(len(self.counters))
+        # total_length: int = sum(sum(counter.values()) for counter in self.y_counters)
+
+        for i, (name, counters) in enumerate(self.counters.items()):
+            # Values for the x axis are the number of samples seen so far for each
+            # batch.
+            x = list(accumulate(sum(counter.values()) for counter in counters))
+            unique_values = list(sorted(set().union(*counters)))
+            for label in unique_values:
+                y = [counter.get(label) for counter in counters]
+                axes[i].plot(x, y, label=f"{name}={label}")
+            axes[i].legend()
+            axes[i].set_title(f"{self.env_name} {name}")
+            axes[i].set_xlabel("Batch index")
+            axes[i].set_ylabel("Count in batch")
+
+        fig.set_size_inches((6, 4), forward=False)
+        fig.legend()
+        return fig
 
