@@ -9,6 +9,13 @@ Here's a brief description of the examples in this folder:
 
 ## Basic examples:
 
+- [pl_example.py](basic/pl_example.py):
+    **Recommended entry-point for ML Practicioners**. Shows an example method and model
+    using [PyTorch Lightning](https://github.com/PyTorchLightning/pytorch-lightning).
+    This is the best way to get started if you don't mind some level of abstraction in your code
+    (a good thing in general!)
+
+
 - [quick_demo.ipynb](basic/quick_demo.ipynb):
     **Recommended entry-point for new users**. Simple demo showing how to create a `Method`
     from scratch that targets a Supervised CL `Setting`, as well as how to
