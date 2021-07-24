@@ -1,22 +1,22 @@
-from pytorch_lightning import LightningModule, Trainer
-from pl_bolts.datamodules.vision_datamodule import VisionDataModule
-from sequoia.settings.sl import SLSetting
-from sequoia.common.spaces import TypedDictSpace, TensorBox, TensorDiscrete
+from dataclasses import asdict, dataclass
+from typing import List, Optional, Tuple, TypedDict, Union
+
 import torch
-from dataclasses import dataclass, asdict
-from torch import Tensor
-from typing import TypedDict, Tuple, Optional, Union, List
 from gym import spaces
-from sequoia.settings.assumptions.task_type import ClassificationActions
+from pl_bolts.datamodules.vision_datamodule import VisionDataModule
+from pytorch_lightning import LightningModule, Trainer
+from torch import Tensor, nn
+from torch.optim import Adam, Optimizer
+
+from sequoia.common.spaces import Image, TensorBox, TensorDiscrete, TypedDictSpace
 from sequoia.methods import Method
-from torch import nn, Tensor
-from torch.optim import Optimizer, Adam
-from sequoia.common.spaces import Image
+from sequoia.settings.assumptions.task_type import ClassificationActions
+from sequoia.settings.sl import SLSetting
 from sequoia.settings.sl.continual import (
-    Observations,
     Actions,
-    Rewards,
     ContinualSLSetting,
+    Observations,
+    Rewards,
 )
 
 
@@ -28,12 +28,13 @@ class Model(LightningModule):
 
     @dataclass
     class HParams:
-        """ Hyper-parameters of our model. 
-        
+        """ Hyper-parameters of our model.
+
         NOTE: dataclasses are totally optional. This is just much nicer than dicts or
         ugly namespaces.
         """
 
+        # Learning rate.
         lr: float = 1e-3
 
     def __init__(
@@ -78,9 +79,9 @@ class Model(LightningModule):
             nn.BatchNorm2d(32),
             nn.Flatten(),
         )
-        # NOTE: In this case we have a fixed hidden size (thanks to the Adaptive pooling
-        # above), but you can also use `nn.LazyLinear` when you don't know the hidden
-        # size in advance!
+        # Quick tip: In this case we have a fixed hidden size (thanks to the Adaptive
+        # pooling layer above), but you could also use the cool new `nn.LazyLinear` when
+        # you don't know the hidden size in advance!
         self.fc = nn.Sequential(
             nn.Flatten(),
             # nn.LazyLinear(out_features=120),
@@ -95,7 +96,7 @@ class Model(LightningModule):
 
     def forward(self, observations: ContinualSLSetting.Observations) -> Tensor:
         """Returns the logits for the given observation.
-        
+
         Parameters
         ----------
         observations : ContinualSLSetting.Observations
@@ -178,39 +179,37 @@ class ExampleMethod(Method, target_setting=SLSetting):
             output_space=setting.action_space,
             hparams=self.hparams,
         )
-    
+
     def fit(
         self,
         train_env: ContinualSLSetting.Environment,
         valid_env: ContinualSLSetting.Environment,
     ):
-        self.model.train_env = train_env
-        self.model.valid_env = valid_env
         # NOTE: Currently have to 'reset' the Trainer for each call to `fit`.
-        self.trainer = Trainer(gpus=torch.cuda.device_count(), max_epochs=1, accelerator="ddp")
+        self.trainer = Trainer(
+            gpus=torch.cuda.device_count(), max_epochs=1, accelerator="ddp"
+        )
         self.trainer.fit(
             self.model, train_dataloader=train_env, val_dataloaders=valid_env
         )
 
     def test(self, test_env: ContinualSLSetting.Environment):
         """ Called to let the Method handle the test loop by itself.
-        
+
         NOTE: The `test_env` will not give back rewards (y) until an action (y_pred) is
         sent to it via the `send` method.
         """
-        # for obs, rewards in test_env:
-        #     assert rewards is None
-        #     batch_size = obs.batch_size
-        #     # NOTE: Last batch is often shorter, just watch out for that!
-        #     action = test_env.action_space.sample()
-        #     action = action[:batch_size]
-        #     rewards = test_env.send(action)
-        self.model.test_env = test_env
+        # Use ckpt_path=None to use the current weights, rather than the "best" ones.
         self.trainer.test(self.model, ckpt_path=None, test_dataloaders=test_env)
 
     def get_actions(
         self, observations: Observations, action_space: spaces.MultiDiscrete
     ):
+        """ Called by the Setting to query for individual predictions.
+
+        You currently have to implement this, but if `test` is implemented, it will be
+        used instead. Sorry if this isn't super clear.
+        """
         self.model.eval()
         with torch.no_grad():
             logits = self.model(observations)
@@ -218,10 +217,14 @@ class ExampleMethod(Method, target_setting=SLSetting):
         return Actions(y_pred=y_pred)
 
     def on_task_switch(self, task_id: Optional[int]) -> None:
-        """ Can be called by the Setitng when a task boundary is reached.
-        
+        """ Can be called by the Setting when a task boundary is reached.
+
         This will be called if `setting.known_task_boundaries_at_[train/test]_time` is
         True, depending on if this is called during training or during testing.
+
+        If `setting.task_labels_at_[train/test]_time` is True, then `task_id` will be
+        the identifyer (index) of the next task. If the value is False, then `task_id`
+        will be None.
         """
         if task_id != self.current_task:
             phase = "training" if self.training else "testing"
@@ -230,18 +233,32 @@ class ExampleMethod(Method, target_setting=SLSetting):
 
 
 if __name__ == "__main__":
-    from sequoia.settings.sl import ClassIncrementalSetting, ContinualSLSetting
     from sequoia.common.config import Config
+
+    # You could use any of the settings in SL, since this example methods targets the
+    # `SLSetting`:
+    from sequoia.settings.sl import ClassIncrementalSetting, ContinualSLSetting
+
+    # Create the Setting:
+    # NOTE: Since our model above uses an adaptive pooling layer, it should work on any
+    # dataset!
     setting = ContinualSLSetting(dataset="mnist", monitor_training_performance=True)
+
+    # Create the Method:
     method = ExampleMethod()
 
-    # Create a config for the experiment
+    # Create a config for the experiment (just so we can set a few options for this
+    # example)
     config = Config(debug=True, log_dir="results/pl_example")
 
+    # Launch the experiment: trains and tests the method according to the chosen
+    # setting and returns results.
     results = setting.apply(method, config=config)
-    print(results.summary())
 
+    # Print the results, and show some plots!
+    print(results.summary())
     for figure_name, figure in results.make_plots().items():
         print("Figure:", figure_name)
         figure.show()
         # figure.waitforbuttonpress(10)
+
