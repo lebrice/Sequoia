@@ -6,10 +6,13 @@ import numpy as np
 from gym import spaces
 from gym.vector.utils import batch_space
 
+import torch
+
 from .tensor_spaces import TensorBox
+from .space import Space, T
 
 
-class Image(spaces.Box):
+class Image(spaces.Box, Space[T]):
     """ Subclass of `gym.spaces.Box` for images.
 
     Comes with a few useful attributes, like `h`, `w`, `c`, `channels_first`,
@@ -105,8 +108,8 @@ class Image(spaces.Box):
     def __repr__(self):
         return f"{type(self).__name__}({self.low.min()}, {self.high.max()}, {self.shape}, {self.dtype})"
 
-
-import torch
+    def sample(self) -> T:
+        return super().sample()
 
 
 class ImageTensorSpace(Image, TensorBox):

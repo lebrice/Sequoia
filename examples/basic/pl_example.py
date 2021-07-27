@@ -1,21 +1,21 @@
 from dataclasses import asdict, dataclass
-from typing import List, Optional, Tuple, TypedDict, Union
+from typing import Optional, Tuple
 
 import torch
 from gym import spaces
-from pl_bolts.datamodules.vision_datamodule import VisionDataModule
 from pytorch_lightning import LightningModule, Trainer
 from torch import Tensor, nn
-from torch.optim import Adam, Optimizer
+from torch.optim import Adam
 
-from sequoia.common.spaces import Image, TensorBox, TensorDiscrete, TypedDictSpace
+from sequoia.common.config import Config
+from sequoia.common.spaces import Image
 from sequoia.methods import Method
 from sequoia.settings.assumptions.task_type import ClassificationActions
-from sequoia.settings.sl import SLSetting
 from sequoia.settings.sl.continual import (
     Actions,
     ContinualSLSetting,
     Observations,
+    ObservationSpace,
     Rewards,
 )
 
@@ -35,11 +35,11 @@ class Model(LightningModule):
         """
 
         # Learning rate.
-        lr: float = 1e-3
+        learning_rate: float = 1e-3
 
     def __init__(
         self,
-        input_space: TypedDict,
+        input_space: ObservationSpace,
         output_space: spaces.Discrete,
         hparams: HParams = None,
     ):
@@ -161,10 +161,13 @@ class Model(LightningModule):
         return loss
 
     def configure_optimizers(self):
-        return Adam(self.parameters(), lr=self.hp.lr)
+        return Adam(self.parameters(), lr=self.hp.learning_rate)
 
 
-class ExampleMethod(Method, target_setting=SLSetting):
+class ExampleMethod(Method, target_setting=ContinualSLSetting):
+    """ Example method for solving Continual SL Settings with PyTorch-Lightning
+    """
+
     def __init__(self, hparams: Model.HParams = None):
         super().__init__()
         self.hparams = hparams
@@ -185,6 +188,18 @@ class ExampleMethod(Method, target_setting=SLSetting):
         train_env: ContinualSLSetting.Environment,
         valid_env: ContinualSLSetting.Environment,
     ):
+        """ Called by the Setting to allow the method to train.
+
+        The passed environments inherit from `DataLoader` as well as from `gym.Env`.
+        They produce ob
+        
+        Parameters
+        ----------
+        train_env : ContinualSLSetting.Environment
+            [description]
+        valid_env : ContinualSLSetting.Environment
+            [description]
+        """
         # NOTE: Currently have to 'reset' the Trainer for each call to `fit`.
         self.trainer = Trainer(
             gpus=torch.cuda.device_count(), max_epochs=1, accelerator="ddp"
@@ -232,12 +247,12 @@ class ExampleMethod(Method, target_setting=SLSetting):
             self.current_task = task_id
 
 
-if __name__ == "__main__":
-    from sequoia.common.config import Config
-
+def main():
+    """ Runs the example: applies the method on a Continual Supervised Learning Setting.
+    """
     # You could use any of the settings in SL, since this example methods targets the
-    # `SLSetting`:
-    from sequoia.settings.sl import ClassIncrementalSetting, ContinualSLSetting
+    # most general Continual SL Setting in Sequoia: `ContinualSLSetting`:
+    # from sequoia.settings.sl import ClassIncrementalSetting
 
     # Create the Setting:
     # NOTE: Since our model above uses an adaptive pooling layer, it should work on any
@@ -252,7 +267,7 @@ if __name__ == "__main__":
     config = Config(debug=True, log_dir="results/pl_example")
 
     # Launch the experiment: trains and tests the method according to the chosen
-    # setting and returns results.
+    # setting and returns a Results object.
     results = setting.apply(method, config=config)
 
     # Print the results, and show some plots!
@@ -262,3 +277,6 @@ if __name__ == "__main__":
         figure.show()
         # figure.waitforbuttonpress(10)
 
+
+if __name__ == "__main__":
+    main()

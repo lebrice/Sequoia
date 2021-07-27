@@ -3,7 +3,7 @@ from sequoia.settings.sl import SLSetting
 from torch import Tensor
 from typing import TypeVar, Optional
 from sequoia.settings.assumptions.continual import ContinualAssumption
-from sequoia.common.spaces import Image, Sparse, TypedDictSpace
+from sequoia.common.spaces import Image, Sparse, TypedDictSpace, ImageTensorSpace
 from gym import spaces
 
 
@@ -21,13 +21,10 @@ class ObservationSpace(TypedDictSpace[ObservationType]):
     """ Observation space of a Continual SL Setting. """
     # The sample space: this is a gym.spaces.Box subclass with added properties for
     # images, such as `channels`, `h`, `w`, `is_channels_first`, etc.
-    x: Image
+    # This space will return Tensors.
+    x: ImageTensorSpace
     # The task label space: This is a gym.spaces.MultiDiscrete of Tensors.
     task_labels: Sparse[torch.LongTensor]
-
-    # NOTE: IDK why the type hints for the `sample` function doesn't show "Observations"
-    # def sample(self) -> ObservationType:
-    #     return super().sample()
 
 
 # TODO: Eventually also use some kind of structured action and reward space!
