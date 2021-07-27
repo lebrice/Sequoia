@@ -223,7 +223,7 @@ class TypedDictSpace(spaces.Dict, Mapping[str, Space], Generic[M]):
         assert all(isinstance(s, gym.Space) for s in spaces.values()), spaces
 
         super().__init__(spaces=spaces)
-        # self.spaces = dict(self.spaces)  # Get rid of the OrderedDict.
+        self.spaces = dict(self.spaces)  # Get rid of the OrderedDict.
 
         # Sequoia-specific check.
         if "x" in self.spaces:
