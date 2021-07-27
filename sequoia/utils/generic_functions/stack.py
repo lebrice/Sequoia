@@ -49,12 +49,13 @@ def stack(first_item: Union[T, List[T]], *others: T, **kwargs) -> Any:
 @stack.register(type(None))
 def _stack_none(
     first_item: None, *others: None, **kwargs
-) -> None:
-    assert all(v is None for v in others), "Only some values are None"
+) -> Union[None, np.ndarray]:
     # TODO: Should we return an ndarray with 'None' entries, of dtype np.object_? or 
     # just a single None?
     # Opting for a single None for now, as it's easier to work with. (`v is None` works)
-    return None
+    if all(v is None for v in others):
+        return None
+    return np.array([first_item, *others])
     # if not others:
     #     return None
     # return np.array([None, *others])

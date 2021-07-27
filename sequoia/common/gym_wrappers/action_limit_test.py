@@ -32,7 +32,7 @@ def test_EnvDataset_of_ActionLimit():
         assert step is not None
         # NOTE: Here we have the last 'step' as 9.
         episode_steps.append(step)
-        
+
         assert total_steps <= max_steps
         if total_steps == max_steps:
             break
@@ -41,6 +41,10 @@ def test_EnvDataset_of_ActionLimit():
     assert sum(step + 1 for step in episode_steps) == max_steps
 
 
+@pytest.mark.xfail(
+    reason="FIXME: Shouldn't use CartPole env for this test since episodes aren't "
+    "always longer than 10."
+)
 def test_ActionLimit_of_EnvDataset():
     max_episode_steps = 10
     max_steps = 100
@@ -48,6 +52,7 @@ def test_ActionLimit_of_EnvDataset():
     env = TimeLimit(env, max_episode_steps=max_episode_steps)
     env = EnvDataset(env)
     env = ActionLimit(env, max_steps=max_steps)
+    env.seed(123)
     done = False
     episode_steps: List[int] = []
     for episode in range(10):
