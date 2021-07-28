@@ -58,6 +58,8 @@ class Config(Serializable, Parseable):
         self.seed_everything()
         self._display: Optional[Display] = None
         self.rng = np.random.default_rng(self.seed)
+        self.log_dir = Path(self.log_dir)
+        self.data_dir = Path(self.data_dir)
 
     def __del__(self):
         if self._display:

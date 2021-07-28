@@ -87,6 +87,8 @@ def to_tensor(
     space: Space, sample: Union[np.ndarray, Any], device: torch.device = None
 ) -> Union[np.ndarray, Any]:
     """ Converts a sample from the given space into a Tensor. """
+    if sample is None:
+        return sample
     return torch.as_tensor(sample, device=device)
 
 

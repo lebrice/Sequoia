@@ -27,8 +27,13 @@ from importlib import import_module
 from os.path import basename, dirname, isfile, join
 from pathlib import Path
 from typing import List, Type
+from os.path import abspath
 
+import pkg_resources
+from pkg_resources import EntryPoint
+from typing import Dict
 from setuptools import find_packages
+from functools import lru_cache
 
 from sequoia.settings.base import Method
 from sequoia.utils.logging_utils import get_logger
@@ -37,7 +42,8 @@ logger = get_logger(__file__)
 
 AbstractMethod = Method
 
-all_methods: List[Type[Method]] = []
+_registered_methods: List[Type[Method]] = []
+
 
 """
 TODO: IDEA: Add arguments to register_method that help configure the tests we
@@ -51,94 +57,146 @@ class MyMethod(Method, target_setting=ContinualRLSetting):
 """
 
 
-def register_method(new_method: Type[Method]) -> Type[Method]:
-    name = new_method.get_name()
-    # print(f"Registering method with name {name}")
-    if new_method not in all_methods:
-        for method in all_methods:
-            if method.get_name() == name:
-                # BUG: There's this weird double-import thing happening during
-                # testing, where some methods are import twice, first as
-                # methods.base_method.BaseMethod, for instance, then again
-                # as SSCL.methods.base_method.BaseMethod
-                from os.path import abspath
-                method_source_file = inspect.getsourcefile(method)
-                assert isinstance(method_source_file, str), f"cant find source file of {method}?"
-                new_method_source_file = inspect.getsourcefile(new_method)
-                assert isinstance(new_method_source_file, str), f"cant find source file of {new_method}?"
+def register_method(method_class: Type[Method] = None, *, name: str = None, family: str = None) -> Type[Method]:
+    """ Decorator around a method class, which is used to register the method.
 
-                if abspath(method_source_file) == abspath(new_method_source_file):
-                    # The two classes have the same name and are both defined in
-                    # the same file, so this is basically the 'double-import bug
-                    # described above.
-                    break
+    Can set the name of the method as well as the family when they are passed, and also
+    adds the Method to the list of registered methods.
+    """
+    def _register_method(method_class: Type[Method] = None, *, name: str = None, family: str = None) -> Type[Method]:
+        if name is not None:
+            method_class.name = name
+        if family is not None:
+            method_class.family = family
 
-                method_family = method.get_family()
-                new_method_family = new_method.get_family()
-                assert method_family != new_method_family, (
-                    "Can't have two methods with the same name in the same family!"
-                )
+        if not issubclass(method_class, Method):
+            raise TypeError(
+                "The `register_method` decorator should only be used on subclasses of "
+                "`Method`."
+            )
+
+        if method_class not in _registered_methods:
+            _registered_methods.append(method_class)
+
+        return method_class
+
+    # This is based on `dataclasses.dataclass`:
+    def wrap(method_class: Type[Method]) -> Type[Method]:
+        return _register_method(method_class, name=name, family=family)
+
+    # See if we're being called as @register_method or @register_method().
+    if method_class is None:
+        # We're called with parens.
+        return wrap
+
+    # We're called as @register_method without parens.
+    return wrap(method_class)
+
+
+@lru_cache
+def get_external_methods() -> Dict[str, Type[Method]]:
+    """ Returns a dictionary of the Methods defined outside of Sequoia.
+
+    Packages outside of Sequoia can register methods by putting a `Method` entry-point
+    in their setup.py, like so:
+
+    ```python
+    # (inside <some_package_dir>/setup.py)
+
+    setup(
+        name="my_package",
+        packages=setuptools.find_packages(include=["cn_dpm*"])
+        ...
+        entry_points={
+            "Method": [
+                "foo_method = my_package.my_methods.foo_method:FooMethod",
+                "bar_method = my_package.my_methods.bar_method:BarMethod",
+            ],
+        },
+    )
+    ```
+
+    Compared with using the `@register_method` decorator, this has the benefit that the
+    module containing the Method does not need to be imported/"live" for the method to
+    be available. This is very relevant when using Sequoia through the command-line, for
+    instance, since Sequoia would have no way of knowing what other methods are
+    available:
+
+    ```console
+    sequoia setting foo_setting method foo_method
+    ```
+    """
+    methods: Dict[str, Type[Method]] = {}
+    for entry_point in pkg_resources.iter_entry_points("Method"):
+        entry_point: EntryPoint
+        try:
+            method_class = entry_point.load()
+        except Exception as exc:
+            logger.error(
+                f"Unable to load external Method: '{entry_point.name}', from package "
+                f"{entry_point.dist.project_name}, version={entry_point.dist.version}: "
+                f"{exc}"
+            )
         else:
-            all_methods.append(new_method)
-    return new_method
+            logger.debug(
+                f"Imported an external Method: '{entry_point.name}', from package "
+                f"{entry_point.dist.project_name}, (version = {entry_point.dist.version})."
+            )
+            methods[entry_point.name] = method_class
+    return methods
 
-# NOTE: Even though these methods would be dynamically registered (see below),
-# we still import them so we can do `from methods import BaseMethod`.
-from .base_method import BaseMethod
 
-# Keeping a pointer to the old name, just to help with backward-compatibility a little
-# bit?
+from sequoia.methods.random_baseline import RandomBaselineMethod
+from sequoia.methods.base_method import BaseMethod, BaseModel
+# Keeping a pointer to the old name, just to help with backward-compatibility a bit.
 BaselineMethod = BaseMethod
 
-from .random_baseline import RandomBaselineMethod
-from .pnn import PnnMethod
+from sequoia.methods.pnn import PnnMethod
+from sequoia.methods.experience_replay import ExperienceReplayMethod
+from sequoia.methods.hat import HatMethod
+from sequoia.methods.ewc_method import EwcMethod
+
+# TODO: Eventually these could become external repos, with their own tests / etc, based
+# on a 'cookiecutter' repo of some sort. This would make it easier to maintain and to
+# delegate work!
+
+# IDEA: Could also do the same for the datasets somehow? Like have an extendable
+# `sequoia.datasets` cookiecutter repo? How would that work with Settings?
+# Assumption + Assumption -> Assumption (combined)
+# Setting := fn(dataset, **kwargs) -> Callable[[Method], Results]
 
 
 try:
-    from .avalanche import *
+    from sequoia.methods.avalanche import *
+except ImportError:
+    pass
+
+try:
+    from sequoia.methods.stable_baselines3_methods import *
 except ImportError:
     pass
 
 
 try:
-    from .stable_baselines3_methods import *
+    from sequoia.methods.pl_bolts_methods import *
 except ImportError:
     pass
 
 
-try:
-    from .pl_bolts_methods import *
-except ImportError:
-    pass
 
-try:
-    # For now, install the CN-DPM submodule in editable mode, like so:
-    # `pip install -e sequoia/methods/cn_dpm`
-    from .cn_dpm.cndpm_method import CNDPM
+def add_external_methods(all_methods: List[Type[Method]]) -> List[Type[Method]]:
+    for name, method_class in get_external_methods().items():
+        if method_class not in all_methods:
+            logger.debug(f"Adding method {name} from external package.")
+            all_methods.append(method_class)
+    return all_methods
 
-except ImportError:
-    pass
 
-## A bit hacky: Dynamically import all the modules/packages defined in this
-# folder. This way, we register the methods as they are declared.
-source_dir = Path(os.path.dirname(__file__))
-
-all_modules = find_packages(where=source_dir)
-# Add all non-package modules (i.e. all *.py files in this methods folder), for example
-# ewc_method.py.
-all_modules.extend(
-    [
-        file.relative_to(source_dir).stem for file in Path(source_dir).glob("*.py")
-        if not file.name.endswith("_test.py") and file.name != "__init__.py"
-    ]
-)
-
-for module in all_modules:
-    try:
-        # print(f"Importing module sequoia.methods.{module}")
-        import_module(f"sequoia.methods.{module}")
-    except ImportError as e:
-        logger.warning(RuntimeWarning(f"Couldn't import Method from module methods/{module}: {e}"))
-
-# TODO: (#17): Add Pl Bolts Models as Methods on IID Setting.
-# from .pl_bolts_methods.cpcv2 import CPCV2Method
+def get_all_methods() -> List[Type[Method]]:
+    # This may change over time, and includes ALL subclasses of 'Method'.
+    # methods = Method.__subclasses__()
+    # This includes all registered methods, e.g. not any base classes.
+    methods = _registered_methods
+    methods = add_external_methods(methods)  # This won't.
+    methods = list(set(methods))
+    return list(sorted(methods, key=lambda method: method.get_full_name()))

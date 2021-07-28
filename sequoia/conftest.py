@@ -46,6 +46,13 @@ def skip_param(*args, reason: str):
 def skipif_param(condition, *args, reason: str):
     return pytest.param(*args, marks=pytest.mark.skipif(condition, reason=reason))
 
+import numpy as np
+
+
+@pytest.fixture(autouse=True)
+def add_np(doctest_namespace):
+    doctest_namespace["np"] = np
+
 
 @pytest.fixture()
 def trainer_config(tmp_path_factory):
@@ -65,6 +72,13 @@ def config(tmp_path: Path):
     tmp_results_dir = tmp_path / "tmp_results"
     tmp_results_dir.mkdir()
     return Config(debug=True, seed=123, log_dir=tmp_results_dir)
+
+
+@pytest.fixture(scope="session")
+def session_config(tmp_path_factory: Path):
+    test_log_dir = tmp_path_factory.mktemp("test_log_dir")
+    # TODO: Set the results dir somehow with the value of this `tmp_path` fixture.
+    return Config(debug=True, seed=123, log_dir=test_log_dir)
 
 
 def id_fn(params: Any) -> str:

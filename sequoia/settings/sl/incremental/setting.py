@@ -262,7 +262,12 @@ class IncrementalSLSetting(IncrementalAssumption, DiscreteTaskAgnosticSLSetting)
         if test_specific_transforms:
             env = TransformObservation(env, f=test_specific_transforms)
 
-        # TODO: Remove this, I don't think it's usef anymore, since `hide_task_labels`
+        if self.config.device:
+            # TODO: Put this before or after the image transforms?
+            from sequoia.common.gym_wrappers.convert_tensors import ConvertToFromTensors
+            env = ConvertToFromTensors(env, device=self.config.device)
+
+        # TODO: Remove this, I don't think it's used anymore, since `hide_task_labels`
         # is an argument to self.Environment now.
         if not self.task_labels_at_test_time:
             env = HideTaskLabelsWrapper(env)

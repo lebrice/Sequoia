@@ -19,12 +19,14 @@ class TaskResults(Results, Generic[MetricType]):
     lower_is_better: ClassVar[bool] = False
 
     metrics: List[MetricType] = field(default_factory=list)
+    plots_dict: Dict[str, plt.Figure] = field(default_factory=dict)
 
     def __post_init__(self):
         if self.metrics and isinstance(self.metrics[0], dict):
             self.metrics = [
                 Metrics.from_dict(metrics, drop_extra_fields=False) for metrics in self.metrics
             ]
+
 
     def __str__(self) -> str:
         return f"{type(self).__name__}(average(metrics)={self.average_metrics})"
@@ -89,4 +91,5 @@ class TaskResults(Results, Generic[MetricType]):
         Dict[str, plt.Figure]
             Dict mapping from strings to matplotlib plots.
         """
-        return {}
+        # Could actually create plots here too.
+        return self.plots_dict

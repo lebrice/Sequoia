@@ -48,10 +48,16 @@ class TestPassiveEnvironment:
     # component, for example in the case of `env_proxy_test.py`.
     PassiveEnvironment: ClassVar[Type[PassiveEnvironment]] = PassiveEnvironment
 
-    def test_passive_environment_as_dataloader(self):
-        batch_size = 1
+    @pytest.fixture(scope="session")
+    def mnist_dataset(self):
         transforms = Compose([Transforms.to_tensor, Transforms.three_channels])
         dataset = MNIST("data", transform=transforms)
+        return dataset
+
+    def test_passive_environment_as_dataloader(self, mnist_dataset):
+        batch_size = 1
+        transforms = Compose([Transforms.to_tensor, Transforms.three_channels])
+        dataset = mnist_dataset
         obs_space = Image(0, 255, (1, 28, 28), np.uint8)
         obs_space = transforms(obs_space)
 
@@ -72,11 +78,9 @@ class TestPassiveEnvironment:
             # plt.waitforbuttonpress(10)
 
 
-    def test_mnist_as_gym_env(self):
+    def test_mnist_as_gym_env(self, mnist_dataset):
         # from continuum.datasets import MNIST
-        dataset = MNIST(
-            "data", transform=Compose([Transforms.to_tensor, Transforms.three_channels])
-        )
+        dataset = mnist_dataset
 
         batch_size = 4
         env = self.PassiveEnvironment(dataset, n_classes=10, batch_size=batch_size)

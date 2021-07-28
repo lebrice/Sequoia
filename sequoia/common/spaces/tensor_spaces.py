@@ -60,12 +60,15 @@ def get_torch_dtype_equivalent_to(numpy_dtype: np.dtype) -> torch.dtype:
         )
     return matching_dtypes[0]
 
+
 from inspect import isclass
 from typing import Any
 
 
 def is_numpy_dtype(dtype: Any) -> bool:
-    return isinstance(dtype, np.dtype) or isclass(dtype) and issubclass(dtype, np.generic)
+    return (
+        isinstance(dtype, np.dtype) or isclass(dtype) and issubclass(dtype, np.generic)
+    )
 
 
 def is_torch_dtype(dtype: Any) -> bool:
@@ -152,7 +155,9 @@ class TensorBox(TensorSpace, spaces.Box):
     def __repr__(self):
         return (
             f"{type(self).__name__}({self.low.min()}, {self.high.max()}, "
-            f"{self.shape}, {self.dtype}, device={self.device})"
+            f"{self.shape}, {self.dtype}"
+            + (f", device={self.device}" if self.device is not None else "")
+            + ")"
         )
 
     @classmethod

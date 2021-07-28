@@ -95,11 +95,10 @@ class ContinualAssumption(AssumptionBase):
     @dataclass(frozen=True)
     class Actions(AssumptionBase.Actions):
         pass
-    
+
     @dataclass(frozen=True)
     class Rewards(AssumptionBase.Rewards):
         pass
-
 
     # TODO: Move everything necessary to get ContinualRLSetting to work out of
     # Incremental and into this here. Makes no sense that ContinualRLSetting inherits
@@ -127,16 +126,16 @@ class ContinualAssumption(AssumptionBase):
         logger.info(f"Starting training")
         method.set_training()
         self._start_time = time.process_time()
-        
+
         method.fit(
             train_env=train_env, valid_env=valid_env,
         )
         train_env.close()
         valid_env.close()
 
-
         logger.info(f"Finished Training.")
-        results: ContinualResults = self.test_loop(method)
+
+        results = self.test_loop(method)
 
         if self.monitor_training_performance:
             results._online_training_performance = train_env.get_online_performance()
@@ -146,6 +145,7 @@ class ContinualAssumption(AssumptionBase):
         self._end_time = time.process_time()
         runtime = self._end_time - self._start_time
         results._runtime = runtime
+
         logger.info(f"Finished main loop in {runtime} seconds.")
         self.log_results(method, results)
         return results
