@@ -184,7 +184,7 @@ class ContinualSLSetting(SLSetting, ContinualAssumption):
 
     def __post_init__(self):
         super().__post_init__()
-        assert not self.has_setup_fit
+        # assert not self.has_setup_fit
         # Test values default to the same as train.
         self.test_increment = self.test_increment or self.increment
         self.test_initial_increment = (

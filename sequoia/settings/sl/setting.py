@@ -10,7 +10,7 @@ from sequoia.settings.base.results import ResultsType
 from sequoia.settings import Setting
 from sequoia.common.transforms import Transforms
 from .environment import PassiveEnvironment
-from torch.tensor import Tensor
+from torch import Tensor
 
 
 @dataclass

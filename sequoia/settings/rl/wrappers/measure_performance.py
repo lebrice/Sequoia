@@ -20,7 +20,9 @@ from sequoia.utils import add_prefix
 
 
 class MeasureRLPerformanceWrapper(
-    MeasurePerformanceWrapper[ActiveEnvironment, EpisodeMetrics]
+    MeasurePerformanceWrapper
+    # MeasurePerformanceWrapper[ActiveEnvironment]  # python 3.7
+    # MeasurePerformanceWrapper[ActiveEnvironment, EpisodeMetrics] # python 3.8+
 ):
     def __init__(
         self,
