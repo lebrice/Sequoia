@@ -748,10 +748,10 @@ class Model(LightningModule, Generic[SettingType]):
             shared_modules["output_head"] = self.output_head
         return shared_modules
 
-    def summarize(self, mode: str = ModelSummary.MODE_DEFAULT) -> ModelSummary:
-        model_summary = ModelSummary(self, mode=mode)
-        log.debug("\n" + str(model_summary))
-        return model_summary
+    # def summarize(self, mode: str = ModelSummary.MODE_DEFAULT) -> ModelSummary:
+    #     model_summary = ModelSummary(self, mode=mode)
+    #     log.debug("\n" + str(model_summary))
+    #     return model_summary
 
     def _are_batched(self, observations: IncrementalAssumption.Observations) -> bool:
         """ Returns wether these observations are batched. """

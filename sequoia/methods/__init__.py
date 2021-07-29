@@ -93,7 +93,7 @@ def register_method(method_class: Type[Method] = None, *, name: str = None, fami
     return wrap(method_class)
 
 
-@lru_cache
+@lru_cache(1)
 def get_external_methods() -> Dict[str, Type[Method]]:
     """ Returns a dictionary of the Methods defined outside of Sequoia.
 

@@ -6,6 +6,7 @@ from typing import (
     Callable,
     Dict,
     Generator,
+    Iterator,
     Generic,
     Iterable,
     List,
@@ -224,7 +225,7 @@ class EnvDataset(
         self.n_sends_ += 1
         return self.reward_
 
-    def __iter__(self) -> Iterable[ObservationType]:
+    def __iter__(self) -> Iterator[ObservationType]:
         """Iterator for an episode in the environment, which uses the 'active
         dataset' style with __iter__ and send.
 
