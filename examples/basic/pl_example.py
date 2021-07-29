@@ -1,3 +1,5 @@
+"""A simple example for creating a Method using PyTorch-Lightning.
+"""
 from dataclasses import asdict, dataclass
 from typing import Optional, Tuple
 
@@ -166,6 +168,18 @@ class Model(LightningModule):
 
 class ExampleMethod(Method, target_setting=ContinualSLSetting):
     """ Example method for solving Continual SL Settings with PyTorch-Lightning
+
+    This ExampleMethod declares that it can be applied to any `Setting` that inherits
+    from this `ContinualSLSetting`.
+
+    NOTE: Settings in Sequoia are a subclass of `LightningDataModule`, which create
+    the training/validation/testing `Environment`s that methods will interact with.
+    Each setting defines an `apply` method, which serves as a "main loop", and describes
+    when and on what data to train the Method, and how it will be evaluated, according
+    to the usual methodology for that setting in the litterature.
+
+    Importantly, settings do NOT describe **how** the method is to be trained, that is
+    entirely up to the Method! 
     """
 
     def __init__(self, hparams: Model.HParams = None):
@@ -177,6 +191,17 @@ class ExampleMethod(Method, target_setting=ContinualSLSetting):
         self.trainer: Trainer
 
     def configure(self, setting: ContinualSLSetting):
+        """ Called by the Setting so the method can configure itself before training.
+
+        This could be used to, for example, create a model, since the observation space
+        (which describes the types and shapes of the data), or the `nb_tasks` becomes
+        available.
+
+        Parameters
+        ----------
+        setting : ContinualSLSetting
+            The research setting that this `Method` will be applied to.
+        """
         self.model = Model(
             input_space=setting.observation_space,
             output_space=setting.action_space,
@@ -191,14 +216,27 @@ class ExampleMethod(Method, target_setting=ContinualSLSetting):
         """ Called by the Setting to allow the method to train.
 
         The passed environments inherit from `DataLoader` as well as from `gym.Env`.
-        They produce ob
-        
+        They produce `Observations` (which have an `x` Tensor field, for instance), and 
+        return `Rewards` when they receive `Actions`.
+        This interface is the same between RL and SL, making it easy to create methods
+        that can adapt to both domains.
+
         Parameters
         ----------
         train_env : ContinualSLSetting.Environment
-            [description]
+            The Training environment. In the case of a `ContinualSLSetting`, this
+            environment will smoothly transition between the different tasks.
+            NOTE: Regardless of what exact type of `Setting` this method is being
+            applied to, this environment will always be a subclass of
+            `ContinualSLSetting.Environment`, and the `Observations`, `Actions`,
+            `Rewards` produced by this environment will also always follow this
+            hierarchy.
+            This is important to note, since it makes it possible to create a Method
+            that works in more than one Setting, even if that particular Settings adds
+            extra information in the observaitons (e.g. task labels)!
+
         valid_env : ContinualSLSetting.Environment
-            [description]
+            The Validation environment.
         """
         # NOTE: Currently have to 'reset' the Trainer for each call to `fit`.
         self.trainer = Trainer(
