@@ -249,8 +249,15 @@ class ExampleMethod(Method, target_setting=ContinualSLSetting):
     def test(self, test_env: ContinualSLSetting.Environment):
         """ Called to let the Method handle the test loop by itself.
 
-        NOTE: The `test_env` will not give back rewards (y) until an action (y_pred) is
-        sent to it via the `send` method.
+        The `test_env` will only give back rewards (y) once an action (y_pred) is sent
+        to it via its `send` method.
+
+        This test environment keeps track of some metrics of interest for its `Setting`
+        (accuracy in this case) and reports them back to the `Setting` once the test
+        environment has been exhausted.
+
+        NOTE: The test environment will close itself when done, signifying the end
+        of the test period. At that point, `test_env.is_closed()` will return `True`.
         """
         # Use ckpt_path=None to use the current weights, rather than the "best" ones.
         self.trainer.test(self.model, ckpt_path=None, test_dataloaders=test_env)
