@@ -395,7 +395,10 @@ class Setting(
         config: Config
         if isinstance(getattr(method, "config", None), Config):
             config = method.config
-            logger.debug(f"Using Config from the Method: {self.config}")
+            logger.debug(f"Using Config from the Method: {config}")
+        elif isinstance(getattr(self, "config", None), Config):
+            config = self.config
+            logger.debug(f"Using Config from the Setting: {config}")
         else:
             argv = self._argv
             if argv:

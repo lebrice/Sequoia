@@ -828,7 +828,7 @@ class ContinualRLSetting(RLSetting, ContinualAssumption):
         """Apply the given method on this setting to producing some results. """
         # Use the supplied config, or parse one from the arguments that were
         # used to create `self`.
-        self.config: Config = config or self._setup_config(method)
+        self.config = config or self._setup_config(method)
         logger.debug(f"Config: {self.config}")
 
         # TODO: Test to make sure that this doesn't cause any other bugs with respect to

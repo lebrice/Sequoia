@@ -1,4 +1,10 @@
 """A simple example for creating a Method using PyTorch-Lightning.
+
+Run this as:
+
+```console
+$> python examples/basic/pl_examples.py
+```
 """
 from dataclasses import asdict, dataclass
 from typing import Optional, Tuple
@@ -38,6 +44,8 @@ class Model(LightningModule):
 
         # Learning rate.
         learning_rate: float = 1e-3
+        # Maximum number of training epochs per task.
+        max_epochs_per_task: int = 1
 
     def __init__(
         self,
@@ -184,9 +192,9 @@ class ExampleMethod(Method, target_setting=ContinualSLSetting):
 
     def __init__(self, hparams: Model.HParams = None):
         super().__init__()
-        self.hparams = hparams
+        self.hparams = hparams or Model.HParams()
         self.current_task: Optional[int] = None
-
+        # NOTE: These get assigned in `configure` below:
         self.model: Model
         self.trainer: Trainer
 
@@ -194,14 +202,20 @@ class ExampleMethod(Method, target_setting=ContinualSLSetting):
         """ Called by the Setting so the method can configure itself before training.
 
         This could be used to, for example, create a model, since the observation space
-        (which describes the types and shapes of the data), or the `nb_tasks` becomes
-        available.
+        (which describes the types and shapes of the data) and the `nb_tasks` can be
+        read from the Setting.
 
         Parameters
         ----------
         setting : ContinualSLSetting
             The research setting that this `Method` will be applied to.
         """
+        if not setting.known_task_boundaries_at_train_time:
+            # If we're being applied on a Setting where we don't have access to task
+            # boundaries, then there is only one training environment that transitions
+            # between all tasks and then closes itself.
+            # We therefore limit the number of epochs per task to 1 in that case.
+            self.hparams.max_epochs_per_task = 1
         self.model = Model(
             input_space=setting.observation_space,
             output_space=setting.action_space,
@@ -232,15 +246,15 @@ class ExampleMethod(Method, target_setting=ContinualSLSetting):
             `Rewards` produced by this environment will also always follow this
             hierarchy.
             This is important to note, since it makes it possible to create a Method
-            that works in more than one Setting, even if that particular Settings adds
-            extra information in the observaitons (e.g. task labels)!
+            that also works in other settings which add extra information in the
+            observations (e.g. task labels)!
 
         valid_env : ContinualSLSetting.Environment
             The Validation environment.
         """
         # NOTE: Currently have to 'reset' the Trainer for each call to `fit`.
         self.trainer = Trainer(
-            gpus=torch.cuda.device_count(), max_epochs=1, accelerator="ddp"
+            gpus=torch.cuda.device_count(), max_epochs=self.hparams.max_epochs_per_task
         )
         self.trainer.fit(
             self.model, train_dataloader=train_env, val_dataloaders=valid_env
@@ -272,7 +286,7 @@ class ExampleMethod(Method, target_setting=ContinualSLSetting):
         """
         self.model.eval()
         with torch.no_grad():
-            logits = self.model(observations)
+            logits = self.model(observations.to(self.model.device))
             y_pred = logits.argmax(-1)
         return Actions(y_pred=y_pred)
 

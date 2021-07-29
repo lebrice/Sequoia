@@ -51,6 +51,9 @@ class Metrics(Serializable):
         # the subclasses should implement the method. We just return the other.
         if isinstance(other, (int, float)) and other == 0.:
             return self
+        if isinstance(other, Metrics) and type(self) is Metrics:
+            assert self.n_samples == 0
+            return other
         return NotImplemented
 
     def __mul__(self, factor: Union[float, Tensor]) -> "Loss":

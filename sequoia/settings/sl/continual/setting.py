@@ -489,10 +489,14 @@ class ContinualSLSetting(SLSetting, ContinualAssumption):
             self.train_cl_dataset = self.train_cl_dataset or self.make_dataset(
                 self.config.data_dir, download=False, train=True
             )
+            nb_tasks_kwarg = {}
+            if self.nb_tasks is not None:
+                nb_tasks_kwarg.update(nb_tasks=self.nb_tasks)
+            else:
+                nb_tasks_kwarg.update(increment=self.increment)
             self.train_cl_loader = self.train_cl_loader or ClassIncremental(
                 cl_dataset=self.train_cl_dataset,
-                nb_tasks=self.nb_tasks,
-                increment=self.increment,
+                **nb_tasks_kwarg,
                 initial_increment=self.initial_increment,
                 transformations=self.train_transforms,
                 class_order=self.class_order,

@@ -575,8 +575,10 @@ class Model(LightningModule, Generic[SettingType]):
             rewards = environment.send(actions)
             assert rewards is not None
 
+        # BUG: Rewards is array of [None]s in TraditionalSL and MultiTask SL!
+        assert isinstance(rewards, Rewards), rewards
         # Now that we have the rewards, we calculate the loss.
-        
+
         loss: Loss = self.get_loss(forward_pass, rewards, loss_name=phase)
         loss_tensor: Tensor = loss.loss
         if loss_tensor == 0.:
