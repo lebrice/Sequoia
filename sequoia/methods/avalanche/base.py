@@ -76,7 +76,6 @@ class WandBLogger(_WandBLogger):
             self.init_kwargs.update(self.params)
 
     def before_run(self):
-        pass # Don't do anything, because SEquoia already creates the wandb logger.
         if self.wandb is None:
             self.import_wandb()
         if self.init_kwargs:
