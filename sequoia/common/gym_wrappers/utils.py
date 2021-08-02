@@ -327,6 +327,9 @@ class IterableWrapper(MayCloseEarly, IterableDataset, Generic[EnvType], ABC):
         self.wrapping_passive_env = isinstance(self.unwrapped, PassiveEnvironment)
         # Wether we should automatically apply the `hooks` in the `step` and `reset`.
         self.call_hooks = call_hooks
+        # Flag used to tell if the `reward` method has already been applied to the given
+        # batch.
+        self._reward_applied = False
 
     @property
     def is_vectorized(self) -> bool:
@@ -428,7 +431,12 @@ class IterableWrapper(MayCloseEarly, IterableDataset, Generic[EnvType], ABC):
         if self.wrapping_passive_env:
             action = self.action(action)
             reward = self.env.send(action)
-            reward = self.reward(reward)
+            # reward = self.reward(reward)
+            # NOTE: Use this `_reward_applied` flag to make sure that `self.reward`
+            # isn't called in both the `self.send` and `self.__iter__`.
+            if not self._reward_applied:
+                reward = self.reward(reward)
+                self._reward_applied = True
             return reward
 
         self.action_ = action
@@ -454,15 +462,37 @@ class IterableWrapper(MayCloseEarly, IterableDataset, Generic[EnvType], ABC):
         #     reward = self.reward(reward)
         #     return reward
 
+    # IDEA: Have a static 'generator' loop, which `send` sends the actions to.
+    # NOTE: This actually works for passive envs! (But it forces the 'active' style).
+    # @classmethod
+    # def iterator(cls, env: "ReplayEnvWrapper") -> Iterator:
+    #     # This would be cool, but we'd need to somehow store the iterator somewhere.
+    #     obs = env.reset()
+    #     done = False
+    #     while not done:
+    #         action = yield obs, None
+
+    #         if action is None:
+    #             action = env.action_
+    #         assert action is not None
+
+    #         obs, reward, done, info = env.step(action)
+    #         yield reward
+
     def __iter__(self) -> Iterator:
         # TODO: Pretty sure this could be greatly simplified by just always using the loop from EnvDataset.
         if self.wrapping_passive_env:
             # NOTE: Also applies the `self.observation` `self.reward` methods while
             # iterating.
             for obs, rewards in self.env:
+                self._reward_applied = False
                 obs = self.observation(obs)
+
                 if rewards is not None:
+                    assert not self._reward_applied
                     rewards = self.reward(rewards)
+                    self._reward_applied = True
+
                 yield obs, rewards
         else:
             self.unwrapped.observation_ = self.reset()

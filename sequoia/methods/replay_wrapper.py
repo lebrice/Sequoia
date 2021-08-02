@@ -106,56 +106,16 @@ class ReplayEnvWrapper(IterableWrapper[Environment[ObservationType, ActionType, 
         return obs
 
     def send(self, action: ActionType) -> RewardType:
-        return self._iterator.send(action)
+        return super().send(action)
 
-        # return super().send(action)
-        # action = self.action(action)
-        # reward = self.env.send(action)
-        # if self._reward_applied:
-        #     return reward
-        # return self.reward(reward)
-        # NOTE: Could use this if we opt for the 'generator-style' below:
-        # self.action_ = action
-
-    @classmethod
-    def iterator(cls, env: "ReplayEnvWrapper") -> Iterator:
-        # This would be cool, but we'd need to somehow store the iterator somewhere.
-        obs = env.reset()
-        done = False
-        while not done:
-            action = yield obs, None
-
-            if action is None:
-                action = env.action_
-            assert action is not None
-
-            obs, reward, done, info = env.step(action)
-            yield reward
-    
-    def __iter__(self) -> Iterator:
-        # TODO: This would work, if we were able to send the actions to the iterator.
-        # obs = self.reset()
-        self._iterator = self.iterator(self)
-        yield from self._iterator
-
-        # for obs, rewards in self.env:
-        #     obs = self.observation(obs)
-        #     if rewards is not None:
-        #         self._reward_applied = True
-        #         rewards = self.reward(rewards)
-        #     yield obs, rewards
+    def __len__(self) -> int:
+        return len(self.env)  # Returns the number of batches.
 
     def step(self, action: ActionType) -> Tuple[ObservationType, RewardType, bool, dict]:
         # NOTE: Don't need to call these hooks, since the `IterableWrapper` does it for
         # us.
         assert self.call_hooks
-        # action = self.action(action)
         obs, rewards, done, info = super().step(action)
-        print(f"Step: {rewards.y}")
-        # obs = self.observation(obs)
-        # rewards = self.reward(rewards)
-        # done = done
-        # info = info
         return obs, rewards, done, info
 
     def observation(self, observation: ObservationType) -> ObservationType:
@@ -208,12 +168,14 @@ class ReplayEnvWrapper(IterableWrapper[Environment[ObservationType, ActionType, 
         self.observation_space = batch_space(self.single_observation_space, n=n)
         self.action_space = batch_space(self.single_action_space, n=n)
         self.reward_space = batch_space(self.single_reward_space, n=n)
+        self.batch_size = n
 
     def disable_sampling(self) -> None:
         self._sampling_enabled = False
         self.observation_space = self.env.observation_space
         self.action_space = self.env.action_space
         self.reward_space = self.env.reward_space
+        self.batch_size = self.env.batch_size
 
     @property
     def collection_enabled(self) -> bool:
