@@ -202,6 +202,13 @@ class TensorMultiDiscrete(TensorSpace, spaces.MultiDiscrete):
 from gym.vector.utils.spaces import batch_space
 
 
+@batch_space.register(TensorBox)
+def _batch_box_space(space: TensorBox, n: int = 1) -> TensorBox:
+    repeats = tuple([n] + [1] * space.low.ndim)
+    low, high = np.tile(space.low, repeats), np.tile(space.high, repeats)
+    return TensorBox(low=low, high=high, dtype=space.dtype)
+
+
 @batch_space.register(TensorDiscrete)
 def _batch_discrete_space(space: TensorDiscrete, n: int = 1) -> TensorMultiDiscrete:
     return TensorMultiDiscrete(torch.full((n,), space.n, dtype=space.dtype))

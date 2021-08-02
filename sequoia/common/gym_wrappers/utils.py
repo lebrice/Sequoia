@@ -206,6 +206,7 @@ def is_monsterkong_env(env: Union[str, gym.Env, Callable[[], gym.Env]]) -> bool:
         return env.lower().startswith(("metamonsterkong", "monsterkong"))
     try:
         from meta_monsterkong.make_env import MetaMonsterKongEnv
+
         if inspect.isclass(env):
             return issubclass(env, MetaMonsterKongEnv)
         if isinstance(env, gym.Env):
@@ -258,8 +259,8 @@ class MayCloseEarly(gym.Wrapper, ABC):
     WIP: Also prevents calling `step` and `reset` on a closed env.
     """
 
-    def __init__(self, env: gym.Env):
-        super().__init__(env)
+    def __init__(self, env: gym.Env, **kwargs):
+        super().__init__(env, **kwargs)
         self._is_closed: bool = False
 
     def is_closed(self) -> bool:
@@ -319,10 +320,13 @@ class IterableWrapper(MayCloseEarly, IterableDataset, Generic[EnvType], ABC):
     iteration. 
     """
 
-    def __init__(self, env: gym.Env):
+    def __init__(self, env: gym.Env, call_hooks: bool = False):
         super().__init__(env)
         from sequoia.settings.sl import PassiveEnvironment
+
         self.wrapping_passive_env = isinstance(self.unwrapped, PassiveEnvironment)
+        # Wether we should automatically apply the `hooks` in the `step` and `reset`.
+        self.call_hooks = call_hooks
 
     @property
     def is_vectorized(self) -> bool:
@@ -337,12 +341,13 @@ class IterableWrapper(MayCloseEarly, IterableDataset, Generic[EnvType], ABC):
         # logger.debug(f"Wrapped env {self.env} isnt a PolicyEnv or an EnvDataset")
         # return type(self.env).__next__(self)
         from sequoia.settings.rl.environment import ActiveDataLoader
+
         # from sequoia.settings.sl.environment import PassiveEnvironment
 
         if has_wrapper(self.env, EnvDataset) or is_proxy_to(
             self.env, (EnvDataset, ActiveDataLoader)
         ):
-            obs, reward, done, info = self.step(self.unwrapped.action_)
+            obs, reward, done, info = self.step(self.action_)
             return obs
             # raise RuntimeError(f"WIP: Dropping this '__next__' API in RL.")
             # logger.debug(f"Wrapped env is an EnvDataset, using EnvDataset.__iter__.")
@@ -360,6 +365,28 @@ class IterableWrapper(MayCloseEarly, IterableDataset, Generic[EnvType], ABC):
 
     def reward(self, reward):
         return reward
+
+    def done(self, done):
+        return done
+
+    def info(self, info):
+        return info
+
+    # TODO: Not sure if we should use all the hooks here. Instead, should probably leave
+    # it to the wrapper to do.
+    def reset(self) -> ObservationType:
+        obs = super().reset()
+        return obs if not self.call_hooks else self.observation(obs)
+
+    def step(self, action):
+        action = action if not self.call_hooks else self.action(action)
+        obs, rewards, done, info = super().step(action)
+        if self.call_hooks:
+            obs = self.observation(obs)
+            rewards = self.reward(rewards)
+            done = self.done(done)
+            info = self.info(info)
+        return obs, rewards, done, info
 
     # def __len__(self):
     #     return self.env.__len__()
@@ -404,9 +431,9 @@ class IterableWrapper(MayCloseEarly, IterableDataset, Generic[EnvType], ABC):
             reward = self.reward(reward)
             return reward
 
-        self.unwrapped.action_ = action
-        self.unwrapped.observation_, self.unwrapped.reward_, self.unwrapped.done_, self.unwrapped.info_ = self.step(action)
-        return self.unwrapped.reward_
+        self.action_ = action
+        self.observation_, self.reward_, self.done_, self.info_ = self.step(action)
+        return self.reward_
 
         # (Option 1 below)
         # return self.env.send(action)

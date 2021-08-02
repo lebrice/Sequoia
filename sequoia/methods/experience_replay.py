@@ -323,6 +323,8 @@ class Buffer(nn.Module):
     ):
         super().__init__()
         self.rng = rng or np.random.RandomState()
+        assert capacity
+        self.capacity = capacity
 
         bx = torch.zeros([capacity, *input_shape], dtype=torch.float)
         by = torch.zeros([capacity], dtype=torch.long)
@@ -344,6 +346,9 @@ class Buffer(nn.Module):
         # self.to_one_hot  = lambda x : x.new(x.size(0), args.n_classes).fill_(0).scatter_(1, x.unsqueeze(1), 1)
         self.arange_like = lambda x: torch.arange(x.size(0)).to(x.device)
         self.shuffle = lambda x: x[torch.randperm(x.size(0))]
+
+    def __len__(self) -> int:
+        return self.current_index
 
     @property
     def x(self):
@@ -410,8 +415,11 @@ class Buffer(nn.Module):
     def sample(self, n_samples: int, exclude_task: int = None) -> Dict[str, Tensor]:
         buffers = {}
         if exclude_task is not None:
-            assert hasattr(self, "bt")
-            valid_indices = (self.bt != exclude_task).nonzero().squeeze()
+            task_label_buffer_name = self.buffers[-1]
+            assert task_label_buffer_name in ["bt", "btask_labels"], task_label_buffer_name
+            assert hasattr(self, task_label_buffer_name)
+            bt = getattr(self, task_label_buffer_name)
+            valid_indices = (bt != exclude_task).nonzero().squeeze()
             for buffer_name in self.buffers:
                 buffers[buffer_name] = getattr(self, buffer_name)[valid_indices]
         else:
@@ -421,10 +429,9 @@ class Buffer(nn.Module):
         bx = buffers["bx"]
         if bx.size(0) < n_samples:
             return buffers
-        else:
-            indices_np = self.rng.choice(bx.size(0), n_samples, replace=False)
-            indices = torch.from_numpy(indices_np).to(self.bx.device)
-            return {k[1:]: v[indices] for (k, v) in buffers.items()}
+        indices_np = self.rng.choice(bx.size(0), n_samples, replace=False)
+        indices = torch.from_numpy(indices_np).to(self.bx.device)
+        return {k[1:]: v[indices] for k, v in buffers.items()}
 
 
 if __name__ == "__main__":

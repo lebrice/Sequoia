@@ -9,6 +9,7 @@ import gym
 import numpy as np
 import torch
 from gym import spaces
+from gym.vector.vector_env import VectorEnv
 from gym.vector.utils import batch_space
 from torch import Tensor
 from torch.utils.data import DataLoader, Dataset, IterableDataset
@@ -37,6 +38,7 @@ logger = get_logger(__file__)
 class PassiveEnvironment(
     DataLoader,
     Environment[Tuple[ObservationType, Optional[ActionType]], ActionType, RewardType],
+    gym.vector.VectorEnv,
 ):
     """Environment in which actions have no influence on future observations.
 
@@ -135,7 +137,7 @@ class PassiveEnvironment(
                 obs, rewards, done, info = train_env.step(actions)
         ```
         """
-        super().__init__(dataset=dataset, drop_last=drop_last, **kwargs)
+        DataLoader.__init__(self, dataset=dataset, drop_last=drop_last, **kwargs)
         self.split_batch_fn = split_batch_fn
 
         # TODO: When the spaces aren't passed explicitly, assumes a classification dataset.
@@ -168,15 +170,23 @@ class PassiveEnvironment(
         self.single_action_space: gym.Space = action_space
         self.single_reward_space: gym.Space = reward_space
 
+        # Don't really need to call this, but whatever.
+        VectorEnv.__init__(
+            self,
+            num_envs=self.batch_size,
+            observation_space=observation_space,
+            action_space=action_space,
+        )
+
         if self.batch_size:
             observation_space = batch_space(observation_space, self.batch_size)
             action_space = batch_space(action_space, self.batch_size)
             reward_space = batch_space(reward_space, self.batch_size)
-        
+
         self.observation_space: gym.Space = add_tensor_support(observation_space)
         self.action_space: gym.Space = add_tensor_support(action_space)
         self.reward_space: gym.Space = add_tensor_support(reward_space)
-        
+
         self.pretend_to_be_active = pretend_to_be_active
         self._strict = strict
         self._reward_queue = deque(maxlen=10)
@@ -286,7 +296,9 @@ class PassiveEnvironment(
             [description]
         """
         if self._is_closed:
-            raise gym.error.ClosedEnvironmentError("Can't get the next batch: Env is closed.")
+            raise gym.error.ClosedEnvironmentError(
+                "Can't get the next batch: Env is closed."
+            )
         if self._iterator is None:
             self._iterator = super().__iter__()
         try:
