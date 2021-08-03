@@ -30,7 +30,11 @@ from torch import Tensor
 from torch.utils.data import ConcatDataset, Dataset, Subset, random_split, TensorDataset
 
 from sequoia.common.config import Config
-from sequoia.common.gym_wrappers import RenderEnvWrapper, TransformObservation, TransformReward
+from sequoia.common.gym_wrappers import (
+    RenderEnvWrapper,
+    TransformObservation,
+    TransformReward,
+)
 from sequoia.common.gym_wrappers.convert_tensors import add_tensor_support
 from sequoia.common.gym_wrappers.convert_tensors import (
     add_tensor_support as tensor_space,
@@ -182,7 +186,7 @@ class ContinualSLSetting(SLSetting, ContinualAssumption):
     # TODO: Need to put num_workers in only one place.
     batch_size: int = field(default=32, cmd=False)
     num_workers: int = field(default=4, cmd=False)
-    
+
     # When True, a Monitor-like wrapper will be applied to the training environment
     # and monitor the 'online' performance during training. Note that in SL, this will
     # also cause the Rewards (y) to be withheld until actions are passed to the `send`
@@ -397,10 +401,11 @@ class ContinualSLSetting(SLSetting, ContinualAssumption):
         if self.config.device:
             # TODO: Put this before or after the image transforms?
             from sequoia.common.gym_wrappers.convert_tensors import ConvertToFromTensors
+
             env = ConvertToFromTensors(env, device=self.config.device)
             # env = TransformObservation(env, f=partial(move, device=self.config.device))
             # env = TransformReward(env, f=partial(move, device=self.config.device))
-        
+
         if self.monitor_training_performance:
             env = MeasureSLPerformanceWrapper(
                 env, first_epoch_only=True, wandb_prefix=f"Train/",
@@ -461,6 +466,7 @@ class ContinualSLSetting(SLSetting, ContinualAssumption):
         if self.config.device:
             # TODO: Put this before or after the image transforms?
             from sequoia.common.gym_wrappers.convert_tensors import ConvertToFromTensors
+
             env = ConvertToFromTensors(env, device=self.config.device)
             # env = TransformObservation(env, f=partial(move, device=self.config.device))
             # env = TransformReward(env, f=partial(move, device=self.config.device))
@@ -518,6 +524,7 @@ class ContinualSLSetting(SLSetting, ContinualAssumption):
         if self.config.device:
             # TODO: Put this before or after the image transforms?
             from sequoia.common.gym_wrappers.convert_tensors import ConvertToFromTensors
+
             env = ConvertToFromTensors(env, device=self.config.device)
             # env = TransformObservation(env, f=partial(move, device=self.config.device))
             # env = TransformReward(env, f=partial(move, device=self.config.device))
@@ -997,40 +1004,49 @@ def shuffle(dataset: DatasetType, seed: int = None) -> DatasetType:
 import torch
 from torch import Tensor
 
-def smart_class_prediction(logits: Tensor, task_labels: Tensor, setting: SLSetting, train: bool) -> Tensor:
+
+def smart_class_prediction(
+    logits: Tensor, task_labels: Tensor, setting: SLSetting, train: bool
+) -> Tensor:
     """ Predicts classes which are available, given the task labels. """
     unique_task_ids = set(task_labels.unique().cpu().tolist())
     classes_in_each_task = {
         task_id: setting.task_classes(task_id, train=train)
         for task_id in unique_task_ids
     }
-    y_pred = limit_to_available_classes(logits, task_labels, classes_in_each_task)    
+    y_pred = limit_to_available_classes(logits, task_labels, classes_in_each_task)
     return y_pred
 
 
-def limit_to_available_classes(logits: Tensor, task_labels: Tensor, classes_in_each_present_task: Dict[int, List[int]]) -> Tensor:
+def limit_to_available_classes(
+    logits: Tensor,
+    task_labels: Tensor,
+    classes_in_each_present_task: Dict[int, List[int]],
+) -> Tensor:
     B = logits.shape[0]
     C = logits.shape[-1]
 
     assert logits.shape[0] == task_labels.shape[0] == B
     y_preds = []
     indices = torch.arange(C, dtype=torch.long, device=logits.device)
-    
+
     elligible_masks = {
         task_id: sum(
             [indices == label for label in labels],
-            start=torch.zeros([C], dtype=bool, device=logits.device)
-            )
+            start=torch.zeros([C], dtype=bool, device=logits.device),
+        )
         for task_id, labels in classes_in_each_present_task.items()
     }
 
     y_preds = []
     # TODO: Also return the logits, so we can get a loss for the selected indices?
-    # logits = [] 
+    # logits = []
     for logit, task_label in zip(logits, task_labels):
         t = task_label.item()
         eligible_classes_list = classes_in_each_present_task[t]
-        eligible_classes = torch.as_tensor(eligible_classes_list, dtype=int, device=logits.device)
+        eligible_classes = torch.as_tensor(
+            eligible_classes_list, dtype=int, device=logits.device
+        )
 
         is_eligible = elligible_masks[t]
 
@@ -1046,6 +1062,8 @@ def limit_to_available_classes(logits: Tensor, task_labels: Tensor, classes_in_e
             y_pred = eligible_classes[y_pred_without_offset]
 
         assert y_pred.item() in eligible_classes_list
-        y_preds.append(y_pred.reshape(()))  # Just to make sure they all have the same shape.
+        y_preds.append(
+            y_pred.reshape(())
+        )  # Just to make sure they all have the same shape.
 
     return torch.stack(y_preds)

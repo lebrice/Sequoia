@@ -155,6 +155,8 @@ from sequoia.methods.pnn import PnnMethod
 from sequoia.methods.experience_replay import ExperienceReplayMethod
 from sequoia.methods.hat import HatMethod
 from sequoia.methods.ewc_method import EwcMethod
+from sequoia.methods.replay import Replay
+
 
 # TODO: Eventually these could become external repos, with their own tests / etc, based
 # on a 'cookiecutter' repo of some sort. This would make it easier to maintain and to

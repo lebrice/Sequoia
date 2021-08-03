@@ -50,6 +50,13 @@ def concatenate(
 
     return np.asarray([first_item, *others], **kwargs)
 
+@concatenate.register(type(None))
+def _concatenate_nones(
+    first_item: None, *others: None, **kwargs,
+) -> None:
+    if any(other is not None for other in others):
+        return np.array([first_item, *others])
+    return None
 
 @concatenate.register(type(None))
 def _concatenate_ndarrays(
