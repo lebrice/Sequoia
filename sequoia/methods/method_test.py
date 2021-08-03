@@ -9,6 +9,7 @@ from typing import ClassVar, Type
 from sequoia.common.config import Config
 from typing import Dict
 from sequoia.conftest import config, session_config
+from pathlib import Path
 
 
 def key_fn(setting_class: Type[Setting]):
@@ -86,6 +87,12 @@ class MethodTests(ABC):
         assert results.objective
         assert results.objective is not None
         print(results.summary())
+
+    # NOTE: Need to re-define these here, just so external packages, which maybe aren't
+    # in the "scope" of `sequoia/conftest.py` can also use them:
+    # Dropping the `self` argument by making those static methods on the class.
+    session_config: pytest.fixture = staticmethod(session_config)
+    config: pytest.fixture = staticmethod(config)
 
     @pytest.fixture(scope="module")
     def setting(self, setting_type: Type[Setting], session_config: Config):
