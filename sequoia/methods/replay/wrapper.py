@@ -1,22 +1,24 @@
+from typing import Optional, Tuple, Union
+
+import torch
+from gym.vector.utils.spaces import batch_space
+from sequoia.common.gym_wrappers import IterableWrapper
 from sequoia.settings.sl.continual import Environment
 from sequoia.settings.sl.continual.objects import (
-    Observations,
     Actions,
-    Rewards,
-    ObservationType,
     ActionType,
+    Observations,
+    ObservationType,
+    Rewards,
     RewardType,
 )
-import torch
-from typing import Optional, Tuple, Union
-from sequoia.methods.experience_replay import Buffer
-from gym.vector.utils.spaces import batch_space
+
+from .buffer import Buffer
 
 
-from sequoia.common.gym_wrappers import IterableWrapper
-
-
-class ReplayEnvWrapper(IterableWrapper[Environment[ObservationType, ActionType, RewardType]]):
+class ReplayEnvWrapper(
+    IterableWrapper[Environment[ObservationType, ActionType, RewardType]]
+):
     def __init__(
         self,
         env: Environment[ObservationType, ActionType, RewardType],
@@ -107,7 +109,9 @@ class ReplayEnvWrapper(IterableWrapper[Environment[ObservationType, ActionType, 
     def __len__(self) -> int:
         return len(self.env)  # Returns the number of batches.
 
-    def step(self, action: ActionType) -> Tuple[ObservationType, RewardType, bool, dict]:
+    def step(
+        self, action: ActionType
+    ) -> Tuple[ObservationType, RewardType, bool, dict]:
         # NOTE: Don't need to call these hooks, since the `IterableWrapper` does it for
         # us.
         assert self.call_hooks
@@ -124,7 +128,9 @@ class ReplayEnvWrapper(IterableWrapper[Environment[ObservationType, ActionType, 
         if self.sampling_enabled:
             self._buffer_observation, self._buffer_reward = self.sample()
             assert observation.device == self._buffer_observation.device
-            return type(observation).concatenate([observation, self._buffer_observation])
+            return type(observation).concatenate(
+                [observation, self._buffer_observation]
+            )
         return observation
 
     def reward(self, reward: RewardType) -> RewardType:
@@ -186,7 +192,9 @@ class ReplayEnvWrapper(IterableWrapper[Environment[ObservationType, ActionType, 
         self._collection_enabled = False
 
     def for_next_env(
-        self, other_env: Environment[ObservationType, ActionType, RewardType], task_id: int = None
+        self,
+        other_env: Environment[ObservationType, ActionType, RewardType],
+        task_id: int = None,
     ) -> "ReplayEnvWrapper[Environment[ObservationType, ActionType, RewardType]]":
         """ Creates a new ReplayEnvWrapper around `other_env` and bootstraps it with the
         state of `self`.
