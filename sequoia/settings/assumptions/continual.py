@@ -417,7 +417,7 @@ class TestEnvironment(gym.wrappers.Monitor, IterableWrapper[EnvType], ABC):
             pass
 
         if isinstance(self.env.unwrapped, VectorEnv):
-            done = all(done)
+            done = done if isinstance(done, bool) else all(done)
         else:
             done = bool(done)
 

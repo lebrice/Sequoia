@@ -12,8 +12,11 @@ from torch import Tensor
 from torch.utils.data import TensorDataset
 from torchvision.datasets import MNIST
 from gym import spaces
-from .replay_wrapper import ReplayEnvWrapper, Buffer
+from .wrapper import ReplayEnvWrapper, Buffer
 from gym.vector.utils.spaces import batch_space
+
+# TODO: Also use the ShowDistributionsWrapper to make a plot and make sure that the
+# classes get seen after the start.
 
 
 class TestReplayWrapper:

@@ -65,11 +65,12 @@ def check_only_right_classes_present(setting: TaskIncrementalSLSetting):
             x = x.permute(0, 2, 3, 1)[0]
             assert x.shape == (28, 28, 3)
 
-            reward = train_loader.send([4 for _ in range(batch_size)])
+            send_reward = train_loader.send([4 for _ in range(batch_size)])
             if rewards is not None:
+                assert send_reward.device == rewards.device
                 # IF we send somethign to the env, then it should give back the same
                 # labels as for the last batch.
-                assert (reward.y == rewards.y).all()
+                assert (send_reward.y == rewards.y).all()
 
         train_loader.close()
 

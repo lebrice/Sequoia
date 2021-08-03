@@ -1,6 +1,3 @@
-from pytorch_lightning import Callback, LightningModule, Trainer
-from sequoia.settings import Setting
-from sequoia.settings.sl import SLSetting, SLEnvironment
 from sequoia.settings.sl.continual import Environment
 from sequoia.settings.sl.continual.objects import (
     Observations,
@@ -9,14 +6,9 @@ from sequoia.settings.sl.continual.objects import (
     ObservationType,
     ActionType,
     RewardType,
-    ObservationSpace,
 )
-from torch import nn, Tensor
 import torch
-from typing import Tuple, Dict, Type, Optional, Iterator
-import numpy as np
-from sequoia.methods.models.base_model import BaseModel
-from sequoia.common.spaces import TypedDictSpace
+from typing import Optional, Tuple, Union
 from sequoia.methods.experience_replay import Buffer
 from gym.vector.utils.spaces import batch_space
 
@@ -32,6 +24,7 @@ class ReplayEnvWrapper(IterableWrapper[Environment[ObservationType, ActionType, 
         capacity: int = None,
         sample_size: int = 32,
         task_id: int = None,
+        device: Union[str, torch.device] = "cpu",
     ):
         # NOTE: Passing `call_hooks` of `True` to `IterableWrapper` so that
         # `super().reset()` and `super().step()` use our `self.observation`,
@@ -55,7 +48,8 @@ class ReplayEnvWrapper(IterableWrapper[Environment[ObservationType, ActionType, 
                 input_shape=env.single_observation_space.x.shape,
                 extra_buffers=extra_buffers,
             )
-        self.buffer = buffer
+        self.device = device
+        self.buffer = buffer.to(device=self.device)
         self.capacity = buffer.capacity
 
         # Wether to augment the observations and rewards with buffer samples.
@@ -88,6 +82,8 @@ class ReplayEnvWrapper(IterableWrapper[Environment[ObservationType, ActionType, 
         return obs, rewards
 
     def add_reservoir(self, observation: ObservationType, reward: RewardType) -> None:
+        observation = observation.to(device=self.device)
+        reward = reward.to(device=self.device)
         values = {"x": observation.x}
         if "task_labels" in observation:
             values.update(task_labels=observation.task_labels)
@@ -127,12 +123,14 @@ class ReplayEnvWrapper(IterableWrapper[Environment[ObservationType, ActionType, 
 
         if self.sampling_enabled:
             self._buffer_observation, self._buffer_reward = self.sample()
+            assert observation.device == self._buffer_observation.device
             return type(observation).concatenate([observation, self._buffer_observation])
         return observation
 
     def reward(self, reward: RewardType) -> RewardType:
         """ Augments the rewards with the samples from the buffer.
         """
+        # FIXME: Debugging:
         if self.collection_enabled:
             # push these samples into the buffer?
             self._env_reward = reward
@@ -201,6 +199,7 @@ class ReplayEnvWrapper(IterableWrapper[Environment[ObservationType, ActionType, 
             capacity=self.capacity,
             sample_size=self.sample_size,
             task_id=task_id,
+            device=self.device,
         )
         if task_id != self.task_id:
             wrapper.enable_sampling()
