@@ -520,6 +520,7 @@ class ContinualSLSetting(SLSetting, ContinualAssumption):
             self.test_cl_dataset = self.test_cl_dataset or self.make_dataset(
                 self.config.data_dir, download=False, train=False
             )
+            self.test_class_order = self.test_class_order or self.class_order
             self.test_cl_loader = self.test_cl_loader or ClassIncremental(
                 cl_dataset=self.test_cl_dataset,
                 nb_tasks=self.nb_tasks,
@@ -871,3 +872,60 @@ def shuffle(dataset: DatasetType, seed: int = None) -> DatasetType:
     rng = np.random.default_rng(seed)
     perm = rng.permutation(range(length))
     return subset(dataset, perm)
+
+
+import torch
+from torch import Tensor
+
+def smart_class_prediction(logits: Tensor, task_labels: Tensor, setting: SLSetting, train: bool) -> Tensor:
+    """ Predicts classes which are available, given the task labels. """
+    unique_task_ids = set(task_labels.unique().cpu().tolist())
+    classes_in_each_task = {
+        task_id: setting.task_classes(task_id, train=train)
+        for task_id in unique_task_ids
+    }
+    y_pred = limit_to_available_classes(logits, task_labels, classes_in_each_task)    
+    return y_pred
+
+
+def limit_to_available_classes(logits: Tensor, task_labels: Tensor, classes_in_each_present_task: Dict[int, List[int]]) -> Tensor:
+    B = logits.shape[0]
+    C = logits.shape[-1]
+
+    assert logits.shape[0] == task_labels.shape[0] == B
+    y_preds = []
+    indices = torch.arange(C, dtype=torch.long, device=logits.device)
+    
+    elligible_masks = {
+        task_id: sum(
+            [indices == label for label in labels],
+            start=torch.zeros([C], dtype=bool, device=logits.device)
+            )
+        for task_id, labels in classes_in_each_present_task.items()
+    }
+
+    y_preds = []
+    # TODO: Also return the logits, so we can get a loss for the selected indices?
+    # logits = [] 
+    for logit, task_label in zip(logits, task_labels):
+        t = task_label.item()
+        eligible_classes_list = classes_in_each_present_task[t]
+        eligible_classes = torch.as_tensor(eligible_classes_list, dtype=int, device=logits.device)
+
+        is_eligible = elligible_masks[t]
+
+        if not is_eligible.any():
+            # Return a random prediction from the set of possible classes, since
+            # the network has fewer outputs than there are classes.
+            # NOTE: This can occur for instance when testing on future tasks
+            # when using a MultiTask module.
+            y_pred = eligible_classes[torch.randint(len(eligible_classes), (1,))]
+        else:
+            masked_logit = logit[is_eligible]
+            y_pred_without_offset = masked_logit.argmax(-1)
+            y_pred = eligible_classes[y_pred_without_offset]
+
+        assert y_pred.item() in eligible_classes_list
+        y_preds.append(y_pred.reshape(()))  # Just to make sure they all have the same shape.
+
+    return torch.stack(y_preds)

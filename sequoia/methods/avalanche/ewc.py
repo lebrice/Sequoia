@@ -4,17 +4,19 @@ See `avalanche.training.plugins.ewc.EWCPlugin` or
 `avalanche.training.strategies.strategy_wrappers.EWC` for more info.
 """
 from dataclasses import dataclass
-from typing import ClassVar, Optional, Type
+from typing import ClassVar, Optional, Type, Dict, Union
 
 from simple_parsing import ArgumentParser
+from simple_parsing.helpers import choice
 from simple_parsing.helpers.hparams import categorical, uniform
 from avalanche.training.strategies import EWC, BaseStrategy
 
 from sequoia.methods import register_method
 from sequoia.settings.sl import ClassIncrementalSetting, TaskIncrementalSLSetting
+from torch import nn
 
 from .base import AvalancheMethod
-
+from .patched_models import SimpleCNN, SimpleMLP
 
 @register_method
 @dataclass
@@ -29,6 +31,18 @@ class EWCMethod(AvalancheMethod[EWC]):
 
     strategy_class: ClassVar[Type[BaseStrategy]] = EWC
 
+    # Class Variable to hold the types of models available as options for the `model`
+    # field below.
+    available_models: ClassVar[Dict[str, Type[nn.Module]]] = {
+        "simple_cnn": SimpleCNN,
+        "simple_mlp": SimpleMLP,
+        # "mt_simple_cnn": MTSimpleCNN,  # These two still have some bugs in their loss
+        # "mt_simple_mlp": MTSimpleMLP,  # These two still have some bugs in their loss
+    }
+
+    # The model.
+    model: Union[nn.Module, Type[nn.Module]] = choice(available_models, default=SimpleCNN)
+    
     # Hyperparameter to weigh the penalty inside the total loss. The larger the lambda,
     # the larger the regularization.
     ewc_lambda: float = uniform(

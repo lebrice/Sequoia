@@ -277,6 +277,7 @@ class ContinualAssumption(AssumptionBase):
         run: Run = self.wandb.wandb_init()
         run.config["setting"] = setting_name
         run.config["method"] = method_name
+        run.config["method_full_name"] = method.get_full_name()
         run.summary["setting"] = self.get_name()
         if isinstance(self.dataset, str):
             run.summary["dataset"] = self.dataset

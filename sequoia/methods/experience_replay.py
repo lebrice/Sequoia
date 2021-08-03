@@ -24,6 +24,7 @@ from sequoia.methods import register_method
 from sequoia.settings import ClassIncrementalSetting
 from sequoia.settings.base import Actions, Environment, Method, Observations
 from sequoia.utils import get_logger
+from sequoia.settings.sl.continual.setting import smart_class_prediction
 
 
 logger = get_logger(__file__)
@@ -63,6 +64,7 @@ class ExperienceReplayMethod(Method, target_setting=ClassIncrementalSetting):
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
     def configure(self, setting: ClassIncrementalSetting):
+        self.setting = setting
         # create the model
         self.net = models.resnet18(pretrained=False)
         self.net.fc = nn.Linear(512, setting.action_space.n)
@@ -185,9 +187,20 @@ class ExperienceReplayMethod(Method, target_setting=ClassIncrementalSetting):
         self, observations: Observations, action_space: gym.Space
     ) -> Actions:
         observations = observations.to(device=self.device)
+        task_labels = observations.task_labels
+        
         logits = self.net(observations.x)
-        pred = logits.argmax(1)
-        return pred  # Note: Here it's also fine to just return the predictions.
+
+        if task_labels is not None:
+            y_pred = smart_class_prediction(
+                logits=logits,
+                task_labels=task_labels,
+                setting=self.setting,
+                train=False,
+            )
+        else:
+            y_pred = logits.argmax(1)
+        return self.setting.Actions(y_pred=y_pred)
 
     def on_task_switch(self, task_id: Optional[int]):
         print(f"Switching from task {self.task} to task {task_id}")

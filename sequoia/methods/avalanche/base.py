@@ -40,6 +40,7 @@ from sequoia.settings.sl.continual import Actions, Observations, Rewards
 from sequoia.settings.sl.continual import ContinualSLTestEnvironment
 from sequoia.settings.sl import ContinualSLSetting
 from sequoia.utils import get_logger
+from sequoia.settings.sl.continual.setting import smart_class_prediction
 
 from .experience import SequoiaExperience
 from .patched_models import MTSimpleCNN, MTSimpleMLP, SimpleCNN, SimpleMLP
@@ -52,6 +53,28 @@ StrategyType = TypeVar("StrategyType", bound=BaseStrategy)
 
 
 class WandBLogger(_WandBLogger):
+        
+    # def before_run(self):
+    #     if self.wandb is None:
+    #         self.import_wandb()
+    #     if self.init_kwargs:
+    #         self.wandb.init(**self.init_kwargs)
+    #     else:
+    #         self.wandb.init()
+    
+    def import_wandb(self):
+        try:
+            import wandb
+        except ImportError:
+            raise ImportError(
+                'Please run "pip install wandb" to install wandb')
+        self.wandb = wandb
+
+    def args_parse(self):
+        self.init_kwargs = {"project": self.project_name, "name": self.run_name}
+        if self.params:
+            self.init_kwargs.update(self.params)
+
     def before_run(self):
         if self.wandb is None:
             self.import_wandb()
@@ -246,6 +269,21 @@ class AvalancheMethod(
         ), "assume a classification problem for now."
         num_classes = setting.action_space.n
 
+        if setting.task_labels_at_train_time:
+            if setting.task_labels_at_test_time:
+                if self.model is SimpleCNN and MTSimpleCNN in self.available_models.values():
+                    self.model = MTSimpleCNN
+                    logger.info(
+                        f"Upgrading the model to a {MTSimpleCNN}, since task-labels "
+                        f"are available at train and test time."
+                    )
+                if self.model is SimpleMLP and MTSimpleMLP in self.available_models.values():
+                    self.model = MTSimpleMLP
+                    logger.info(
+                        f"Upgrading the model to a {MTSimpleMLP}, since task-labels "
+                        f"are available at train and test time."
+                    )
+
         if isinstance(self.model, nn.Module):
             if self._n_configures > 0:
                 logger.info("Resetting the model, since this isn't the first run.")
@@ -293,12 +331,17 @@ class AvalancheMethod(
         action_space: gym.Space,
     ) -> ClassIncrementalSetting.Actions:
         observations = observations.to(self.device)
-        # TODO: Perform inference with the model.
+
         with torch.no_grad():
             x = observations.x
             task_labels = observations.task_labels
             logits = avalanche_forward(self.model, x=x, task_labels=task_labels)
-            y_pred = logits.argmax(-1)
+            if task_labels is not None:
+                # If task labels are available, figure out the possible classes for
+                # each task, and 'mask out' those so they aren't predicted.
+                y_pred = smart_class_prediction(logits, task_labels, setting=self.setting, train=False)
+            else:
+                y_pred = logits.argmax(-1)
             return self.target_setting.Actions(y_pred=y_pred)
 
     def set_testing(self):

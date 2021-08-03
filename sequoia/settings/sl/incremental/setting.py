@@ -426,8 +426,9 @@ class IncrementalSLSetting(IncrementalAssumption, DiscreteTaskAgnosticSLSetting)
         end_index = start_index + self.num_classes_in_task(task_id, train)
         if train:
             return self.class_order[start_index:end_index]
-        else:
-            return self.test_class_order[start_index:end_index]
+        # Set the same ordering as during training, by default.
+        self.test_class_order = self.test_class_order or self.class_order
+        return self.test_class_order[start_index:end_index]
 
     def current_task_classes(self, train: bool) -> List[int]:
         """ Gives back the labels present in the current task. """
