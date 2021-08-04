@@ -8,9 +8,12 @@ from sequoia.conftest import slow
 from sequoia.settings.sl import SLSetting
 from typing import ClassVar, Type
 
+from sequoia.methods.base_method import BaseMethod, BaseModel
+from sequoia.methods.base_method_test import TestBaseMethod as BaseMethodTests
 
-class TestExperienceReplay(MethodTests):
-    Method: ClassVar[Type[Method]] = Replay
+
+class TestExperienceReplay(BaseMethodTests):
+    Method: ClassVar[Type[BaseMethod]] = Replay
 
     @classmethod
     @pytest.fixture
