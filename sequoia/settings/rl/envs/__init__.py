@@ -94,14 +94,14 @@ except (
     # Create a 'dummy' class so we can safely use type hints everywhere.
     # Additionally, `isinstance(some_env, <this class>)`` will always fail when the
     # dependency isn't installed, which is good.
-    # class MujocoEnv(gym.Env): pass
-    # class ContinualHalfCheetahEnv(MujocoEnv): pass
-    # class ContinualHalfCheetahV2Env(MujocoEnv): pass
-    # class ContinualHalfCheetahV3Env(MujocoEnv): pass
-    # class ContinualHopperEnv(MujocoEnv): pass
-    # class ContinualWalker2dEnv(MujocoEnv): pass
-    # class ContinualWalker2dV2Env(MujocoEnv): pass
-    # class ContinualWalker2dV3Env(MujocoEnv): pass
+    class MujocoEnv(gym.Env): pass
+    class ContinualHalfCheetahEnv(MujocoEnv): pass
+    class ContinualHalfCheetahV2Env(MujocoEnv): pass
+    class ContinualHalfCheetahV3Env(MujocoEnv): pass
+    class ContinualHopperEnv(MujocoEnv): pass
+    class ContinualWalker2dEnv(MujocoEnv): pass
+    class ContinualWalker2dV2Env(MujocoEnv): pass
+    class ContinualWalker2dV3Env(MujocoEnv): pass
 
 
 METAWORLD_INSTALLED = False

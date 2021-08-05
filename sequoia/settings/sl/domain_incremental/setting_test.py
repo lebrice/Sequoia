@@ -102,7 +102,7 @@ def test_domain_incremental_mnist_setup():
             x = x.permute(0, 2, 3, 1)[0]
             assert x.shape == (28, 28, 3)
 
-            rewards = test_loader.send([4 for _ in range(batch_size)])
+            rewards = test_loader.send([0 for _ in range(batch_size)])
             assert rewards is not None
             y = rewards.y
             assert ((0 <= y) & (y < setting.n_classes_per_task)).all()

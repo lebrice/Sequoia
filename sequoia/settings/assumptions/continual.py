@@ -277,6 +277,7 @@ class ContinualAssumption(AssumptionBase):
         run: Run = self.wandb.wandb_init()
         run.config["setting"] = setting_name
         run.config["method"] = method_name
+        run.config["method_full_name"] = method.get_full_name()
         run.summary["setting"] = self.get_name()
         if isinstance(self.dataset, str):
             run.summary["dataset"] = self.dataset
@@ -346,7 +347,7 @@ class TestEnvironment(gym.wrappers.Monitor, IterableWrapper[EnvType], ABC):
         self,
         env: EnvType,
         directory: Path,
-        step_limit: int = 1_000,
+        step_limit: int = 1_000,  # TODO: Remove this, use a dedicated wrapper for that.
         no_rewards: bool = False,
         config: Config = None,
         *args,
@@ -356,14 +357,24 @@ class TestEnvironment(gym.wrappers.Monitor, IterableWrapper[EnvType], ABC):
         logger.info(f"Creating test env (Monitor) with log directory {self.directory}")
         self.step_limit = step_limit
         self.no_rewards = no_rewards
-        self._closed = False
         self._steps = 0
         self.config = config
         # if wandb.run:
         #     wandb.gym.monitor()
 
-    def is_closed(self):
-        return self._closed
+    def step(self, action):
+        self._before_step(action)
+        # NOTE: Monitor wrapper from gym doesn't call `super().step`, so we have to
+        # overwrite it here.
+        observation, reward, done, info = IterableWrapper.step(self, action)
+        done = self._after_step(observation, reward, done, info)
+        return observation, reward, done, info
+
+    def reset(self, **kwargs):
+        self._before_reset()
+        observation = IterableWrapper.reset(self, **kwargs)
+        self._after_reset(observation)
+        return observation
 
     @abstractmethod
     def get_results(self) -> Results:
@@ -422,9 +433,6 @@ class TestEnvironment(gym.wrappers.Monitor, IterableWrapper[EnvType], ABC):
 
         return observation, reward, done, info
 
-    def close(self):
-        self._closed = True
-        return super().close()
 
 
 TestEnvironment.__test__ = False

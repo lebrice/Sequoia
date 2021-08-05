@@ -134,7 +134,6 @@ class PassiveEnvironment(
                 actions = train_env.action_space.sample()
                 obs, rewards, done, info = train_env.step(actions)
         ```
-        
         """
         super().__init__(dataset=dataset, drop_last=drop_last, **kwargs)
         self.split_batch_fn = split_batch_fn

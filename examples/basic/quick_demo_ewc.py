@@ -11,14 +11,12 @@ import gym
 import torch
 from torch import Tensor
 
-# This "hack" is required so we can run `python examples/quick_demo_ewc.py`
-sys.path.extend([".", ".."])
 from sequoia.settings import DomainIncrementalSLSetting
 from sequoia.settings.sl.incremental.objects import Observations, Rewards
 from sequoia.utils import dict_intersection
 from sequoia.utils.logging_utils import get_logger
 
-from quick_demo import DemoMethod, MyModel
+from examples.basic.quick_demo import DemoMethod, MyModel
 
 logger = get_logger(__file__)
 

@@ -129,8 +129,12 @@ def split_batch(
     """
     # In this context (class_incremental), we will always have 3 items per
     # batch, because we use the ClassIncremental scenario from Continuum.
-    assert len(batch) == 3
-    x, y, t = batch
+    if len(batch) == 2 and all(isinstance(item, Tensor) for item in batch):
+        x, y = batch
+        t = None
+    else:
+        assert len(batch) == 3
+        x, y, t = batch
 
     if hide_task_labels:
         # Remove the task labels if we're not currently allowed to have
@@ -274,7 +278,7 @@ class ContinualSLTestEnvironment(TestEnvironment[ContinualSLEnvironment]):
         # IDEA: Make the env give us the task ids, and then hide them again after, just
         # so we can get propper 'per-task' metrics.
         # NOTE: This wouldn't be ideal however, as would assume that there is a 'discrete'
-        # set of values for the task id, which is a
+        # set of values for the task id, which is only true in Classification datasets.
         assert isinstance(self.env.unwrapped, ContinualSLEnvironment)
         self.env.unwrapped.hide_task_labels = False
 
@@ -309,29 +313,38 @@ class ContinualSLTestEnvironment(TestEnvironment[ContinualSLEnvironment]):
                     f"in a row without sending an action!"
                 )
             self.observation_queue.append(obs)
-            assert rewards is None
-            yield obs, rewards
 
-    def send(self, actions):
+            if self.no_rewards:
+                rewards = None
+
+            yield obs, rewards
+        self.close()
+
+    def send(self, actions: ActionType) -> Optional[RewardType]:
         self._before_step(actions)
         rewards = self.env.send(actions)
         obs = self.observation_queue.popleft()
         info = getattr(obs, "info", {})
-        done = False
+        done = self.get_total_steps() >= self.step_limit
         self._after_step(obs, rewards, done, info)
+
+        if self.no_rewards:
+            rewards = None
+
         return rewards
 
     def reset(self):
-        if not self._reset:
-            logger.debug("Initial reset.")
-            self._reset = True
-            return super().reset()
-        else:
-            # TODO: Why is this a good thing again? Why not just let an 'EpisodeLimit'
-            # wrapper handle this?
-            logger.debug("Resetting the env closes it. (only one episode in SL)")
-            self.close()
-            return None
+        return super().reset()
+        # if not self._reset:
+        #     logger.debug("Initial reset.")
+        #     self._reset = True
+        #     return super().reset()
+        # else:
+        #     # TODO: Why is this a good thing again? Why not just let an 'EpisodeLimit'
+        #     # wrapper handle this?
+        #     logger.debug("Resetting the env closes it. (only one episode in SL)")
+        #     self.close()
+        #     return None
 
     def _before_step(self, action):
         self.action_ = action
@@ -430,7 +443,7 @@ class ContinualSLTestEnvironment(TestEnvironment[ContinualSLEnvironment]):
             return
         # Reset the stat count
         self.stats_recorder.after_reset(observation)
-        if self.config.render:
+        if self.config and self.config.render:
             self.reset_video_recorder()
 
         # Bump *after* all reset activity has finished

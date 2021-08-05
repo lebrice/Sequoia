@@ -160,7 +160,7 @@ class TestDiscreteTaskAgnosticRLSetting(ContinualRLSettingTests):
 from typing import Any, Dict, Optional
 
 
-def test_fit_and_on_task_switch_calls():
+def test_fit_and_on_task_switch_calls(config: Config):
     setting = DiscreteTaskAgnosticRLSetting(
         dataset="CartPole-v0",
         # nb_tasks=5,
@@ -171,6 +171,7 @@ def test_fit_and_on_task_switch_calls():
         train_transforms=[],
         test_transforms=[],
         val_transforms=[],
+        config=config,
     )
     method = _DummyMethod()
     _ = setting.apply(method)

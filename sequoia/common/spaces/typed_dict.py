@@ -43,6 +43,13 @@ M = TypeVar("M", bound=Mapping[str, Any])
 S = TypeVar("S")
 Dataclass = TypeVar("Dataclass")
 
+try:
+    from typing import get_origin
+except ImportError:
+    # Python 3.7's typing module doesn't have this `get_origin` function, so get it from
+    # `typing_inspect`.
+    from typing_inspect import get_origin
+
 
 class TypedDictSpace(spaces.Dict, Mapping[str, Space], Generic[M]):
     """ Subclass of `spaces.Dict` that allows custom dtypes and uses type annotations.
@@ -183,7 +190,7 @@ class TypedDictSpace(spaces.Dict, Mapping[str, Space], Generic[M]):
                 if isclass(type_annotation) and issubclass(type_annotation, gym.Space):
                     is_space = True
                 else:
-                    origin = typing.get_origin(type_annotation)
+                    origin = get_origin(type_annotation)
                     is_space = (
                         origin is not None
                         and isclass(origin)

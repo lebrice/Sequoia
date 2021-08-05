@@ -8,6 +8,7 @@ from sequoia.settings.base import Method
 from typing import ClassVar, Type
 from sequoia.common.config import Config
 from typing import Dict
+from sequoia.conftest import config, session_config
 
 
 def key_fn(setting_class: Type[Setting]):
@@ -20,28 +21,32 @@ def make_setting_type_fixture(method_type: Type[Method]) -> pytest.fixture:
     """ Create a parametrized fixture that will go through all the applicable settings
     for a given method.
     """
+
     def setting_type(self, request):
         setting_type = request.param
         return setting_type
 
     setting_types = set(method_type.get_applicable_settings())
-    settings_to_remove = set([
-        Setting, SLSetting, RLSetting
-    ])
+    settings_to_remove = set([Setting, SLSetting, RLSetting])
     # NOTE: Need to make a deterministic ordering of settings, otherwise we can't
     # parallelize tests with pytest-xdist
     setting_types = sorted(list(setting_types - settings_to_remove), key=key_fn)
     return pytest.fixture(params=setting_types, scope="module",)(setting_type)
+
 
 from typing import TypeVar, Generic
 from abc import abstractmethod, ABC
 from sequoia.settings.sl.continual.setting import random_subset
 
 MethodType = TypeVar("MethodType", bound=Method)
+from sequoia.conftest import session_config
 
 
 class MethodTests(ABC):
-    """ Base class that can be extended to generate tests for a method. """
+    """ Base class that can be extended to generate tests for a method.
+
+    The main test of interest is `test_debug`.
+    """
 
     Method: ClassVar[Type[MethodType]]
     setting_type: pytest.fixture
@@ -50,6 +55,9 @@ class MethodTests(ABC):
     method_debug_kwargs: ClassVar[Dict] = {}
 
     def __init_subclass__(cls, method: Type[MethodType] = None):
+        """ Dynamically generates a `setting_type` fixture on the subclass, which will
+        be parametrized by the settings that the Method is applicable to.
+        """
         super().__init_subclass__()
         if not method and not hasattr(cls, "Method"):
             raise RuntimeError(
@@ -70,51 +78,73 @@ class MethodTests(ABC):
         """
         return cls.Method()
 
+    @abstractmethod
+    def validate_results(
+        self, setting: Setting, method: MethodType, results: Setting.Results,
+    ) -> None:
+        assert results
+        assert results.objective
+        assert results.objective is not None
+        print(results.summary())
+
     @pytest.fixture(scope="module")
     def setting(self, setting_type: Type[Setting], session_config: Config):
         # TODO: Fix this test setup, nb_tasks should be something low like 2, and
         # perhaps use max_episode_steps to limit episode length
         if issubclass(setting_type, SLSetting):
-            setting_kwargs = dict(
-                nb_tasks=5,
-                config=session_config,
-            )
+            setting_kwargs = dict(nb_tasks=5, config=session_config,)
+            setting_kwargs.setdefault("monitor_training_performance", True)
             # TODO: Do we also want to parameterize the dataset? or is it too much?
             setting_kwargs.update(self.setting_kwargs)
-            setting = setting_type(
-                **setting_kwargs,
-            )
+            setting = setting_type(**setting_kwargs,)
             setting.config = session_config
+            setting.batch_size = 10
             setting.prepare_data()
             setting.setup()
             nb_tasks = 5
             samples_per_task = 50
             # Testing this out: Shortening the train datasets:
             setting.train_datasets = [
-                random_subset(task_dataset, samples_per_task) for task_dataset in setting.train_datasets
+                random_subset(task_dataset, samples_per_task)
+                for task_dataset in setting.train_datasets
             ]
             setting.val_datasets = [
-                random_subset(task_dataset, samples_per_task) for task_dataset in setting.val_datasets
+                random_subset(task_dataset, samples_per_task)
+                for task_dataset in setting.val_datasets
             ]
             setting.test_datasets = [
-                random_subset(task_dataset, samples_per_task) for task_dataset in setting.test_datasets
+                random_subset(task_dataset, samples_per_task)
+                for task_dataset in setting.test_datasets
             ]
             assert len(setting.train_datasets) == nb_tasks
             assert len(setting.val_datasets) == nb_tasks
             assert len(setting.test_datasets) == nb_tasks
-            assert all(len(dataset) == samples_per_task for dataset in setting.train_datasets)
-            assert all(len(dataset) == samples_per_task for dataset in setting.val_datasets)
-            assert all(len(dataset) == samples_per_task for dataset in setting.test_datasets)
+            assert all(
+                len(dataset) == samples_per_task for dataset in setting.train_datasets
+            )
+            assert all(
+                len(dataset) == samples_per_task for dataset in setting.val_datasets
+            )
+            assert all(
+                len(dataset) == samples_per_task for dataset in setting.test_datasets
+            )
 
             # Assert that calling setup doesn't overwrite the datasets.
             setting.setup()
             assert len(setting.train_datasets) == nb_tasks
             assert len(setting.val_datasets) == nb_tasks
             assert len(setting.test_datasets) == nb_tasks
-            assert all(len(dataset) == samples_per_task for dataset in setting.train_datasets)
-            assert all(len(dataset) == samples_per_task for dataset in setting.val_datasets)
-            assert all(len(dataset) == samples_per_task for dataset in setting.test_datasets)
+            assert all(
+                len(dataset) == samples_per_task for dataset in setting.train_datasets
+            )
+            assert all(
+                len(dataset) == samples_per_task for dataset in setting.val_datasets
+            )
+            assert all(
+                len(dataset) == samples_per_task for dataset in setting.test_datasets
+            )
         else:
+            # RL setting:
             setting_kwargs = dict(
                 nb_tasks=2,
                 train_max_steps=1_000,
@@ -125,28 +155,14 @@ class MethodTests(ABC):
             )
             # TODO: Do we also want to parameterize the dataset? or is it too much?
             setting_kwargs.update(self.setting_kwargs)
-            setting = setting_type(
-                **setting_kwargs,
-            )
+            setting = setting_type(**setting_kwargs,)
 
         yield setting
 
-
     def test_debug(self, method: MethodType, setting: Setting, config: Config):
+        """ Apply the Method onto a setting, and validate the results. """
         results: Setting.Results = setting.apply(method, config=config)
-        assert results.objective is not None
-        print(results.summary())
         self.validate_results(setting=setting, method=method, results=results)
-
-    @abstractmethod
-    def validate_results(
-        self,
-        setting: Setting,
-        method: MethodType,
-        results: Setting.Results,
-    ) -> None:
-        assert results
-        assert results.objective
 
 
 @dataclass

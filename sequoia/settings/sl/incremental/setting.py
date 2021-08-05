@@ -49,36 +49,27 @@ from simple_parsing import choice, field, list_field
 from torch import Tensor
 from torch.utils.data import ConcatDataset, Dataset
 
-from sequoia.common import ClassificationMetrics
 from sequoia.common.config import Config
 from sequoia.common.gym_wrappers import TransformObservation
-from sequoia.common.gym_wrappers.batch_env.tile_images import tile_images
-from sequoia.common.gym_wrappers.convert_tensors import add_tensor_support
-from sequoia.common.gym_wrappers.utils import RenderEnvWrapper
-from sequoia.common.spaces import Image, Sparse
-from sequoia.common.transforms import Transforms
 from sequoia.settings.assumptions.incremental import (
     IncrementalAssumption,
-    TaskResults,
-    TaskSequenceResults,
     IncrementalResults,
-    TestEnvironment,
 )
 from sequoia.settings.base import Method, Results
 from sequoia.utils import get_logger
 
-# TODO: Fix this: not sure where this 'SLSetting' should be.
 from sequoia.settings.sl.environment import Actions, PassiveEnvironment, Rewards
 from sequoia.settings.sl.setting import SLSetting
 from sequoia.settings.sl.continual import ContinualSLSetting
+from sequoia.settings.sl.continual.wrappers import relabel
 from sequoia.settings.sl.wrappers import MeasureSLPerformanceWrapper
 from sequoia.settings.rl.wrappers import HideTaskLabelsWrapper
 from continuum.tasks import concat
 
-
+from ..continual import ContinualSLTestEnvironment
 from ..discrete.setting import DiscreteTaskAgnosticSLSetting
 from .results import IncrementalSLResults
-from .environment import IncrementalSLEnvironment
+from .environment import IncrementalSLEnvironment, IncrementalSLTestEnvironment
 from .objects import (
     Observations,
     ObservationType,
@@ -435,8 +426,9 @@ class IncrementalSLSetting(IncrementalAssumption, DiscreteTaskAgnosticSLSetting)
         end_index = start_index + self.num_classes_in_task(task_id, train)
         if train:
             return self.class_order[start_index:end_index]
-        else:
-            return self.test_class_order[start_index:end_index]
+        # Set the same ordering as during training, by default.
+        self.test_class_order = self.test_class_order or self.class_order
+        return self.test_class_order[start_index:end_index]
 
     def current_task_classes(self, train: bool) -> List[int]:
         """ Gives back the labels present in the current task. """
@@ -509,137 +501,6 @@ Rewards = IncrementalSLSetting.Rewards
 # the "base" versions of these objects from sequoia.settings.bases.objects, which are
 # imported in settings/__init__.py. Will have to check that doing
 # `from .passive import *` over there doesn't actually import these here.
-
-
-class IncrementalSLTestEnvironment(TestEnvironment):
-    def __init__(
-        self, env: gym.Env, *args, task_schedule: Dict[int, Any] = None, **kwargs
-    ):
-        super().__init__(env, *args, **kwargs)
-        self._steps = 0
-        # TODO: Maybe rework this so we don't depend on the test phase being one task at
-        # a time, instead store the test metrics in the task corresponding to the
-        # task_label in the observations.
-        # BUG: The problem is, right now we're depending on being passed the
-        # 'task schedule', which we then use to get the task ids. This
-        # is actually pretty bad, because if the class ordering was changed between
-        # training and testing, then, this wouldn't actually report the correct results!
-        self.task_schedule = task_schedule or {}
-        self.task_steps = sorted(self.task_schedule.keys())
-        self.results: TaskSequenceResults[ClassificationMetrics] = TaskSequenceResults(
-            task_results=[TaskResults() for step in self.task_steps]
-        )
-        self._reset = False
-        # NOTE: The task schedule is already in terms of the number of batches.
-        self.boundary_steps = [step for step in self.task_schedule.keys()]
-
-    def get_results(self) -> IncrementalSLResults:
-        return self.results
-
-    def reset(self):
-        if not self._reset:
-            logger.debug("Initial reset.")
-            self._reset = True
-            return super().reset()
-        else:
-            logger.debug("Resetting the env closes it.")
-            self.close()
-            return None
-
-    def _before_step(self, action):
-        self.action = action
-        return super()._before_step(action)
-
-    def _after_step(self, observation, reward, done, info):
-
-        assert isinstance(reward, Tensor)
-        action = self.action
-        actions = torch.as_tensor(action)
-
-        batch_size = reward.shape[0]
-        fake_logits = torch.zeros([batch_size, self.action_space.nvec[0]], dtype=int)
-        # FIXME: There must be a smarter way to do this indexing.
-        for i, action in enumerate(actions):
-            fake_logits[i, action] = 1
-        actions = fake_logits
-
-        metric = ClassificationMetrics(y=reward, y_pred=actions)
-        reward = metric.accuracy
-
-        task_steps = sorted(self.task_schedule.keys())
-        assert 0 in task_steps, task_steps
-        import bisect
-
-        nb_tasks = len(task_steps)
-        assert nb_tasks >= 1
-
-        # Given the step, find the task id.
-        task_id = bisect.bisect_right(task_steps, self._steps) - 1
-        self.results.task_results[task_id].metrics.append(metric)
-        self._steps += 1
-
-        # Debugging issue with Monitor class:
-        # return super()._after_step(observation, reward, done, info)
-        if not self.enabled:
-            return done
-
-        if done and self.env_semantics_autoreset:
-            # For envs with BlockingReset wrapping VNCEnv, this observation will be the
-            # first one of the new episode
-            if self.config.render:
-                self.reset_video_recorder()
-            self.episode_id += 1
-            self._flush()
-
-        # Record stats
-        self.stats_recorder.after_step(observation, reward, done, info)
-
-        # Record video
-        if self.config.render:
-            self.video_recorder.capture_frame()
-        return done
-        ##
-
-    def _after_reset(self, observation: IncrementalSLSetting.Observations):
-        image_batch = observation.numpy().x
-        # Need to create a single image with the right dtype for the Monitor
-        # from gym to create gifs / videos with it.
-        if self.batch_size:
-            # Need to tile the image batch so it can be seen as a single image
-            # by the Monitor.
-            image_batch = tile_images(image_batch)
-
-        image_batch = Transforms.channels_last_if_needed(image_batch)
-        if image_batch.dtype == np.float32:
-            assert (0 <= image_batch).all() and (image_batch <= 1).all()
-            image_batch = (256 * image_batch).astype(np.uint8)
-
-        assert image_batch.dtype == np.uint8
-        # Debugging this issue here:
-        # super()._after_reset(image_batch)
-
-        # -- Code from Monitor
-        if not self.enabled:
-            return
-        # Reset the stat count
-        self.stats_recorder.after_reset(observation)
-        if self.config.render:
-            self.reset_video_recorder()
-
-        # Bump *after* all reset activity has finished
-        self.episode_id += 1
-
-        self._flush()
-        # --
-
-    def render(self, mode="human", **kwargs):
-        # NOTE: This doesn't get called, because the video recorder uses
-        # self.env.render(), rather than self.render()
-        # TODO: Render when the 'render' argument in config is set to True.
-        image_batch = super().render(mode=mode, **kwargs)
-        if mode == "rgb_array" and self.batch_size:
-            image_batch = tile_images(image_batch)
-        return image_batch
 
 
 if __name__ == "__main__":

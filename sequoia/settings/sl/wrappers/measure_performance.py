@@ -12,7 +12,7 @@ training performance.
 TODO: Move this somewhere more appropriate. There's also the RL version of the wrapper
 here.
 """
-from typing import Any, Dict, Generic, Iterable, List, Optional, Sequence, Tuple, Union
+from typing import Any, Dict, Generic, Iterator, List, Optional, Sequence, Tuple, Union
 
 import numpy as np
 import wandb
@@ -30,7 +30,9 @@ from sequoia.common.gym_wrappers.batch_env.tile_images import tile_images
 
 
 class MeasureSLPerformanceWrapper(
-    MeasurePerformanceWrapper[PassiveEnvironment, ClassificationMetrics]
+    MeasurePerformanceWrapper,
+    # MeasurePerformanceWrapper[PassiveEnvironment]  # Python 3.7
+    # MeasurePerformanceWrapper[PassiveEnvironment, ClassificationMetrics] # Python 3.8+
 ):
     def __init__(
         self,
@@ -139,7 +141,7 @@ class MeasureSLPerformanceWrapper(
             wandb.log(log_dict)
         return metric
 
-    def __iter__(self) -> Iterable[Tuple[Observations, Optional[Rewards]]]:
+    def __iter__(self) -> Iterator[Tuple[Observations, Optional[Rewards]]]:
         if self.__epochs == 1 and self.first_epoch_only:
             print(
                 colorize(

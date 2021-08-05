@@ -4,7 +4,17 @@ action to take whenever the `action` argument to the `step` method is None.
 This policy should then accept the 'state' or something like that.
 """
 from dataclasses import dataclass
-from typing import Any, Callable, Iterable, Optional, Tuple, TypeVar, Dict, Generic
+from typing import (
+    Any,
+    Callable,
+    Iterator,
+    Optional,
+    Tuple,
+    TypeVar,
+    Dict,
+    Generic,
+    Iterable,
+)
 
 import gym
 from torch.utils.data import IterableDataset
@@ -169,7 +179,7 @@ class PolicyEnv(gym.Wrapper, IterableDataset, Iterable[DatasetItem]):
         self._n_steps_in_episode = 0
         return self._observation
 
-    def __iter__(self) -> Iterable[DatasetItem]:
+    def __iter__(self) -> Iterator[DatasetItem]:
         """Iterator for an episode/trajectory in the env.
         
         This uses the policy to iteratively perform an episode in the env, and

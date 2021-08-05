@@ -1,3 +1,11 @@
+"""A simple example for creating a Method using PyTorch-Lightning.
+
+Run this as:
+
+```console
+$> python examples/basic/pl_examples.py
+```
+"""
 from dataclasses import asdict, dataclass
 from typing import Optional, Tuple
 
@@ -36,6 +44,8 @@ class Model(LightningModule):
 
         # Learning rate.
         learning_rate: float = 1e-3
+        # Maximum number of training epochs per task.
+        max_epochs_per_task: int = 1
 
     def __init__(
         self,
@@ -166,17 +176,46 @@ class Model(LightningModule):
 
 class ExampleMethod(Method, target_setting=ContinualSLSetting):
     """ Example method for solving Continual SL Settings with PyTorch-Lightning
+
+    This ExampleMethod declares that it can be applied to any `Setting` that inherits
+    from this `ContinualSLSetting`.
+
+    NOTE: Settings in Sequoia are a subclass of `LightningDataModule`, which create
+    the training/validation/testing `Environment`s that methods will interact with.
+    Each setting defines an `apply` method, which serves as a "main loop", and describes
+    when and on what data to train the Method, and how it will be evaluated, according
+    to the usual methodology for that setting in the litterature.
+
+    Importantly, settings do NOT describe **how** the method is to be trained, that is
+    entirely up to the Method! 
     """
 
     def __init__(self, hparams: Model.HParams = None):
         super().__init__()
-        self.hparams = hparams
+        self.hparams = hparams or Model.HParams()
         self.current_task: Optional[int] = None
-
+        # NOTE: These get assigned in `configure` below:
         self.model: Model
         self.trainer: Trainer
 
     def configure(self, setting: ContinualSLSetting):
+        """ Called by the Setting so the method can configure itself before training.
+
+        This could be used to, for example, create a model, since the observation space
+        (which describes the types and shapes of the data) and the `nb_tasks` can be
+        read from the Setting.
+
+        Parameters
+        ----------
+        setting : ContinualSLSetting
+            The research setting that this `Method` will be applied to.
+        """
+        if not setting.known_task_boundaries_at_train_time:
+            # If we're being applied on a Setting where we don't have access to task
+            # boundaries, then there is only one training environment that transitions
+            # between all tasks and then closes itself.
+            # We therefore limit the number of epochs per task to 1 in that case.
+            self.hparams.max_epochs_per_task = 1
         self.model = Model(
             input_space=setting.observation_space,
             output_space=setting.action_space,
@@ -191,18 +230,31 @@ class ExampleMethod(Method, target_setting=ContinualSLSetting):
         """ Called by the Setting to allow the method to train.
 
         The passed environments inherit from `DataLoader` as well as from `gym.Env`.
-        They produce ob
-        
+        They produce `Observations` (which have an `x` Tensor field, for instance), and 
+        return `Rewards` when they receive `Actions`.
+        This interface is the same between RL and SL, making it easy to create methods
+        that can adapt to both domains.
+
         Parameters
         ----------
         train_env : ContinualSLSetting.Environment
-            [description]
+            The Training environment. In the case of a `ContinualSLSetting`, this
+            environment will smoothly transition between the different tasks.
+            NOTE: Regardless of what exact type of `Setting` this method is being
+            applied to, this environment will always be a subclass of
+            `ContinualSLSetting.Environment`, and the `Observations`, `Actions`,
+            `Rewards` produced by this environment will also always follow this
+            hierarchy.
+            This is important to note, since it makes it possible to create a Method
+            that also works in other settings which add extra information in the
+            observations (e.g. task labels)!
+
         valid_env : ContinualSLSetting.Environment
-            [description]
+            The Validation environment.
         """
         # NOTE: Currently have to 'reset' the Trainer for each call to `fit`.
         self.trainer = Trainer(
-            gpus=torch.cuda.device_count(), max_epochs=1, accelerator="ddp"
+            gpus=torch.cuda.device_count(), max_epochs=self.hparams.max_epochs_per_task
         )
         self.trainer.fit(
             self.model, train_dataloader=train_env, val_dataloaders=valid_env
@@ -211,8 +263,15 @@ class ExampleMethod(Method, target_setting=ContinualSLSetting):
     def test(self, test_env: ContinualSLSetting.Environment):
         """ Called to let the Method handle the test loop by itself.
 
-        NOTE: The `test_env` will not give back rewards (y) until an action (y_pred) is
-        sent to it via the `send` method.
+        The `test_env` will only give back rewards (y) once an action (y_pred) is sent
+        to it via its `send` method.
+
+        This test environment keeps track of some metrics of interest for its `Setting`
+        (accuracy in this case) and reports them back to the `Setting` once the test
+        environment has been exhausted.
+
+        NOTE: The test environment will close itself when done, signifying the end
+        of the test period. At that point, `test_env.is_closed()` will return `True`.
         """
         # Use ckpt_path=None to use the current weights, rather than the "best" ones.
         self.trainer.test(self.model, ckpt_path=None, test_dataloaders=test_env)
@@ -227,7 +286,7 @@ class ExampleMethod(Method, target_setting=ContinualSLSetting):
         """
         self.model.eval()
         with torch.no_grad():
-            logits = self.model(observations)
+            logits = self.model(observations.to(self.model.device))
             y_pred = logits.argmax(-1)
         return Actions(y_pred=y_pred)
 

@@ -13,6 +13,7 @@ from gym.utils import colorize
 from sequoia.common.metrics import Metrics
 from sequoia.settings.base.results import Results
 from simple_parsing.helpers import list_field
+from simple_parsing.helpers.serialization import encode
 
 from .iid_results import MetricType, TaskResults
 from .discrete_results import TaskSequenceResults
@@ -243,9 +244,8 @@ class IncrementalResults(Results, Generic[MetricType]):
         )
         return log_dict
 
-    def summary(self, verbose: bool = True):
+    def summary(self, verbose: bool = False):
         s = StringIO()
-        from simple_parsing.helpers.serialization import encode
         log_dict = self.to_log_dict(verbose=verbose)
         log_dict_json = json.dumps(log_dict, indent="\t", default=encode) 
         print(log_dict_json, file=s)

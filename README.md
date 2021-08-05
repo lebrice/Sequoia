@@ -2,9 +2,15 @@
 
 A Playground for research at the intersection of Continual, Reinforcement, and Self-Supervised Learning.
 
-Join the [mailing list](https://groups.google.com/forum/#!forum/sequoia_research/join) for infrequent updates (<1/mo.) on the status of the project and new releases.
+- 5 minute intro: https://www.youtube.com/watch?v=0u48vr96zRQ
+- Paper link: https://arxiv.org/abs/2108.01005
+- [Continual Supervised Learning Study](https://wandb.ai/sequoia/csl_study) (~6K runs)
+- [Continual Reinforcement Learning Study](https://wandb.ai/sequoia/crl_study) (~2300 runs)
+
 
 ## Please note: This is still very much a Work-In-Progress!
+
+If you have any questions or comments, please make an issue!
 
 ## Motivation:
 Most applied ML research generally either proposes new Settings (research problems), new Methods (solutions to such problems), or both.
@@ -120,16 +126,11 @@ sequoia --setting <some_setting> --method <some_method>  (arguments)
 For example:
 - Run the BaseMethod on task-incremental MNIST, with one epoch per task, and without wandb:
     ```console
-    sequoia --setting task_incremental --dataset mnist --method baseline --max_epochs 1
+    sequoia --setting task_incremental_sl --dataset mnist --method base --max_epochs 1
     ```
 - Run the PPO Method from stable-baselines3 on an incremental RL setting, with the default dataset (CartPole) and 5 tasks: 
     ```console
     sequoia --setting incremental_rl --nb_tasks 5 --method ppo --steps_per_task 10_000
     ```
 
-- Running multiple experiments (wip):
-
-    If you leave out the `--method` argument above, the experiment will compare the results of all the methods applicable to the chosen Setting.
-
-    Likewise, if you leave the `--setting` option unset, the experiment will evaluate the performance of the selected method on all its applicable settings (WIP: and a table will be shown).
-
+More questions? Please let us know by creating an issue!
