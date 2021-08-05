@@ -26,6 +26,8 @@ from continuum.datasets import (
     Synbols,
     _ContinuumDataset,
 )
+import torch
+
 from continuum.tasks import TaskSet
 from gym import Space, spaces
 from torch import Tensor
@@ -111,6 +113,43 @@ base_reward_spaces: Dict[str, Space] = {
     for dataset_name, action_space in base_action_spaces.items()
     if isinstance(action_space, spaces.Discrete)
 }
+
+CTRL_INSTALLED: bool = False
+CTRL_STREAMS: List[str] = []
+CTRL_NB_TASKS: Dict[str, Optional[int]] = {}
+try:
+    import ctrl
+    from ctrl.tasks.task import Task
+    from ctrl.tasks.task_generator import TaskGenerator
+except ImportError as exc:
+    logger.debug(f"ctrl-benchmark isn't installed: {exc}")
+    # Creating those just for type hinting.
+    class Task: pass
+    class TaskGenerator: pass
+else:
+    CTRL_INSTALLED = True
+    CTRL_STREAMS = ["s_minus", "s_minus", "s_in", "s_out", "s_pl", "s_long"]
+    n_tasks = [5, 5, 5, 5, 4, None]
+    CTRL_NB_TASKS = dict(zip(CTRL_STREAMS, n_tasks))
+    x_dims = [(3, 32, 32)] * len(CTRL_STREAMS)
+    n_classes = [10, 10, 10, 10, 10, 5]
+
+
+    for i, stream_name in enumerate(CTRL_STREAMS):
+        # Create the 'base observation space' for this stream. 
+        obs_space = ImageTensorSpace(0, 1, shape=x_dims[i], dtype=torch.float32)
+        
+        # TODO: Not sure if the classes should be considered 'shared' or 'distinct'.
+        # For now assume they are shared, so the setting's action space is always [0, 5]
+        # but the action changes.
+        # total_n_classes = n_tasks[i] * n_classes[i]
+        # action_space = TensorDiscrete(n=total_n_classes)
+        n_classes_per_task = n_classes[i]
+        action_space = TensorDiscrete(n=n_classes_per_task)
+        
+        base_observation_spaces[stream_name] = obs_space
+        base_action_spaces[stream_name] = action_space
+
 
 from functools import singledispatch
 

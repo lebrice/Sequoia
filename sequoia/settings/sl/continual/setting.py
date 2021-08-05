@@ -66,10 +66,15 @@ from .objects import (
 )
 from .results import ContinualSLResults
 from .wrappers import relabel
-
+from .envs import get_observation_space, get_action_space, get_reward_space
+import torch
+from sequoia.common.spaces import ImageTensorSpace, TensorDiscrete
+from .envs import CTRL_INSTALLED, CTRL_STREAMS
 logger = get_logger(__file__)
 
 EnvironmentType = TypeVar("EnvironmentType", bound=ContinualSLEnvironment)
+
+
 
 
 @dataclass
@@ -230,6 +235,23 @@ class ContinualSLSetting(SLSetting, ContinualAssumption):
         self._has_prepared_data = False
         self._has_setup_fit = False
         self._has_setup_test = False
+
+        if CTRL_INSTALLED and self.dataset in CTRL_STREAMS:
+            import ctrl
+            from ctrl.tasks.task import Task
+            from ctrl.tasks.task_generator import TaskGenerator
+            from .envs import CTRL_NB_TASKS 
+            self.nb_tasks = self.nb_tasks or CTRL_NB_TASKS[self.dataset]
+            if self.dataset == "s_long" and not self.nb_tasks:
+                warnings.warn(RuntimeWarning(
+                    f"Limiting the scenario to 100 tasks for now when using 's_long' stream."
+                ))
+                self.nb_tasks = 100
+            task_generator: TaskGenerator = ctrl.get_stream(self.dataset)
+            # TODO: Figure out how to get the train/val/test splits from the tasks.
+            task_datasets: List[Task] = list(itertools.islice(task_generator, self.nb_tasks))
+            
+            assert False, dir(task_datasets[0])
 
         ## NOTE: Not sure this is a good idea, because we might easily mix the train/val
         ## and test splits between different runs! Actually, now that I think about it, 

@@ -227,6 +227,14 @@ class TestContinualSLSetting(SettingTests):
         assert setting.reward_space.n == n_classes
 
 
+    from .envs import CTRL_INSTALLED, CTRL_STREAMS
+    @pytest.mark.skipif(not CTRL_INSTALLED, reason="Need ctrl-benchmark for this test.")
+    @pytest.mark.parametrize("stream", CTRL_STREAMS or [""])
+    def test_ctrl_stream_support(self, stream: str):
+        setting = self.Setting(dataset=stream)
+        assert False, (setting.observation_space, setting.nb_tasks, setting.reward_space)
+    
+
 def create_image_classification_dataset(
     image_shape: Tuple[int, ...],
     n_classes: int,
