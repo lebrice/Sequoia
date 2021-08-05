@@ -40,8 +40,8 @@ class Sparse(Space[Optional[T]]):
     def sparsity(self) -> float:
         return self._sparsity
 
-    def __getattr__(self, attr: str):
-        return getattr(self.base, attr)
+    # def __getattr__(self, attr: str):
+    #     return getattr(self.base, attr)
 
     def seed(self, seed=None):
         super().seed(seed)

@@ -1,5 +1,6 @@
 from .setting import RLSetting
-from .environment import ActiveEnvironment
+from .environment import RLEnvironment
+ActiveEnvironment = RLEnvironment
 from .continual import ContinualRLSetting, make_continuous_task
 from .discrete import DiscreteTaskAgnosticRLSetting, make_discrete_task
 from .incremental import IncrementalRLSetting, make_incremental_task
