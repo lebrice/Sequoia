@@ -100,21 +100,15 @@ class TestIncrementalSLSetting(DiscreteTaskAgnosticSLSettingTests):
             assert x in observation_space, (x.min(), x.max(), observation_space)
             assert y in reward_space
 
-
-@pytest.mark.parametrize("dataset_name", ["mnist"])
-def test_task_label_space(dataset_name: str):
-    # dataset = ClassIncrementalSetting.available_datasets[dataset_name]
-    nb_tasks = 2
-    setting = ClassIncrementalSetting(dataset=dataset_name, nb_tasks=nb_tasks,)
-    task_label_space: Space = setting.observation_space.task_labels
-    # TODO: Should the task label space be Sparse[Discrete]? or Discrete?
-    assert task_label_space == Discrete(nb_tasks)
-    assert setting.action_space == Discrete(setting.action_space.n)
-
-    nb_tasks = 5
-    setting.nb_tasks = nb_tasks
-    assert setting.observation_space.task_labels == Discrete(nb_tasks)
-    assert setting.action_space == Discrete(setting.action_space.n)
+    @pytest.mark.parametrize("dataset_name", ["mnist"])
+    @pytest.mark.parametrize("nb_tasks", [2, 5])
+    def test_task_label_space(self, dataset_name: str, nb_tasks: int):
+        # dataset = ClassIncrementalSetting.available_datasets[dataset_name]
+        nb_tasks = 2
+        setting = ClassIncrementalSetting(dataset=dataset_name, nb_tasks=nb_tasks,)
+        task_label_space: Space = setting.observation_space.task_labels
+        # TODO: Should the task label space be Sparse[Discrete]? or Discrete?
+        assert task_label_space == Discrete(nb_tasks)
 
     @pytest.mark.parametrize("dataset_name", ["mnist"])
     def test_setting_obs_space_changes_when_transforms_change(self, dataset_name: str):

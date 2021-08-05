@@ -187,7 +187,7 @@ class TestContinualSLSetting(SettingTests):
         image_shape = (16, 16, 3)
         n_classes = 10
         datasets = [
-            create_image_classification_dataset(image_shape=image_shape, n_classes=2)
+            create_image_classification_dataset(image_shape=image_shape, n_classes=2, y_offset= i * 2)
             for i in range(5)
         ]
         train_datasets = []
@@ -214,7 +214,14 @@ class TestContinualSLSetting(SettingTests):
             train_datasets=train_datasets,
             val_datasets=val_datasets,
             test_datasets=test_datasets,
+            transforms=[],
+            # train_transforms=[],
+            # val_transforms=[],
+            # test_transforms=[]
         )
+        assert setting.train_datasets is train_datasets
+        assert setting.val_datasets is val_datasets
+        assert setting.test_datasets is test_datasets
         assert setting.nb_tasks == len(setting.train_datasets)
         assert setting.observation_space.x.shape == image_shape
         assert setting.reward_space.n == n_classes
@@ -224,6 +231,7 @@ def create_image_classification_dataset(
     image_shape: Tuple[int, ...],
     n_classes: int,
     n_samples_per_class: int = 100,
+    y_offset: int = 0,
 ):
     """Copied and Adapted from
     https://github.com/ContinualAI/avalanche/blob/master/tests/unit_tests_utils.py
@@ -239,8 +247,11 @@ def create_image_classification_dataset(
         n_informative=n_features,
         n_redundant=0,
     )
-    x = torch.from_numpy(dataset[0]).float()
+    x = torch.from_numpy(dataset[0]).reshape([-1, *image_shape]).float()
     y = torch.from_numpy(dataset[1]).long()
+    # y_offset can be used to get [2,3] rather than [0,1] for instance.
+    if y_offset:
+        y += y_offset
     return TensorDataset(x, y)
 
     # train_X, test_X, train_y, test_y = train_test_split(
