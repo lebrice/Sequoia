@@ -27,7 +27,7 @@ from continuum.tasks import TaskSet, concat, split_train_val
 from gym import Space, spaces
 from simple_parsing import choice, field, list_field
 from torch import Tensor
-from torch.utils.data import ConcatDataset, Dataset, Subset
+from torch.utils.data import ConcatDataset, Dataset, Subset, random_split, TensorDataset
 
 from sequoia.common.config import Config
 from sequoia.common.gym_wrappers import RenderEnvWrapper, TransformObservation, TransformReward
@@ -42,7 +42,7 @@ from sequoia.settings.base import Method, SettingABC
 from sequoia.settings.sl import SLSetting
 from sequoia.settings.sl.environment import PassiveEnvironment
 from sequoia.settings.sl.wrappers import MeasureSLPerformanceWrapper
-from sequoia.utils.generic_functions import move
+from sequoia.utils.generic_functions import move, concatenate
 from sequoia.utils.logging_utils import get_logger
 from sequoia.utils.utils import flag
 
@@ -66,10 +66,35 @@ from .objects import (
 )
 from .results import ContinualSLResults
 from .wrappers import relabel
-
+from .envs import get_observation_space, get_action_space, get_reward_space
+import torch
+from sequoia.common.spaces import ImageTensorSpace, TensorDiscrete
+from .envs import CTRL_INSTALLED, CTRL_STREAMS
 logger = get_logger(__file__)
 
 EnvironmentType = TypeVar("EnvironmentType", bound=ContinualSLEnvironment)
+
+available_datasets = {
+    c.__name__.lower(): c
+    for c in [
+        CIFARFellowship,
+        MNISTFellowship,
+        ImageNet100,
+        ImageNet1000,
+        CIFAR10,
+        CIFAR100,
+        EMNIST,
+        KMNIST,
+        MNIST,
+        QMNIST,
+        FashionMNIST,
+        Synbols,
+    ]
+    # "synbols": Synbols,
+    # "synbols_font": partial(Synbols, task="fonts"),
+}
+if CTRL_INSTALLED:
+    available_datasets.update(dict(zip(CTRL_STREAMS, CTRL_STREAMS)))
 
 
 @dataclass
@@ -107,25 +132,7 @@ class ContinualSLSetting(SLSetting, ContinualAssumption):
     # Class variable holding a dict of the names and types of all available
     # datasets.
     # TODO: Issue #43: Support other datasets than just classification
-    available_datasets: ClassVar[Dict[str, Type[_ContinuumDataset]]] = {
-        c.__name__.lower(): c
-        for c in [
-            CIFARFellowship,
-            MNISTFellowship,
-            ImageNet100,
-            ImageNet1000,
-            CIFAR10,
-            CIFAR100,
-            EMNIST,
-            KMNIST,
-            MNIST,
-            QMNIST,
-            FashionMNIST,
-            Synbols,
-        ]
-        # "synbols": Synbols,
-        # "synbols_font": partial(Synbols, task="fonts"),
-    }
+    available_datasets: ClassVar[Dict[str, Type[_ContinuumDataset]]] = available_datasets
     # A continual dataset to use. (Should be taken from the continuum package).
     dataset: str = choice(available_datasets.keys(), default="mnist")
 
@@ -182,6 +189,10 @@ class ContinualSLSetting(SLSetting, ContinualAssumption):
     # method of the Environment.
     monitor_training_performance: bool = flag(False)
 
+    train_datasets: List[Dataset] = field(default_factory=list, cmd=False, repr=False, to_dict=False)
+    val_datasets: List[Dataset] = field(default_factory=list, cmd=False, repr=False, to_dict=False)
+    test_datasets: List[Dataset] = field(default_factory=list, cmd=False, repr=False, to_dict=False)
+    
     def __post_init__(self):
         super().__post_init__()
         # assert not self.has_setup_fit
@@ -202,30 +213,13 @@ class ContinualSLSetting(SLSetting, ContinualAssumption):
         assert isinstance(self.increment, int)
         assert isinstance(self.test_increment, int)
 
-        if isinstance(self.action_space, spaces.Discrete):
-            base_action_space = self.base_action_spaces[self.dataset]
-            n_classes = base_action_space.n
-            self.class_order = self.class_order or list(range(n_classes))
-            if self.nb_tasks:
-                self.increment = n_classes // self.nb_tasks
-
-        if not self.nb_tasks:
-            base_action_space = self.base_action_spaces[self.dataset]
-            if isinstance(base_action_space, spaces.Discrete):
-                self.nb_tasks = base_action_space.n // self.increment
-
-        assert self.nb_tasks != 0, self.nb_tasks
 
         # The 'scenarios' for train and test from continuum. (ClassIncremental for now).
         self.train_cl_loader: Optional[_BaseScenario] = None
         self.test_cl_loader: Optional[_BaseScenario] = None
         self.train_cl_dataset: Optional[_ContinuumDataset] = None
         self.test_cl_dataset: Optional[_ContinuumDataset] = None
-
-        self.train_datasets: List[TaskSet] = []
-        self.val_datasets: List[TaskSet] = []
-        self.test_datasets: List[TaskSet] = []
-
+        
         # This will be set by the Experiment, or passed to the `apply` method.
         # TODO: This could be a bit cleaner.
         self.config: Config
@@ -243,6 +237,99 @@ class ContinualSLSetting(SLSetting, ContinualAssumption):
         self._has_prepared_data = False
         self._has_setup_fit = False
         self._has_setup_test = False
+
+        if CTRL_INSTALLED and self.dataset in CTRL_STREAMS:
+            import ctrl
+            from ctrl.tasks.task import Task
+            from ctrl.tasks.task_generator import TaskGenerator
+            from .envs import CTRL_NB_TASKS 
+            self.nb_tasks = self.nb_tasks or CTRL_NB_TASKS[self.dataset]
+            if self.dataset == "s_long" and not self.nb_tasks:
+                warnings.warn(RuntimeWarning(
+                    f"Limiting the scenario to 100 tasks for now when using 's_long' stream."
+                ))
+                self.nb_tasks = 100
+            task_generator: TaskGenerator = ctrl.get_stream(self.dataset)
+            # Get the train/val/test splits from the tasks.
+            for task_dataset in itertools.islice(task_generator, self.nb_tasks):
+                train_dataset = task_dataset.datasets[task_dataset.split_names.index("Train")]
+                val_dataset = task_dataset.datasets[task_dataset.split_names.index("Val")]
+                test_dataset = task_dataset.datasets[task_dataset.split_names.index("Test")]
+                self.train_datasets.append(train_dataset)
+                self.val_datasets.append(val_dataset)
+                self.test_datasets.append(test_dataset)
+
+        ## NOTE: Not sure this is a good idea, because we might easily mix the train/val
+        ## and test splits between different runs! Actually, now that I think about it, 
+        ## I need to make sure that this isn't happening already with Avalanche!
+        # if self.datasets:
+        #     if any(self.train_datasets, self.val_datasets, self.test_datasets):
+        #         raise RuntimeError(
+        #             f"When passing your own datasets to the setting, you have to pass "
+        #             f"either `datasets` or all three of `train_datasets`, "
+        #             f"`val_datasets` and `test_datasets`."
+        #         )
+        #     self.train_datasets = []
+        #     self.val_datasets = []
+        #     self.test_datasets = []
+
+        #     rng = np.random.default_rng(self.config.seed if self.config else 123)
+        #     for dataset in datasets:
+        #         n = len(dataset)
+        #         n_train_val = int(n * 0.8)
+        #         n_test = n - n_train_val
+        #         n_train = int(n_train_val * 0.8)
+        #         n_valid = n_train_val - n_train
+        #         train_val_dataset, test_dataset = random_split(
+        #             dataset, [n_train_val, n_test], generator=rng,
+        #         )
+        #         train_dataset, val_dataset = random_split(
+        #             train_val_dataset, [n_train, n_valid], generator=rng,
+        #         )
+
+        #         self.train_datasets.append(train_dataset)
+        #         self.val_datasets.append(val_dataset)
+        #         self.test_datasets.append(test_dataset)
+
+        if any([self.train_datasets, self.val_datasets, self.test_datasets]):
+            if not all([self.train_datasets, self.val_datasets, self.test_datasets]):
+                raise RuntimeError(
+                    f"When passing your own datasets to the setting, you have to pass "
+                    f"`train_datasets`, `val_datasets` and `test_datasets`."
+                )
+            self.nb_tasks = len(self.train_datasets)
+            if not (len(self.val_datasets) == len(self.test_datasets) == self.nb_tasks):
+                raise RuntimeError(
+                    f"When passing your own datasets to the setting, you need to pass "
+                    f"The same number of train/valid and test datasets for now."
+                )
+            # FIXME: For now, setting `self.dataset` to None, because it has a default
+            # of 'mnist'. Should probably make it a required argument instead.
+            self.dataset = None
+
+            # x_shape = self.train_datasets[0][0][0].shape
+            # self.observation_space.x.shape = x_shape
+            # assert False, (x_shape, self.observation_space)
+
+        # Note: Using the same name as in the RL Setting for now, since that's where
+        # this feature of passing the "envs" for each task was first added.
+        self._using_custom_envs_foreach_task: bool = bool(self.train_datasets)
+
+        # TODO: Remove this
+        if  self.dataset in self.base_action_spaces:
+            if isinstance(self.action_space, spaces.Discrete):
+                base_action_space = self.base_action_spaces[self.dataset]
+                n_classes = base_action_space.n
+                self.class_order = self.class_order or list(range(n_classes))
+                if self.nb_tasks:
+                    self.increment = n_classes // self.nb_tasks
+
+            if not self.nb_tasks:
+                base_action_space = self.base_action_spaces[self.dataset]
+                if isinstance(base_action_space, spaces.Discrete):
+                    self.nb_tasks = base_action_space.n // self.increment
+
+        assert self.nb_tasks != 0, self.nb_tasks
 
     def apply(
         self, method: Method["ContinualSLSetting"], config: Config = None
@@ -473,8 +560,9 @@ class ContinualSLSetting(SLSetting, ContinualAssumption):
                 data_dir = Path("data")
 
         logger.info(f"Downloading datasets to directory {data_dir}")
-        self.train_cl_dataset = self.make_dataset(data_dir, download=True, train=True)
-        self.test_cl_dataset = self.make_dataset(data_dir, download=True, train=False)
+        if not self._using_custom_envs_foreach_task:            
+            self.train_cl_dataset = self.make_dataset(data_dir, download=True, train=True)
+            self.test_cl_dataset = self.make_dataset(data_dir, download=True, train=False)
         return super().prepare_data()
 
     def setup(self, stage: str = None):
@@ -486,21 +574,23 @@ class ContinualSLSetting(SLSetting, ContinualAssumption):
             raise RuntimeError(f"`stage` should be 'fit', 'test', 'validate' or None.")
 
         if stage in (None, "fit", "validate"):
-            self.train_cl_dataset = self.train_cl_dataset or self.make_dataset(
-                self.config.data_dir, download=False, train=True
-            )
+            if not self._using_custom_envs_foreach_task:
+                self.train_cl_dataset = self.train_cl_dataset or self.make_dataset(
+                    self.config.data_dir, download=False, train=True
+                )
             nb_tasks_kwarg = {}
             if self.nb_tasks is not None:
                 nb_tasks_kwarg.update(nb_tasks=self.nb_tasks)
             else:
                 nb_tasks_kwarg.update(increment=self.increment)
-            self.train_cl_loader = self.train_cl_loader or ClassIncremental(
-                cl_dataset=self.train_cl_dataset,
-                **nb_tasks_kwarg,
-                initial_increment=self.initial_increment,
-                transformations=self.train_transforms,
-                class_order=self.class_order,
-            )
+            if not self._using_custom_envs_foreach_task:
+                self.train_cl_loader = self.train_cl_loader or ClassIncremental(
+                    cl_dataset=self.train_cl_dataset,
+                    **nb_tasks_kwarg,
+                    initial_increment=self.initial_increment,
+                    transformations=self.train_transforms,
+                    class_order=self.class_order,
+                )
             if not self.train_datasets and not self.val_datasets:
                 for task_id, train_taskset in enumerate(self.train_cl_loader):
                     train_taskset, valid_taskset = split_train_val(
@@ -517,18 +607,19 @@ class ContinualSLSetting(SLSetting, ContinualAssumption):
                     self.val_datasets = list(map(relabel, self.val_datasets))
 
         if stage in (None, "test"):
-            self.test_cl_dataset = self.test_cl_dataset or self.make_dataset(
-                self.config.data_dir, download=False, train=False
-            )
-            self.test_class_order = self.test_class_order or self.class_order
-            self.test_cl_loader = self.test_cl_loader or ClassIncremental(
-                cl_dataset=self.test_cl_dataset,
-                nb_tasks=self.nb_tasks,
-                increment=self.test_increment,
-                initial_increment=self.test_initial_increment,
-                transformations=self.test_transforms,
-                class_order=self.test_class_order,
-            )
+            if not self._using_custom_envs_foreach_task:
+                self.test_cl_dataset = self.test_cl_dataset or self.make_dataset(
+                    self.config.data_dir, download=False, train=False
+                )
+                self.test_class_order = self.test_class_order or self.class_order
+                self.test_cl_loader = self.test_cl_loader or ClassIncremental(
+                    cl_dataset=self.test_cl_dataset,
+                    nb_tasks=self.nb_tasks,
+                    increment=self.test_increment,
+                    initial_increment=self.test_initial_increment,
+                    transformations=self.test_transforms,
+                    class_order=self.test_class_order,
+                )
             if not self.test_datasets:
                 # TODO: If we decide to 'shuffle' the test tasks, then store the sequence of
                 # task ids in a new property, probably here.
@@ -554,7 +645,7 @@ class ContinualSLSetting(SLSetting, ContinualAssumption):
         if self.known_task_boundaries_at_train_time:
             return self.train_datasets[self.current_task_id]
         else:
-            return concat(self.train_datasets)
+            return concatenate(self.train_datasets)
 
     def _make_val_dataset(self) -> Dataset:
         if self.smooth_task_boundaries:
@@ -566,7 +657,7 @@ class ContinualSLSetting(SLSetting, ContinualAssumption):
             return shuffle(joined_dataset, seed=self.config.seed)
         if self.known_task_boundaries_at_train_time:
             return self.val_datasets[self.current_task_id]
-        return concat(self.val_datasets)
+        return concatenate(self.val_datasets)
 
     def _make_test_dataset(self) -> Dataset:
         if self.smooth_task_boundaries:
@@ -574,7 +665,7 @@ class ContinualSLSetting(SLSetting, ContinualAssumption):
                 self.test_datasets, seed=self.config.seed
             )
         else:
-            return concat(self.test_datasets)
+            return concatenate(self.test_datasets)
 
     def make_dataset(
         self, data_dir: Path, download: bool = True, train: bool = True, **kwargs
@@ -603,7 +694,7 @@ class ContinualSLSetting(SLSetting, ContinualAssumption):
             return self.dataset
 
         else:
-            raise NotImplementedError
+            raise NotImplementedError(self.dataset)
 
     @property
     def observation_space(self) -> ObservationSpace[Observations]:
@@ -616,16 +707,23 @@ class ContinualSLSetting(SLSetting, ContinualAssumption):
         - `task_labels`: Union[Discrete, Sparse[Discrete]]
            The task labels for each sample. When task labels are not available,
            the task labels space is Sparse, and entries will be `None`.
-           
-        TODO: Replace this property's type with a `Space[Observations]` (and also create
-        this `Space` generic)
+
         """
-        x_space = self.base_observation_spaces[self.dataset]
+        # TODO: Want to force re-computing the observation space only when necessary
+        # (a transform changed or something).
+        if self._observation_space and not self._using_custom_envs_foreach_task:
+            return self._observation_space
+
+        # TODO: Need to clean this up a bit:
+        if self._using_custom_envs_foreach_task:
+            x_space = get_observation_space(self.train_datasets[0])
+        else:
+            x_space = get_observation_space(self.dataset)
+
         if not self.transforms:
             # NOTE: When we don't pass any transforms, continuum scenarios still
             # at least use 'to_tensor'.
             x_space = Transforms.to_tensor(x_space)
-
         # apply the transforms to the observation space.
         for transform in self.transforms:
             x_space = transform(x_space)
@@ -636,25 +734,36 @@ class ContinualSLSetting(SLSetting, ContinualAssumption):
             task_label_space = Sparse(task_label_space, 1.0)
         task_label_space = add_tensor_support(task_label_space)
 
-        return self.ObservationSpace(
+        self._observation_space = self.ObservationSpace(
             x=x_space, task_labels=task_label_space, dtype=self.Observations,
         )
+        return self._observation_space
 
     # TODO: Add a `train_observation_space`, `train_action_space`, `train_reward_space`?
 
     @property
     def action_space(self) -> spaces.Discrete:
         """ Action space for this setting. """
-        base_action_space = self.base_action_spaces[self.dataset]
-        if isinstance(base_action_space, spaces.Discrete):
+        if self._action_space:
+            return self._action_space
+        # Determine the action space using the right dataset.
+        # (NOTE: same across train/val/test for now.)
+        dataset = self.dataset
+        if self._using_custom_envs_foreach_task:
+            dataset = self.train_datasets[0]
+        action_space = get_action_space(dataset)
+
+        # TODO: Remove this
+        if isinstance(action_space, spaces.Discrete) and self.dataset in self.base_action_spaces:
             if self.shared_action_space:
                 assert isinstance(self.increment, int), (
                     "Need to have same number of classes in each task when "
                     "`shared_action_space` is true."
                 )
-                return spaces.Discrete(self.increment)
-        return base_action_space
+                action_space = spaces.Discrete(self.increment)
 
+        self._action_space =  action_space
+        return self._action_space
         # TODO: IDEA: Have the action space only reflect the number of 'current' classes
         # in order to create a "true" class-incremental learning setting.
         # n_classes_seen_so_far = 0
@@ -664,15 +773,26 @@ class ContinualSLSetting(SLSetting, ContinualAssumption):
 
     @property
     def reward_space(self) -> spaces.Discrete:
-        base_reward_space = self.base_action_spaces[self.dataset]
-        if isinstance(base_reward_space, spaces.Discrete):
+        if self._reward_space:
+            return self._reward_space
+        # Determine the reward space using the right dataset.
+        # (NOTE: same across train/val/test for now.)
+        dataset = self.dataset
+        if self._using_custom_envs_foreach_task:
+            dataset = self.train_datasets
+        reward_space = get_reward_space(dataset)
+
+        # TODO: Remove this
+        if isinstance(reward_space, spaces.Discrete) and self.dataset in self.base_reward_spaces:
             if self.shared_action_space:
                 assert isinstance(self.increment, int), (
                     "Need to have same number of classes in each task when "
                     "`shared_action_space` is true."
                 )
-                return spaces.Discrete(self.increment)
-        return base_reward_space
+                reward_space = spaces.Discrete(self.increment)
+
+        self._reward_space =  reward_space
+        return self._reward_space
 
     def additional_transforms(self, stage_transforms: List[Transforms]) -> Compose:
         """ Returns the transforms in `stage_transforms` that are additional transforms

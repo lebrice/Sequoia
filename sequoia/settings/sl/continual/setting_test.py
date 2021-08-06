@@ -1,22 +1,25 @@
-from collections import Counter
-from typing import Any, ClassVar, Dict, Type
 import functools
+from collections import Counter
+from pathlib import Path
+from typing import Any, ClassVar, Dict, Tuple, Type
+
 import gym
 import pytest
+import torch
+from continuum.datasets import MNIST
+from continuum.scenarios import ClassIncremental
+from continuum.tasks import TaskSet, concat
+from sklearn.datasets import make_classification
+from sklearn.model_selection import train_test_split
+from torch.utils.data import TensorDataset, random_split
+
 from sequoia.common.config import Config
 from sequoia.methods import RandomBaselineMethod
 from sequoia.settings import Setting
 from sequoia.settings.base.setting_test import SettingTests
-from pathlib import Path
-
-from .setting import ContinualSLSetting, smooth_task_boundaries_concat, random_subset
-
-
-from continuum.tasks import TaskSet, concat
-from continuum.datasets import MNIST
-from continuum.scenarios import ClassIncremental
-from sequoia.common.config import Config
 from sequoia.settings.sl.continual.setting import shuffle
+
+from .setting import ContinualSLSetting, random_subset, smooth_task_boundaries_concat
 from .wrappers import ShowLabelDistributionWrapper
 
 
@@ -35,7 +38,8 @@ class TestContinualSLSetting(SettingTests):
     # The kwargs to be passed to the Setting when we want to create a 'short' setting.
     # TODO: Transform this into a fixture instead.
     fast_dev_run_kwargs: ClassVar[Dict[str, Any]] = dict(
-        dataset="mnist", batch_size=64,
+        dataset="mnist",
+        batch_size=64,
     )
 
     @pytest.fixture(scope="session")
@@ -83,7 +87,7 @@ class TestContinualSLSetting(SettingTests):
             and not self.Setting.args[0].shared_action_space
         ):
             # NOTE: This `self.Setting` being a partial instead of a Setting class only
-            # happens in the tests for the SettingProxy. 
+            # happens in the tests for the SettingProxy.
             kwargs.update(shared_action_space=True)
         elif not self.Setting.shared_action_space:
             kwargs.update(shared_action_space=True)
@@ -150,8 +154,9 @@ class TestContinualSLSetting(SettingTests):
         setting = self.Setting(dataset="mnist", config=config)
         figures_dir = Path("temp")
 
-        import matplotlib.pyplot as plt
         from functools import partial
+
+        import matplotlib.pyplot as plt
 
         # fig, axes = plt.subplots(2, 3)
         name_to_env_fn = {
@@ -178,6 +183,109 @@ class TestContinualSLSetting(SettingTests):
         # plt.waitforbuttonpress(10)
         # plt.show()
 
+    def test_passing_datasets_to_setting(self, config: Config):
+        image_shape = (16, 16, 3)
+        n_classes = 10
+        datasets = [
+            create_image_classification_dataset(
+                image_shape=image_shape, n_classes=2, y_offset=i * 2
+            )
+            for i in range(5)
+        ]
+        train_datasets = []
+        val_datasets = []
+        test_datasets = []
+        for dataset in datasets:
+            n = len(dataset)
+            n_train_val = int(n * 0.8)
+            n_test = n - n_train_val
+            n_train = int(n_train_val * 0.8)
+            n_valid = n_train_val - n_train
+            train_val_dataset, test_dataset = random_split(
+                dataset, [n_train_val, n_test]
+            )
+            train_dataset, val_dataset = random_split(
+                train_val_dataset, [n_train, n_valid]
+            )
+
+            train_datasets.append(train_dataset)
+            val_datasets.append(val_dataset)
+            test_datasets.append(test_dataset)
+
+        setting = self.Setting(
+            train_datasets=train_datasets,
+            val_datasets=val_datasets,
+            test_datasets=test_datasets,
+            transforms=[],
+            # train_transforms=[],
+            # val_transforms=[],
+            # test_transforms=[]
+        )
+        assert setting.train_datasets is train_datasets
+        assert setting.val_datasets is val_datasets
+        assert setting.test_datasets is test_datasets
+        assert setting.nb_tasks == len(setting.train_datasets)
+        assert setting.observation_space.x.shape == image_shape
+        assert setting.reward_space.n == n_classes
+
+    from .envs import CTRL_INSTALLED, CTRL_STREAMS
+    from sequoia.conftest import skip_param
+
+    @pytest.mark.skipif(not CTRL_INSTALLED, reason="Need ctrl-benchmark for this test.")
+    @pytest.mark.parametrize(
+        "stream",
+        [
+            "s_plus",
+            "s_minus",
+            "s_in",
+            "s_out",
+            "s_pl",
+            skip_param("s_long", reason="Very long"),
+        ],
+    )
+    def test_ctrl_stream_support(self, stream: str, config: Config):
+        setting_kwargs = self.fast_dev_run_kwargs.copy()
+        setting_kwargs["dataset"] = stream
+        setting = self.Setting(**setting_kwargs)
+        method = RandomBaselineMethod()
+        results = setting.apply(method, config=config)
+        self.assert_chance_level(setting, results=results)
+
+
+def create_image_classification_dataset(
+    image_shape: Tuple[int, ...],
+    n_classes: int,
+    n_samples_per_class: int = 100,
+    y_offset: int = 0,
+):
+    """Copied and Adapted from
+    https://github.com/ContinualAI/avalanche/blob/master/tests/unit_tests_utils.py
+    """
+    # n_classes = 10
+    # image_shape = (16, 16, 3)
+    # n_samples_per_class = 100
+    n_features = np.prod(image_shape)
+    dataset = make_classification(
+        n_samples=n_classes * n_samples_per_class,
+        n_classes=n_classes,
+        n_features=n_features,
+        n_informative=n_features,
+        n_redundant=0,
+    )
+    x = torch.from_numpy(dataset[0]).reshape([-1, *image_shape]).float()
+    y = torch.from_numpy(dataset[1]).long()
+    # y_offset can be used to get [2,3] rather than [0,1] for instance.
+    if y_offset:
+        y += y_offset
+    return TensorDataset(x, y)
+
+    # train_X, test_X, train_y, test_y = train_test_split(
+    #     X, y, train_size=0.6, shuffle=True, stratify=y)
+
+    # train_dataset = TensorDataset(train_X, train_y)
+    # test_dataset = TensorDataset(test_X, test_y)
+    # return my_nc_benchmark
+
 
 from typing import List, Tuple
 
@@ -195,7 +303,10 @@ def test_concat_smooth_boundaries(config: Config):
     from continuum.tasks import split_train_val
 
     dataset = MNIST(config.data_dir, download=True, train=True)
-    scenario = ClassIncremental(dataset, increment=2,)
+    scenario = ClassIncremental(
+        dataset,
+        increment=2,
+    )
 
     print(f"Number of classes: {scenario.nb_classes}.")
     print(f"Number of tasks: {scenario.nb_tasks}.")
