@@ -42,7 +42,7 @@ from sequoia.settings.base import Method, SettingABC
 from sequoia.settings.sl import SLSetting
 from sequoia.settings.sl.environment import PassiveEnvironment
 from sequoia.settings.sl.wrappers import MeasureSLPerformanceWrapper
-from sequoia.utils.generic_functions import move
+from sequoia.utils.generic_functions import move, concatenate
 from sequoia.utils.logging_utils import get_logger
 from sequoia.utils.utils import flag
 
@@ -643,7 +643,7 @@ class ContinualSLSetting(SLSetting, ContinualAssumption):
         if self.known_task_boundaries_at_train_time:
             return self.train_datasets[self.current_task_id]
         else:
-            return concat(self.train_datasets)
+            return concatenate(self.train_datasets)
 
     def _make_val_dataset(self) -> Dataset:
         if self.smooth_task_boundaries:
@@ -655,7 +655,7 @@ class ContinualSLSetting(SLSetting, ContinualAssumption):
             return shuffle(joined_dataset, seed=self.config.seed)
         if self.known_task_boundaries_at_train_time:
             return self.val_datasets[self.current_task_id]
-        return concat(self.val_datasets)
+        return concatenate(self.val_datasets)
 
     def _make_test_dataset(self) -> Dataset:
         if self.smooth_task_boundaries:
@@ -663,7 +663,7 @@ class ContinualSLSetting(SLSetting, ContinualAssumption):
                 self.test_datasets, seed=self.config.seed
             )
         else:
-            return concat(self.test_datasets)
+            return concatenate(self.test_datasets)
 
     def make_dataset(
         self, data_dir: Path, download: bool = True, train: bool = True, **kwargs
@@ -692,7 +692,7 @@ class ContinualSLSetting(SLSetting, ContinualAssumption):
             return self.dataset
 
         else:
-            raise NotImplementedError
+            raise NotImplementedError(self.dataset)
 
     @property
     def observation_space(self) -> ObservationSpace[Observations]:
