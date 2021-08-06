@@ -128,7 +128,7 @@ except ImportError as exc:
     class TaskGenerator: pass
 else:
     CTRL_INSTALLED = True
-    CTRL_STREAMS = ["s_minus", "s_minus", "s_in", "s_out", "s_pl", "s_long"]
+    CTRL_STREAMS = ["s_plus", "s_minus", "s_in", "s_out", "s_pl", "s_long"]
     n_tasks = [5, 5, 5, 5, 4, None]
     CTRL_NB_TASKS = dict(zip(CTRL_STREAMS, n_tasks))
     x_dims = [(3, 32, 32)] * len(CTRL_STREAMS)

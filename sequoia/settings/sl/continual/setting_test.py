@@ -187,7 +187,9 @@ class TestContinualSLSetting(SettingTests):
         image_shape = (16, 16, 3)
         n_classes = 10
         datasets = [
-            create_image_classification_dataset(image_shape=image_shape, n_classes=2, y_offset= i * 2)
+            create_image_classification_dataset(
+                image_shape=image_shape, n_classes=2, y_offset=i * 2
+            )
             for i in range(5)
         ]
         train_datasets = []
@@ -226,14 +228,29 @@ class TestContinualSLSetting(SettingTests):
         assert setting.observation_space.x.shape == image_shape
         assert setting.reward_space.n == n_classes
 
-
     from .envs import CTRL_INSTALLED, CTRL_STREAMS
+    from sequoia.conftest import skip_param
+
     @pytest.mark.skipif(not CTRL_INSTALLED, reason="Need ctrl-benchmark for this test.")
-    @pytest.mark.parametrize("stream", CTRL_STREAMS or [""])
-    def test_ctrl_stream_support(self, stream: str):
-        setting = self.Setting(dataset=stream)
-        assert False, (setting.observation_space, setting.nb_tasks, setting.reward_space)
-    
+    @pytest.mark.parametrize(
+        "stream",
+        [
+            "s_plus",
+            "s_minus",
+            "s_in",
+            "s_out",
+            "s_pl",
+            skip_param("s_long", reason="Very long"),
+        ],
+    )
+    def test_ctrl_stream_support(self, stream: str, config: Config):
+        setting_kwargs = self.fast_dev_run_kwargs.copy()
+        setting_kwargs["dataset"] = stream
+        setting = self.Setting(**setting_kwargs)
+        method = RandomBaselineMethod()
+        results = setting.apply(method, config=config)
+        self.assert_chance_level(setting, results=results)
+
 
 def create_image_classification_dataset(
     image_shape: Tuple[int, ...],

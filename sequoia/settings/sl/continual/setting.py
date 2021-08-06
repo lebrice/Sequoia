@@ -248,10 +248,14 @@ class ContinualSLSetting(SLSetting, ContinualAssumption):
                 ))
                 self.nb_tasks = 100
             task_generator: TaskGenerator = ctrl.get_stream(self.dataset)
-            # TODO: Figure out how to get the train/val/test splits from the tasks.
-            task_datasets: List[Task] = list(itertools.islice(task_generator, self.nb_tasks))
-            
-            assert False, dir(task_datasets[0])
+            # Get the train/val/test splits from the tasks.
+            for task_dataset in itertools.islice(task_generator, self.nb_tasks):
+                train_dataset = task_dataset.datasets[task_dataset.split_names.index("Train")]
+                val_dataset = task_dataset.datasets[task_dataset.split_names.index("Val")]
+                test_dataset = task_dataset.datasets[task_dataset.split_names.index("Test")]
+                self.train_datasets.append(train_dataset)
+                self.val_datasets.append(val_dataset)
+                self.test_datasets.append(test_dataset)
 
         ## NOTE: Not sure this is a good idea, because we might easily mix the train/val
         ## and test splits between different runs! Actually, now that I think about it, 
@@ -554,8 +558,9 @@ class ContinualSLSetting(SLSetting, ContinualAssumption):
                 data_dir = Path("data")
 
         logger.info(f"Downloading datasets to directory {data_dir}")
-        self.train_cl_dataset = self.make_dataset(data_dir, download=True, train=True)
-        self.test_cl_dataset = self.make_dataset(data_dir, download=True, train=False)
+        if not self._using_custom_envs_foreach_task:            
+            self.train_cl_dataset = self.make_dataset(data_dir, download=True, train=True)
+            self.test_cl_dataset = self.make_dataset(data_dir, download=True, train=False)
         return super().prepare_data()
 
     def setup(self, stage: str = None):
@@ -567,21 +572,23 @@ class ContinualSLSetting(SLSetting, ContinualAssumption):
             raise RuntimeError(f"`stage` should be 'fit', 'test', 'validate' or None.")
 
         if stage in (None, "fit", "validate"):
-            self.train_cl_dataset = self.train_cl_dataset or self.make_dataset(
-                self.config.data_dir, download=False, train=True
-            )
+            if not self._using_custom_envs_foreach_task:
+                self.train_cl_dataset = self.train_cl_dataset or self.make_dataset(
+                    self.config.data_dir, download=False, train=True
+                )
             nb_tasks_kwarg = {}
             if self.nb_tasks is not None:
                 nb_tasks_kwarg.update(nb_tasks=self.nb_tasks)
             else:
                 nb_tasks_kwarg.update(increment=self.increment)
-            self.train_cl_loader = self.train_cl_loader or ClassIncremental(
-                cl_dataset=self.train_cl_dataset,
-                **nb_tasks_kwarg,
-                initial_increment=self.initial_increment,
-                transformations=self.train_transforms,
-                class_order=self.class_order,
-            )
+            if not self._using_custom_envs_foreach_task:
+                self.train_cl_loader = self.train_cl_loader or ClassIncremental(
+                    cl_dataset=self.train_cl_dataset,
+                    **nb_tasks_kwarg,
+                    initial_increment=self.initial_increment,
+                    transformations=self.train_transforms,
+                    class_order=self.class_order,
+                )
             if not self.train_datasets and not self.val_datasets:
                 for task_id, train_taskset in enumerate(self.train_cl_loader):
                     train_taskset, valid_taskset = split_train_val(
@@ -598,18 +605,19 @@ class ContinualSLSetting(SLSetting, ContinualAssumption):
                     self.val_datasets = list(map(relabel, self.val_datasets))
 
         if stage in (None, "test"):
-            self.test_cl_dataset = self.test_cl_dataset or self.make_dataset(
-                self.config.data_dir, download=False, train=False
-            )
-            self.test_class_order = self.test_class_order or self.class_order
-            self.test_cl_loader = self.test_cl_loader or ClassIncremental(
-                cl_dataset=self.test_cl_dataset,
-                nb_tasks=self.nb_tasks,
-                increment=self.test_increment,
-                initial_increment=self.test_initial_increment,
-                transformations=self.test_transforms,
-                class_order=self.test_class_order,
-            )
+            if not self._using_custom_envs_foreach_task:
+                self.test_cl_dataset = self.test_cl_dataset or self.make_dataset(
+                    self.config.data_dir, download=False, train=False
+                )
+                self.test_class_order = self.test_class_order or self.class_order
+                self.test_cl_loader = self.test_cl_loader or ClassIncremental(
+                    cl_dataset=self.test_cl_dataset,
+                    nb_tasks=self.nb_tasks,
+                    increment=self.test_increment,
+                    initial_increment=self.test_initial_increment,
+                    transformations=self.test_transforms,
+                    class_order=self.test_class_order,
+                )
             if not self.test_datasets:
                 # TODO: If we decide to 'shuffle' the test tasks, then store the sequence of
                 # task ids in a new property, probably here.
