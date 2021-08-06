@@ -74,7 +74,27 @@ logger = get_logger(__file__)
 
 EnvironmentType = TypeVar("EnvironmentType", bound=ContinualSLEnvironment)
 
-
+available_datasets = {
+    c.__name__.lower(): c
+    for c in [
+        CIFARFellowship,
+        MNISTFellowship,
+        ImageNet100,
+        ImageNet1000,
+        CIFAR10,
+        CIFAR100,
+        EMNIST,
+        KMNIST,
+        MNIST,
+        QMNIST,
+        FashionMNIST,
+        Synbols,
+    ]
+    # "synbols": Synbols,
+    # "synbols_font": partial(Synbols, task="fonts"),
+}
+if CTRL_INSTALLED:
+    available_datasets.update(dict(zip(CTRL_STREAMS, CTRL_STREAMS)))
 
 
 @dataclass
@@ -112,25 +132,7 @@ class ContinualSLSetting(SLSetting, ContinualAssumption):
     # Class variable holding a dict of the names and types of all available
     # datasets.
     # TODO: Issue #43: Support other datasets than just classification
-    available_datasets: ClassVar[Dict[str, Type[_ContinuumDataset]]] = {
-        c.__name__.lower(): c
-        for c in [
-            CIFARFellowship,
-            MNISTFellowship,
-            ImageNet100,
-            ImageNet1000,
-            CIFAR10,
-            CIFAR100,
-            EMNIST,
-            KMNIST,
-            MNIST,
-            QMNIST,
-            FashionMNIST,
-            Synbols,
-        ]
-        # "synbols": Synbols,
-        # "synbols_font": partial(Synbols, task="fonts"),
-    }
+    available_datasets: ClassVar[Dict[str, Type[_ContinuumDataset]]] = available_datasets
     # A continual dataset to use. (Should be taken from the continuum package).
     dataset: str = choice(available_datasets.keys(), default="mnist")
 
