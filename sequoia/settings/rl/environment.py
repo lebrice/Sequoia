@@ -80,6 +80,6 @@ class RLEnvironment(DataLoader, Environment[ObservationType, ActionType, RewardT
             ), "TODO: ActiveDataloader dataset should always have a `send` attribute for now."
         return self.reward
 
-
+# Deprecated names for the same thing:
 ActiveDataLoader = RLEnvironment
-ActiveEnvironment = ActiveDataLoader
+ActiveEnvironment = RLEnvironment

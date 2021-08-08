@@ -4,3 +4,6 @@
 [submodule "sequoia/methods/cn_dpm"]
 	path = sequoia/methods/cn_dpm
 	url = https://github.com/ryanlindeborg/CN-DPM.git
+[submodule "examples/clcomp21/Real_DEEL"]
+	path = examples/clcomp21/Real_DEEL
+	url = https://github.com/mostafaelaraby/Real-DEEL-Dark-Experience.git
