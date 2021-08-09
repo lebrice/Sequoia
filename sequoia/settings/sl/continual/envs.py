@@ -122,7 +122,7 @@ try:
     from ctrl.tasks.task import Task
     from ctrl.tasks.task_generator import TaskGenerator
 except ImportError as exc:
-    logger.debug(f"ctrl-benchmark isn't installed: {exc}")
+    logger.debug(f"ctrl-bench isn't installed: {exc}")
     # Creating those just for type hinting.
     class Task: pass
     class TaskGenerator: pass
