@@ -186,7 +186,7 @@ from sequoia.settings.rl.continual.environment import GymDataLoader
 from torch.utils.data import DataLoader
 
 
-class ProfiledEnvironment(IterableWrapper, DataLoader):
+class ProfiledActiveEnvironment(IterableWrapper, DataLoader):
     def __iter__(self):
         for i, obs in enumerate(super().__iter__()):
             # logger.debug(f"Step {i}, obs.done={obs.done}")
@@ -201,6 +201,33 @@ class ProfiledEnvironment(IterableWrapper, DataLoader):
             yield i, (obs, done)
 
 
+from typing import TypeVar
+T = TypeVar("T", covariant=True)
+def with_is_last(iterable: Iterable[T]) -> Iterable[Tuple[T, bool]]:
+    """ Function that mimics what's happening in pytorch-lightning, where the iterator
+    is one-offset. This can cause a bit of headache in Sequoia's wrappers when iterating
+    over an env, because they expect an action for each observation.
+    """
+    iterator = iter(iterable)
+    sentinel = object()
+    previous_value = next(iterator)
+    current_value = next(iterator, sentinel)
+    while current_value is not sentinel:
+        yield previous_value, False
+        previous_value = current_value
+        current_value = next(iterator, sentinel)
+    yield previous_value, True
+
+
+class ProfiledPassiveEnvironment(IterableWrapper, DataLoader):
+    def __iter__(self):
+        yield from enumerate(with_is_last(super().__iter__()))
+        # for i, (obs, rewards) in enumerate(super().__iter__()):
+        #     # done = done or self.is_closed()
+        #     done = self.is_closed()
+        #     yield i, ((obs, rewards), done)
+
+
 class PatchedDataConnector(DataConnector):
     def get_profiled_train_dataloader(self, train_dataloader: DataLoader):
         if isinstance(train_dataloader, CombinedLoader) and isinstance(
@@ -210,9 +237,12 @@ class PatchedDataConnector(DataConnector):
             # TODO: Replacing this 'CombinedLoader' on the Trainer with the env, since I
             # don't think we need it (not using multiple train dataloaders with PL atm.)
             self.trainer.train_dataloader = env
-            if not isinstance(env.unwrapped, PassiveEnvironment):
+            if isinstance(env.unwrapped, PassiveEnvironment):
                 # Only really need to do this 'profile' thing for 'active' environments.
-                return ProfiledEnvironment(env)
+                return ProfiledPassiveEnvironment(env)
+            else:
+                # Only really need to do this 'profile' thing for 'active' environments.
+                return ProfiledActiveEnvironment(env)
         else:
             # This gets called before each epoch, so we get here on the start of the
             # second training epoch.
@@ -223,7 +253,6 @@ class PatchedDataConnector(DataConnector):
             enumerate(prefetch_iterator(train_dataloader)), "get_train_batch"
         )
         return profiled_dl
-
 
 import pytorch_lightning.trainer.connectors.data_connector
 from pytorch_lightning.trainer.connectors.data_connector import prefetch_iterator

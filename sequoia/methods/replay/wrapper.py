@@ -100,7 +100,6 @@ class ReplayEnvWrapper(
             self.disable_collection()
 
         obs = super().reset()
-        # obs = self.observation(obs)
         return obs
 
     def send(self, action: ActionType) -> RewardType:
@@ -136,7 +135,6 @@ class ReplayEnvWrapper(
     def reward(self, reward: RewardType) -> RewardType:
         """ Augments the rewards with the samples from the buffer.
         """
-        # FIXME: Debugging:
         if self.collection_enabled:
             # push these samples into the buffer?
             self._env_reward = reward
@@ -157,8 +155,8 @@ class ReplayEnvWrapper(
             # In the case of RL, we'd need to store the actions as well.
             pass
         if self.sampling_enabled:
-            self._buffer_action = action[:, self.sample_size :]
-            self._env_action = action[:, : self.sample_size]
+            self._buffer_action = action[self.sample_size :]
+            self._env_action = action[: self.sample_size]
             return self._env_action
         return action
 

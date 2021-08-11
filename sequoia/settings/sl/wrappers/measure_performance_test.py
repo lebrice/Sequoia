@@ -243,7 +243,7 @@ def test_last_batch():
     env = make_dummy_env(n_samples=110, batch_size=20)
     env = MeasureSLPerformanceWrapper(env, first_epoch_only=True)
 
-    for i, (obs, rew) in enumerate(env):
+    for i, ((obs, rew), done) in enumerate(with_is_last(env)):
         assert rew is None
         if i != 5:
             assert obs.batch_size == 20, i

@@ -14,7 +14,7 @@ class MeasurePerformanceWrapper(
     IterableWrapper[EnvType], Generic[EnvType, MetricsType], ABC
 ):
     def __init__(self, env: Environment):
-        super().__init__(env)
+        super().__init__(env, call_hooks=True)
         self._metrics: Dict[int, MetricsType] = {}
 
     def get_online_performance(self) -> Dict[int, List[MetricsType]]:

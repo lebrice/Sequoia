@@ -569,8 +569,7 @@ class Model(LightningModule, Generic[SettingType]):
             # Get the reward from the environment (the dataloader).
             if self.config.debug and self.config.render:
                 environment.render("human")
-                # import matplotlib.pyplot as plt
-                # plt.waitforbuttonpress(10)
+
             assert isinstance(actions, Actions), actions
             rewards = environment.send(actions)
             assert rewards is not None

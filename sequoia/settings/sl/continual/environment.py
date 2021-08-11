@@ -219,19 +219,24 @@ class ContinualSLEnvironment(
         )
         # TODO: Clean up the batching of a Sparse(Discrete) space so its less ugly.
 
-    def step(
-        self, action: ActionType
-    ) -> Tuple[ObservationType, Optional[RewardType], bool, Sequence[Dict]]:
-        obs, reward, done, info = super().step(action)
-        if done and self._one_epoch_only:
-            self.close()
-        return obs, reward, done, info
+import pytorch_lightning.profiler.profilers
+from pytorch_lightning.profiler.profilers import BaseProfiler
 
-    def __iter__(self):
-        yield from super().__iter__()
-        if self._one_epoch_only:
-            self.close()
+def profile_iterable(self: BaseProfiler, iterable, action_name: str) -> None:
+    iterator = iter(iterable)
+    while True:
+        try:
+            self.start(action_name)
+            value = next(iterator)
+            self.stop(action_name)
+            action = yield value
+            assert False, action
+        except StopIteration:
+            self.stop(action_name)
+            break
 
+BaseProfiler.profile_iterable = profile_iterable
+    
     # TODO: Remove / fix this 'split batch function'. The problem is that we need to
     # tell the environment how to take the three items from continuum and convert them
     # into
