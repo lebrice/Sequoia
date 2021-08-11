@@ -233,6 +233,8 @@ class PackNet(Callback):
                     prune_quantile=self.prune_instructions[self.current_task])
 
         elif pl_module.current_epoch == self.total_epochs() - 1:  # Train and fine tune epochs completed
+            self.fix_biases(pl_module)  # Fix biases after first task
+            self.fix_batch_norm(pl_module)  # Fix batch norm mean, var, and params
             self.save_final_state(pl_module)
             self.mode = 'train'
 
@@ -257,16 +259,6 @@ class PackNetMethod(BaseMethod, target_setting=TaskIncrementalSLSetting):
     def fit(self, train_env, valid_env):
         trainer = Trainer(callbacks=[self.p_net], max_epochs=self.p_net.total_epochs())
         trainer.fit(model=self.model, train_dataloader=train_env)
-        self.p_net.fix_biases(self.model)  # Fix biases after first task
-        self.p_net.fix_batch_norm(self.model)  # Fix batch norm mean, var, and params
-
-    def get_actions(self,
-                    observations,
-                    action_space):
-        with torch.no_grad():
-            logits = self.model(observations.to(self.model.device))
-            y_pred = logits.argmax(dim=-1)
-        return self.target_setting.Actions(y_pred)
 
     def on_task_switch(self, task_id):
         if len(self.p_net.masks) > task_id:
