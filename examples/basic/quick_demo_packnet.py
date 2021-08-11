@@ -16,4 +16,5 @@ if __name__ == '__main__':
     m = Model(input_space=setting.observation_space, output_space=setting.action_space)
 
     my_method = PackNetMethod(model=m, prune_instructions=.7, epoch_split=(3, 1))
+
     results = setting.apply(my_method)
