@@ -12,6 +12,16 @@ from .tensor_spaces import TensorBox
 from .space import Space, T
 
 
+def could_become_image(space: spaces.Space) -> bool:
+    if not isinstance(space, spaces.Box):
+        return False
+    shape = space.shape
+    return len(shape) == 3 and (
+        shape[0] == shape[1] and shape[2] in {1, 3} or
+        shape[1] == shape[2] and shape[0] in {1, 3}
+    )
+
+
 class Image(spaces.Box, Space[T]):
     """ Subclass of `gym.spaces.Box` for images.
 

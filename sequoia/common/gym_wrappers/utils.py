@@ -364,6 +364,37 @@ class IterableWrapper(MayCloseEarly, IterableDataset, Generic[EnvType], ABC):
     # def __len__(self):
     #     return self.env.__len__()
 
+    def length(self) -> Optional[int]:
+        """ Attempts to return the "length" (in number of steps/batches) of this env.
+        
+        When not possible, returns None.
+        
+        NOTE: This is a bit ugly, but the idea seems alright: Check for `__len__`,
+        otherwise 
+        """
+        try:
+            # Try to call self.__len__() without recursing into the wrapped env:
+            return len(self)
+        except TypeError:
+            pass
+        try:
+            # Try to call self.env.__len__() without recursing into the wrapped^2 env:
+            return len(self.env)
+        except TypeError:
+            pass
+        try:
+            # Try to call self.env.__len__(), allowing recursing down the chain:
+            return self.env.__len__()
+        except TypeError:
+            pass
+        try:
+            # If all else fails, delegate to the wrapped env's length() method, if any:
+            return self.env.length()
+        except AttributeError:
+            pass
+        # In the worst case, return None, meaning that we don't have a length.
+        return None
+
     def send(self, action):
         # TODO: Make `send` use `self.step`, that way wrappers can apply the same way to
         # RL and SL environments.
