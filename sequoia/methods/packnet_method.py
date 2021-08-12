@@ -167,7 +167,7 @@ class PackNet(Callback, nn.Module):
         Revert to network state for a specific task
         :param task_idx: the task id to be evaluated (0 - > n_tasks)
         """
-        # TODO: The weights are changed in-place, therfore this is irreversible, right?
+        # TODO: The weights are changed in-place, therefore this is irreversible, right?
         # (@lebrice): It would be nicer if you could either:
         # - mask out the weights temporarily using some sort of context manager OR
         # - Undo the masking before applying the mask for a different task ID than the
@@ -249,11 +249,12 @@ class PackNet(Callback, nn.Module):
         self.PATH = PATH
         torch.save(model.state_dict(), PATH)
 
-    # def load_final_state(self, model):
-    #     """
-    #     Load the final state of the model
-    #     """
-    #     model.load_state_dict(torch.load(self.PATH))
+    def load_final_state(self, model):
+         """
+
+         Load the final state of the model
+         """
+         model.load_state_dict(torch.load(self.PATH))
 
     def on_init_end(self, trainer):
         self.mode = 'train'
