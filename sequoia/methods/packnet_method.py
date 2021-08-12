@@ -12,7 +12,7 @@ from simple_parsing.helpers import mutable_field
 from sequoia.methods.base_method import BaseModel
 from dataclasses import dataclass
 from pytorch_lightning import LightningModule, Trainer, Callback
-from simple_parsing.helpers.hparams import HyperParameters
+from simple_parsing.helpers.hparams import HyperParameters, uniform
 from typing import Union, List, Tuple, Optional, Mapping, Dict
 
 from sequoia.settings.assumptions import IncrementalAssumption as IncrementalSetting
@@ -22,13 +22,19 @@ class PackNet(Callback, nn.Module):
     @dataclass
     class HParams(HyperParameters):
         """ Hyper-parameters of the Packnet callback. """
-        prune_instructions: Union[float, List[float]] = 0.5
+
         # Ratio of training epochs to finetuning epochs.
         # TODO: Need to adapt this a bit to better work with the BaseMethod, which has
         # a `max_epochs` parameter, and also uses early stopping. Maybe it could be
         # something like: Do a minimum of 3 epochs of training, and the rest is just
         # fine-tuning?
-        epoch_split: Tuple[int, int] = (3, 1)
+
+        # TODO: how to set priors and distribution for a vector hparam?
+        # saying prune instruction = .5 is equivalent to saying = [.5] * n_tasks - 1
+        prune_instructions: Union[float, List[float]] = .5
+
+        train_epochs: int = uniform(1, 5, default=3)
+        fine_tune_epochs: int = uniform(0, 5, default=1)
 
     def __init__(self, n_tasks: int, hparams: "PackNet.HParams"):
         super().__init__()
@@ -39,7 +45,7 @@ class PackNet(Callback, nn.Module):
             self.config_instructions()
 
         self.PATH = None
-        self.epoch_split = hparams.epoch_split
+        self.epoch_split = (hparams.train_epochs, hparams.fine_tune_epochs)
         self.current_task = 0
         self.masks = []  # 3-dimensions: task, layer, parameter mask
         self.mode = None
@@ -326,7 +332,6 @@ class PackNetMethod(BaseMethod, target_setting=IncrementalSetting):
             hparams=self.packnet_hparams,
         )
 
-        # Because Sequoia calls on_task_switch before first fit in Task-Incremental SL.
         self.p_net.current_task = -1
         self.p_net.config_instructions()
         super().configure(setting)
