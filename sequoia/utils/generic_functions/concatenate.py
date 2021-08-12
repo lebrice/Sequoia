@@ -51,6 +51,16 @@ def concatenate(
     return np.asarray([first_item, *others], **kwargs)
 
 
+@concatenate.register(type(None))
+def _concatenate_ndarrays(
+    first_item: None, *others: None, **kwargs
+) -> None:
+    # NOTE: Concatenating a list of 'None' values will produce a single None output rather
+    # than an ndarray of Nones.
+    assert not any(other is not None for other in others)
+    return None
+
+
 @concatenate.register(np.ndarray)
 def _concatenate_ndarrays(
     first_item: np.ndarray, *others: np.ndarray, **kwargs

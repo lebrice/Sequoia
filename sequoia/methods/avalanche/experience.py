@@ -52,7 +52,8 @@ class SequoiaExperience(IterableWrapper, Experience):
             self.transforms = setting.test_transforms
         self.name = f"{self.type}_{self.task_id}"
 
-        if x is None or y is None or task_labels is None:
+        if x is None and y is None and task_labels is None:
+            # Collect the x, y, and perhaps t if they aren't provided.
             all_observations: List[Observations] = []
             all_rewards: List[Rewards] = []
 
@@ -94,7 +95,7 @@ class SequoiaExperience(IterableWrapper, Experience):
             stacked_rewards: Rewards = Rewards.concatenate(all_rewards)
             y = stacked_rewards.y
 
-        if all(t is None for t in task_labels):
+        if task_labels is not None and all(t is None for t in task_labels):
             # The task labels are None, even at training time, which indicates this
             # is probably a `ContinualSLSetting`
             task_labels = None
