@@ -13,7 +13,7 @@ from sequoia.methods.base_method import BaseModel
 from dataclasses import dataclass
 from pytorch_lightning import LightningModule, Trainer, Callback
 from simple_parsing.helpers.hparams import HyperParameters, uniform
-from typing import Union, List, Tuple, Optional, Mapping, Dict
+from typing import Union, List, Tuple, Optional, Mapping, Dict, Any
 
 from sequoia.settings.assumptions import IncrementalAssumption as IncrementalSetting
 
@@ -256,11 +256,11 @@ class PackNet(Callback, nn.Module):
         torch.save(model.state_dict(), PATH)
 
     def load_final_state(self, model):
-         """
+        """
 
          Load the final state of the model
          """
-         model.load_state_dict(torch.load(self.PATH))
+        model.load_state_dict(torch.load(self.PATH))
 
     def on_init_end(self, trainer):
         self.mode = 'train'
@@ -290,6 +290,7 @@ class PackNet(Callback, nn.Module):
             self.save_final_state(pl_module)  # Not sure I like this here though:
             self.mode = 'train'
 
+
 from sequoia.methods.trainer import TrainerConfig
 from sequoia.common.config import Config
 from sequoia.settings import Setting
@@ -308,17 +309,17 @@ class PackNetMethod(BaseMethod, target_setting=IncrementalSetting):
     packnet_hparams: PackNet.HParams = mutable_field(PackNet.HParams)
 
     def __init__(
-        self,
-        hparams: BaseModel.HParams = None,
-        config: Config = None,
-        trainer_options: TrainerConfig = None,
-        packnet_hparams: PackNet.HParams = None,
-        **kwargs,
+            self,
+            hparams: BaseModel.HParams = None,
+            config: Config = None,
+            trainer_options: TrainerConfig = None,
+            packnet_hparams: PackNet.HParams = None,
+            **kwargs,
     ):
         super().__init__(hparams=hparams, config=config, trainer_options=trainer_options)
         self.packnet_hparams = packnet_hparams or PackNet.HParams()
         self.p_net: PackNet  # This gets set in configure
-    
+
     # def __init__(self, model, prune_instructions, epoch_split):
     #     self.model = model
     #     self.prune_instructions = prune_instructions
@@ -353,7 +354,7 @@ class PackNetMethod(BaseMethod, target_setting=IncrementalSetting):
             self.p_net.apply_eval_mask(task_idx=task_id, model=self.model)
         self.p_net.current_task = task_id
 
-    def configure_callbacks(self, setting: TaskIncrementalSLSetting=None) -> List[Callback]:
+    def configure_callbacks(self, setting: TaskIncrementalSLSetting = None) -> List[Callback]:
         """Create the PyTorch-Lightning Callbacks for this Setting.
 
         These callbacks will get added to the Trainer in `create_trainer`.
@@ -370,12 +371,24 @@ class PackNetMethod(BaseMethod, target_setting=IncrementalSetting):
         """
         callbacks = super().configure_callbacks(setting=setting)
         assert self.p_net not in callbacks
-        # TODO: Doesn't really make sense to use PackNet when in a stationary setting
-        # (e.g. iid)! We could not add it to the Trainer when that is the case:
         if not setting.stationary_context:
-            # If there is some non-stationarity, use PackNet.
             callbacks.append(self.p_net)
         return callbacks
+
+    def adapt_to_new_hparams(self, new_hparams: Dict[str, Any]) -> None:
+        """Adapts the Method when it receives new Hyper-Parameters to try for a new run.
+
+            It is required that this method be implemented if you want to perform HPO sweeps
+            with Orion.
+
+            Parameters
+            ----------
+            new_hparams : Dict[str, Any]
+                The new hyper-parameters being recommended by the HPO algorithm. These will
+                have the same structure as the search space.
+        """
+        self.hparams = self.hparams.replace(**new_hparams)
+        self.packnet_hparams = self.packnet_hparams.replace(**new_hparams["packnet_hparams"])
 
     def get_search_space(self, setting: Setting) -> Mapping[str, Union[str, Dict]]:
         """Returns the search space to use for HPO in the given Setting.
