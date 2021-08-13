@@ -13,8 +13,6 @@ if __name__ == '__main__':
         dataset="mnist"
     )
 
-    m = Model(input_space=setting.observation_space, output_space=setting.action_space)
-
     my_method = PackNetMethod()
 
     results = setting.apply(my_method)
