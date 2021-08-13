@@ -29,9 +29,7 @@ class PackNet(Callback, nn.Module):
         # something like: Do a minimum of 3 epochs of training, and the rest is just
         # fine-tuning?
 
-        # TODO: how to set priors and distribution for a vector hparam?
-        # saying prune instruction = .5 is equivalent to saying = [.5] * n_tasks - 1
-        prune_instructions: Union[float, List[float]] = .5
+        prune_instructions: Union[float, List[float]] = uniform(.1, .9, default=.5)
 
         train_epochs: int = uniform(1, 5, default=3)
         fine_tune_epochs: int = uniform(0, 5, default=1)
@@ -67,8 +65,8 @@ class PackNet(Callback, nn.Module):
         # Calculate Quantile
         all_prunable = torch.tensor([])
         mask_idx = 0
-        for mod in model.modules():
-            if isinstance(mod, nn.Conv2d) or isinstance(mod, nn.Linear):
+        for mod_name, mod in model.named_modules():
+            if (isinstance(mod, nn.Conv2d) or isinstance(mod, nn.Linear)) and 'output_head' not in mod_name:
                 for name, param_layer in mod.named_parameters():
                     if 'bias' not in name:
                         # get fixed weights for this layer
@@ -89,8 +87,8 @@ class PackNet(Callback, nn.Module):
         mask_idx = 0
         mask = []  # create mask for this task
         with torch.no_grad():
-            for mod in model.modules():
-                if isinstance(mod, nn.Conv2d) or isinstance(mod, nn.Linear):
+            for mod_name, mod in model.named_modules():
+                if (isinstance(mod, nn.Conv2d) or isinstance(mod, nn.Linear)) and 'output_head' not in mod_name:
                     for name, param_layer in mod.named_parameters():
                         if 'bias' not in name:
                             # get weight mask for this layer
@@ -117,8 +115,8 @@ class PackNet(Callback, nn.Module):
         assert len(self.masks) > self.current_task
 
         mask_idx = 0
-        for mod in model.modules():
-            if isinstance(mod, nn.Conv2d) or isinstance(mod, nn.Linear):
+        for mod_name, mod in model.named_modules():
+            if (isinstance(mod, nn.Conv2d) or isinstance(mod, nn.Linear)) and 'output_head' not in mod_name:
                 for name, param_layer in mod.named_parameters():
                     if 'bias' not in name:
                         param_layer.grad *= self.masks[self.current_task][mask_idx]
@@ -134,8 +132,8 @@ class PackNet(Callback, nn.Module):
             return
 
         mask_idx = 0
-        for mod in model.modules():
-            if isinstance(mod, nn.Conv2d) or isinstance(mod, nn.Linear):
+        for mod_name, mod in model.named_modules():
+            if (isinstance(mod, nn.Conv2d) or isinstance(mod, nn.Linear)) and 'output_head' not in mod_name:
                 for name, param_layer in mod.named_parameters():
                     if 'bias' not in name:
                         # get mask of weights from previous tasks
@@ -195,8 +193,8 @@ class PackNet(Callback, nn.Module):
 
         mask_idx = 0
         with torch.no_grad():
-            for mod in model.modules():
-                if isinstance(mod, nn.Conv2d) or isinstance(mod, nn.Linear):
+            for mod_name, mod in model.named_modules():
+                if (isinstance(mod, nn.Conv2d) or isinstance(mod, nn.Linear)) and 'output_head' not in mod_name:
                     for name, param_layer in mod.named_parameters():
                         if 'bias' not in name:
 
@@ -216,8 +214,8 @@ class PackNet(Callback, nn.Module):
         """
         mask_idx = 0
         mask = []
-        for mod in model.modules():
-            if isinstance(mod, nn.Conv2d) or isinstance(mod, nn.Linear):
+        for mod_name, mod in model.named_modules():
+            if (isinstance(mod, nn.Conv2d) or isinstance(mod, nn.Linear)) and 'output_head' not in mod_name:
                 for name, param_layer in mod.named_parameters():
                     if 'bias' not in name:
                         prev_mask = torch.zeros(param_layer.size(), dtype=torch.bool, requires_grad=False)
@@ -266,14 +264,13 @@ class PackNet(Callback, nn.Module):
         self.mode = 'train'
 
     def on_after_backward(self, trainer: Trainer, pl_module: LightningModule):
-
         if self.mode == 'train':
             self.training_mask(pl_module)
 
         elif self.mode == 'fine_tune':
             self.fine_tune_mask(pl_module)
 
-    def on_epoch_end(self, trainer: Trainer, pl_module: LightningModule):
+    def on_train_epoch_end(self, trainer, pl_module):
 
         if pl_module.current_epoch == self.epoch_split[0] - 1:  # Train epochs completed
             self.mode = 'fine_tune'
@@ -283,6 +280,7 @@ class PackNet(Callback, nn.Module):
                 self.prune(
                     model=pl_module,
                     prune_quantile=self.prune_instructions[self.current_task])
+                print(f"\n\n\nMasks size: {len(self.masks[0])} \n\n\n")
 
         elif pl_module.current_epoch == self.total_epochs() - 1:  # Train and fine tune epochs completed
             self.fix_biases(pl_module)  # Fix biases after first task
@@ -320,11 +318,6 @@ class PackNetMethod(BaseMethod, target_setting=IncrementalSetting):
         self.packnet_hparams = packnet_hparams or PackNet.HParams()
         self.p_net: PackNet  # This gets set in configure
 
-    # def __init__(self, model, prune_instructions, epoch_split):
-    #     self.model = model
-    #     self.prune_instructions = prune_instructions
-    #     self.epoch_split = epoch_split
-
     def configure(self, setting: Setting):
         # NOTE: super().configure creates the Trainer and calls `configure_callbacks()`,
         # so we have to create `self.p_net` before calling `super().configure`.
@@ -350,7 +343,7 @@ class PackNetMethod(BaseMethod, target_setting=IncrementalSetting):
         """
         super().on_task_switch(task_id=task_id)
         if task_id is not None and len(self.p_net.masks) > task_id:
-            # self.p_net.load_final_state(model=self.model)  # That's cheating! :P
+            self.p_net.load_final_state(model=self.model)
             self.p_net.apply_eval_mask(task_idx=task_id, model=self.model)
         self.p_net.current_task = task_id
 
@@ -374,6 +367,17 @@ class PackNetMethod(BaseMethod, target_setting=IncrementalSetting):
         if not setting.stationary_context:
             callbacks.append(self.p_net)
         return callbacks
+
+    def create_trainer(self, setting) -> Trainer:
+        """Creates a Trainer object from pytorch-lightning for the given setting.
+
+        Args:
+
+        Returns:
+            Trainer: the Trainer object.
+        """
+        self.trainer_options.max_epochs = self.packnet_hparams.train_epochs + self.packnet_hparams.fine_tune_epochs
+        return super().create_trainer(setting)
 
     def adapt_to_new_hparams(self, new_hparams: Dict[str, Any]) -> None:
         """Adapts the Method when it receives new Hyper-Parameters to try for a new run.
