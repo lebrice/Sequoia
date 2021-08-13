@@ -280,7 +280,6 @@ class PackNet(Callback, nn.Module):
                 self.prune(
                     model=pl_module,
                     prune_quantile=self.prune_instructions[self.current_task])
-                print(f"\n\n\nMasks size: {len(self.masks[0])} \n\n\n")
 
         elif pl_module.current_epoch == self.total_epochs() - 1:  # Train and fine tune epochs completed
             self.fix_biases(pl_module)  # Fix biases after first task
