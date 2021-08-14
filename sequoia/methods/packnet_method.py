@@ -18,6 +18,10 @@ from typing import Union, List, Tuple, Optional, Mapping, Dict, Any
 from sequoia.settings.assumptions import IncrementalAssumption as IncrementalSetting
 
 
+#
+# TODO: Make this compatible with multiple output heads (broken as of now)
+#
+
 class PackNet(Callback, nn.Module):
     @dataclass
     class HParams(HyperParameters):
@@ -166,9 +170,16 @@ class PackNet(Callback, nn.Module):
                 for param_layer in mod.parameters():
                     param_layer.requires_grad = False
 
-    def apply_eval_mask(self, model: nn.Module, task_idx: int):
+    def fix_output_heads(self, model: nn.Module):
+        for name, mod in model.named_modules():
+            if 'output_head' in name:
+                for param_layer in mod.parameters():
+                    param_layer.requires_grad = False
+
+    def apply_eval_mask(self, model, task_idx: int):
         """
         Revert to network state for a specific task
+        :param model: the model for this packnet
         :param task_idx: the task id to be evaluated (0 - > n_tasks)
         """
         # TODO: The weights are changed in-place, therefore this is irreversible, right?
@@ -270,7 +281,7 @@ class PackNet(Callback, nn.Module):
         elif self.mode == 'fine_tune':
             self.fine_tune_mask(pl_module)
 
-    def on_train_epoch_end(self, trainer, pl_module):
+    def on_train_epoch_end(self, trainer: Trainer, pl_module: LightningModule, *args, **kwargs):
 
         if pl_module.current_epoch == self.epoch_split[0] - 1:  # Train epochs completed
             self.mode = 'fine_tune'
@@ -284,6 +295,7 @@ class PackNet(Callback, nn.Module):
         elif pl_module.current_epoch == self.total_epochs() - 1:  # Train and fine tune epochs completed
             self.fix_biases(pl_module)  # Fix biases after first task
             self.fix_batch_norm(pl_module)  # Fix batch norm mean, var, and params
+            # self.fix_output_heads(pl_module)
             self.save_final_state(pl_module)  # Not sure I like this here though:
             self.mode = 'train'
 

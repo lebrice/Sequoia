@@ -66,7 +66,7 @@ class ClassificationHead(OutputHead):
         available_activations: ClassVar[Dict[str, Type[nn.Module]]] = {
             "relu": nn.ReLU,
             "tanh": nn.Tanh,
-            "elu": nn.ELU, # No idea what these do, but hey, they are available!
+            "elu": nn.ELU,  # No idea what these do, but hey, they are available!
             "gelu": nn.GELU,
             "relu6": nn.ReLU6,
         }
