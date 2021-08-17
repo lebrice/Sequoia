@@ -27,10 +27,12 @@ class PackNet(Callback, nn.Module):
         train_epochs: int = uniform(1, 5, default=3)
         fine_tune_epochs: int = uniform(0, 5, default=1)
 
-    def __init__(self, n_tasks: int, hparams: "PackNet.HParams"):
+    def __init__(self, n_tasks: int, hparams: "PackNet.HParams", prunable_type=(nn.Conv2d, nn.Linear)):
         super().__init__()
         self.n_tasks = n_tasks
         self.prune_instructions = hparams.prune_instructions
+        self.prunable_types = prunable_type
+
         # Set up an array of quantiles for pruning procedure
         if n_tasks:
             self.config_instructions()
@@ -50,7 +52,7 @@ class PackNet(Callback, nn.Module):
         """ Disable the PackNet behaviour. """
         self._enabled = False
 
-    def prune(self, model: nn.Module, prune_quantile: float):
+    def prune(self, model, prune_quantile):
         """
         Create task-specific mask and prune least relevant weights
         :param model: the model to be pruned
@@ -58,37 +60,37 @@ class PackNet(Callback, nn.Module):
         """
         # Calculate Quantile
         all_prunable = torch.tensor([])
-        mask_idx = 0
         for mod_name, mod in model.named_modules():
-            if (isinstance(mod, nn.Conv2d) or isinstance(mod, nn.Linear)) and 'output_head' not in mod_name:
+            if isinstance(mod, self.prunable_types):
                 for name, param_layer in mod.named_parameters():
-                    if 'bias' not in name:
+                    if 'bias' not in name and 'output_head' not in mod_name:
+
                         # get fixed weights for this layer
                         prev_mask = torch.zeros(param_layer.size(), dtype=torch.bool, requires_grad=False)
 
                         for task in self.masks:
-                            prev_mask |= task[mask_idx]
+                            if mod_name+name in task:
+                                prev_mask |= task[mod_name+name]
 
                         p = param_layer.masked_select(~prev_mask)
 
                         if p is not None:
                             all_prunable = torch.cat((all_prunable.view(-1), p), -1)
 
-                        mask_idx += 1
-
         cutoff = torch.quantile(torch.abs(all_prunable), q=prune_quantile)
 
-        mask_idx = 0
-        mask = []  # create mask for this task
+        mask = {}  # create mask for this task
         with torch.no_grad():
             for mod_name, mod in model.named_modules():
-                if (isinstance(mod, nn.Conv2d) or isinstance(mod, nn.Linear)) and 'output_head' not in mod_name:
+                if isinstance(mod, self.prunable_types):
                     for name, param_layer in mod.named_parameters():
-                        if 'bias' not in name:
+                        if 'bias' not in name and 'output_head' not in mod_name:
                             # get weight mask for this layer
                             prev_mask = torch.zeros(param_layer.size(), dtype=torch.bool, requires_grad=False)  # p
+
                             for task in self.masks:
-                                prev_mask |= task[mask_idx]
+                                if mod_name + name in task:
+                                    prev_mask |= task[mod_name+name]
 
                             curr_mask = torch.abs(param_layer).ge(cutoff)  # q
                             curr_mask = torch.logical_and(curr_mask, ~prev_mask)  # (q & ~p)
@@ -96,27 +98,24 @@ class PackNet(Callback, nn.Module):
                             # Zero non masked weights
                             param_layer *= (curr_mask | prev_mask)
 
-                            mask.append(curr_mask)
-                            mask_idx += 1
+                            mask[mod_name+name] = curr_mask
 
         self.masks.append(mask)
 
-    def fine_tune_mask(self, model: nn.Module):
+    def fine_tune_mask(self, model):
         """
         Zero the gradient of pruned weights this task as well as previously fixed weights
         Apply this mask before each optimizer step during fine-tuning
         """
         assert len(self.masks) > self.current_task
 
-        mask_idx = 0
         for mod_name, mod in model.named_modules():
-            if (isinstance(mod, nn.Conv2d) or isinstance(mod, nn.Linear)) and 'output_head' not in mod_name:
+            if isinstance(mod, self.prunable_types):
                 for name, param_layer in mod.named_parameters():
-                    if 'bias' not in name:
-                        param_layer.grad *= self.masks[self.current_task][mask_idx]
-                        mask_idx += 1
+                    if 'bias' not in name and 'output_head' not in mod_name:
+                        param_layer.grad *= self.masks[self.current_task][mod_name + name]
 
-    def training_mask(self, model: nn.Module):
+    def training_mask(self, model):
         """
         Zero the gradient of only fixed weights for previous tasks
         Apply this mask after .backward() and before
@@ -125,36 +124,34 @@ class PackNet(Callback, nn.Module):
         if len(self.masks) == 0:
             return
 
-        mask_idx = 0
         for mod_name, mod in model.named_modules():
-            if (isinstance(mod, nn.Conv2d) or isinstance(mod, nn.Linear)) and 'output_head' not in mod_name:
+            if isinstance(mod, self.prunable_types):
                 for name, param_layer in mod.named_parameters():
-                    if 'bias' not in name:
-
+                    if 'bias' not in name and 'output_head' not in mod_name:
+                        # get mask of weights from previous tasks
                         prev_mask = torch.zeros(param_layer.size(), dtype=torch.bool, requires_grad=False)
-                        for task_masks in self.masks:
-                            prev_mask |= task_masks[mask_idx]
+
+                        for task in self.masks:
+                            prev_mask |= task[mod_name + name]
 
                         # zero grad of previous fixed weights
                         param_layer.grad *= ~prev_mask
 
-                        mask_idx += 1
-
-    def fix_biases(self, model: nn.Module):
+    def fix_biases(self, model):
         """
-        Fix the gradient of bias parameters
+        Fix the gradient of prunable bias parameters
         """
-        for mod in model.modules():
-            if isinstance(mod, nn.Conv2d) or isinstance(mod, nn.Linear) and 'output_head' not in name:
+        for mod_name, mod in model.named_modules():
+            if isinstance(mod, self.prunable_types):
                 for name, param_layer in mod.named_parameters():
-                    if 'bias' in name:
+                    if 'bias' in name and 'output_head' not in mod_name:
                         param_layer.requires_grad = False
 
-    def fix_batch_norm(self, model: nn.Module):
+    def fix_batch_norm(self, model):
         """
         Fix batch norm gain, bias, running mean and variance
         """
-        for mod in model.modules():
+        for mod_name, mod in model.named_modules():
             if isinstance(mod, nn.BatchNorm2d):
                 mod.affine = False
                 for param_layer in mod.parameters():
@@ -164,73 +161,53 @@ class PackNet(Callback, nn.Module):
         """
         Fix output head parameters
         """
-        for name, mod in model.named_modules():
-            if 'output_head' in name:
+        for mod_name, mod in model.named_modules():
+            if 'output_head' in mod_name:
                 for param_layer in mod.parameters():
                     param_layer.requires_grad = False
 
-    def apply_eval_mask(self, model, task_idx: int):
+    def apply_eval_mask(self, model, task_idx):
         """
-        Revert to network state for a specific task
-        :param model: the model for this packnet
+        Revert to final trained network state and apply mask for given task
+        :param model: the model to apply the eval mask to
         :param task_idx: the task id to be evaluated (0 - > n_tasks)
         """
-        # TODO: The weights are changed in-place, therefore this is irreversible, right?
-        # (@lebrice): It would be nicer if you could either:
-        # - mask out the weights temporarily using some sort of context manager OR
-        # - Undo the masking before applying the mask for a different task ID than the
-        #   current one.
-        # 
-        # Is this why you were saving / restoring the state of the
-        # model below?
-        # 
-        # The context manager idea could be implemented with something like this:
-        # import contextlib
-        # @contextlib.context_manager
-        # def temporary_version():
-        #     # 1. Store the weights that will be masked out (as efficiently as possible, but
-        #     # worst case is just copying all the current weights)
-        #     # 2. Change weights in-place (mask them out)
-        #     yield
-        #     # 3. Restore the masked out weights
+
         assert len(self.masks) > task_idx
 
-        mask_idx = 0
         with torch.no_grad():
             for mod_name, mod in model.named_modules():
-                if (isinstance(mod, nn.Conv2d) or isinstance(mod, nn.Linear)) and 'output_head' not in mod_name:
+                if isinstance(mod, self.prunable_types):
                     for name, param_layer in mod.named_parameters():
-                        if 'bias' not in name:
+                        if 'bias' not in name and 'output_head' not in mod_name:
 
                             # get indices of all weights from previous masks
-                            prev_mask = torch.zeros_like(param_layer, dtype=torch.bool, requires_grad=False)
+                            prev_mask = torch.zeros(param_layer.size(), dtype=torch.bool, requires_grad=False)
                             for i in range(0, task_idx + 1):
-                                prev_mask |= self.masks[i][mask_idx]
+                                prev_mask |= self.masks[i][mod_name + name]
 
                             # zero out all weights that are not in the mask for this task
                             param_layer *= prev_mask
 
-                            mask_idx += 1
-
-    def mask_remaining_params(self, model: nn.Module):
+    def mask_remaining_params(self, model):
         """
         Create mask for remaining parameters
         """
-        mask_idx = 0
-        mask = []
+        mask = {}
         for mod_name, mod in model.named_modules():
-            if (isinstance(mod, nn.Conv2d) or isinstance(mod, nn.Linear)) and 'output_head' not in mod_name:
+            if isinstance(mod, self.prunable_types):
                 for name, param_layer in mod.named_parameters():
-                    if 'bias' not in name:
+                    if 'bias' not in name and 'output_head' not in mod_name:
+
+                        # Get mask of weights from previous tasks
                         prev_mask = torch.zeros(param_layer.size(), dtype=torch.bool, requires_grad=False)
                         for task in self.masks:
-                            prev_mask |= task[mask_idx]
+                            prev_mask |= task[mod_name + name]
 
                         # Create mask of remaining parameters
                         layer_mask = ~prev_mask
-                        mask.append(layer_mask)
+                        mask[mod_name + name] = layer_mask
 
-                        mask_idx += 1
         self.masks.append(mask)
 
     def total_epochs(self) -> int:
@@ -246,7 +223,7 @@ class PackNet(Callback, nn.Module):
         if not isinstance(self.prune_instructions, list):  # if a float is passed in
             assert 0 < self.prune_instructions < 1
             self.prune_instructions = [self.prune_instructions] * (self.n_tasks - 1)
-        assert len(self.prune_instructions) == self.n_tasks - 1, "Must give prune instructions for each task"
+        assert len(self.prune_instructions) == self.n_tasks - 1, "Must give prune instructions for every task"
 
     def save_final_state(self, model, PATH='model_weights.pth'):
         """
