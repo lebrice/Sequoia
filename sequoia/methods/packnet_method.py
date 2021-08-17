@@ -18,10 +18,6 @@ from typing import Union, List, Tuple, Optional, Mapping, Dict, Any
 from sequoia.settings.assumptions import IncrementalAssumption as IncrementalSetting
 
 
-#
-# TODO: Make this compatible with multiple output heads (broken as of now)
-#
-
 class PackNet(Callback, nn.Module):
     @dataclass
     class HParams(HyperParameters):
@@ -70,7 +66,7 @@ class PackNet(Callback, nn.Module):
         all_prunable = torch.tensor([])
         mask_idx = 0
         for mod_name, mod in model.named_modules():
-            if (isinstance(mod, nn.Conv2d) or isinstance(mod, nn.Linear)) and 'output_head' not in mod_name:
+            if isinstance(mod, nn.Conv2d) or isinstance(mod, nn.Linear):
                 for name, param_layer in mod.named_parameters():
                     if 'bias' not in name:
                         # get fixed weights for this layer
@@ -92,7 +88,7 @@ class PackNet(Callback, nn.Module):
         mask = []  # create mask for this task
         with torch.no_grad():
             for mod_name, mod in model.named_modules():
-                if (isinstance(mod, nn.Conv2d) or isinstance(mod, nn.Linear)) and 'output_head' not in mod_name:
+                if isinstance(mod, nn.Conv2d) or isinstance(mod, nn.Linear):
                     for name, param_layer in mod.named_parameters():
                         if 'bias' not in name:
                             # get weight mask for this layer
@@ -120,7 +116,7 @@ class PackNet(Callback, nn.Module):
 
         mask_idx = 0
         for mod_name, mod in model.named_modules():
-            if (isinstance(mod, nn.Conv2d) or isinstance(mod, nn.Linear)) and 'output_head' not in mod_name:
+            if isinstance(mod, nn.Conv2d) or isinstance(mod, nn.Linear):
                 for name, param_layer in mod.named_parameters():
                     if 'bias' not in name:
                         param_layer.grad *= self.masks[self.current_task][mask_idx]
@@ -137,7 +133,7 @@ class PackNet(Callback, nn.Module):
 
         mask_idx = 0
         for mod_name, mod in model.named_modules():
-            if (isinstance(mod, nn.Conv2d) or isinstance(mod, nn.Linear)) and 'output_head' not in mod_name:
+            if isinstance(mod, nn.Conv2d) or isinstance(mod, nn.Linear):
                 for name, param_layer in mod.named_parameters():
                     if 'bias' not in name:
                         # get mask of weights from previous tasks
@@ -171,6 +167,9 @@ class PackNet(Callback, nn.Module):
                     param_layer.requires_grad = False
 
     def fix_output_heads(self, model: nn.Module):
+        """
+        Fix output head parameters
+        """
         for name, mod in model.named_modules():
             if 'output_head' in name:
                 for param_layer in mod.parameters():
@@ -205,7 +204,7 @@ class PackNet(Callback, nn.Module):
         mask_idx = 0
         with torch.no_grad():
             for mod_name, mod in model.named_modules():
-                if (isinstance(mod, nn.Conv2d) or isinstance(mod, nn.Linear)) and 'output_head' not in mod_name:
+                if isinstance(mod, nn.Conv2d) or isinstance(mod, nn.Linear):
                     for name, param_layer in mod.named_parameters():
                         if 'bias' not in name:
 
@@ -226,7 +225,7 @@ class PackNet(Callback, nn.Module):
         mask_idx = 0
         mask = []
         for mod_name, mod in model.named_modules():
-            if (isinstance(mod, nn.Conv2d) or isinstance(mod, nn.Linear)) and 'output_head' not in mod_name:
+            if isinstance(mod, nn.Conv2d) or isinstance(mod, nn.Linear):
                 for name, param_layer in mod.named_parameters():
                     if 'bias' not in name:
                         prev_mask = torch.zeros(param_layer.size(), dtype=torch.bool, requires_grad=False)
