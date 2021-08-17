@@ -36,7 +36,7 @@ class PackNet(Callback, nn.Module):
 
         prune_instructions: Union[float, List[float]] = uniform(0.1, 0.9, default=0.5)
 
-        train_epochs: int = uniform(1, 5, default=3)
+        train_epochs: int = uniform(1, 5, default=1)
         fine_tune_epochs: int = uniform(0, 5, default=1)
 
     def __init__(
@@ -168,7 +168,6 @@ class PackNet(Callback, nn.Module):
 
             curr_mask = torch.abs(param_layer).ge(cutoff)  # q
             curr_mask &= ~prev_mask  # (q & ~p)
-            # curr_mask = torch.logical_and(curr_mask, ~prev_mask)  # (q & ~p)
 
             # Zero non masked weights
             param_layer *= curr_mask | prev_mask
