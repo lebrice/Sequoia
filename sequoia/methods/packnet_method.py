@@ -1,19 +1,14 @@
-import torch
 from torch import nn
-from pytorch_lightning.callbacks import Callback
 from sequoia.methods.base_method import BaseMethod
 from sequoia.settings.sl import TaskIncrementalSLSetting
-from pytorch_lightning import Trainer
 import torch
 
-from sequoia.methods.base_method import BaseModel
-from dataclasses import dataclass
 from simple_parsing.helpers import mutable_field
 from sequoia.methods.base_method import BaseModel
 from dataclasses import dataclass
 from pytorch_lightning import LightningModule, Trainer, Callback
 from simple_parsing.helpers.hparams import HyperParameters, uniform
-from typing import Union, List, Tuple, Optional, Mapping, Dict, Any
+from typing import Union, List, Optional, Mapping, Dict, Any
 
 from sequoia.settings.assumptions import IncrementalAssumption as IncrementalSetting
 
@@ -264,7 +259,6 @@ class PackNet(Callback, nn.Module):
         elif pl_module.current_epoch == self.total_epochs() - 1:  # Train and fine tune epochs completed
             self.fix_biases(pl_module)  # Fix biases after first task
             self.fix_batch_norm(pl_module)  # Fix batch norm mean, var, and params
-            self.save_final_state(pl_module)
             self.mode = 'train'
 
 
@@ -311,6 +305,7 @@ class PackNetMethod(BaseMethod, target_setting=IncrementalSetting):
 
     def fit(self, train_env, valid_env):
         super().fit(train_env=train_env, valid_env=valid_env)
+        self.p_net.save_final_state(self.model.encoder)
 
     def on_task_switch(self, task_id: Optional[int]) -> None:
         """Called when switching between tasks.
@@ -322,7 +317,7 @@ class PackNetMethod(BaseMethod, target_setting=IncrementalSetting):
         """
         super().on_task_switch(task_id=task_id)
         if task_id is not None and len(self.p_net.masks) > task_id:
-            self.p_net.load_final_state(model=self.model)
+            self.p_net.load_final_state(model=self.model.encoder)
             self.p_net.apply_eval_mask(task_idx=task_id, model=self.model)
         self.p_net.current_task = task_id
 
@@ -349,9 +344,6 @@ class PackNetMethod(BaseMethod, target_setting=IncrementalSetting):
 
     def create_trainer(self, setting) -> Trainer:
         """Creates a Trainer object from pytorch-lightning for the given setting.
-
-        Args:
-
         Returns:
             Trainer: the Trainer object.
         """
