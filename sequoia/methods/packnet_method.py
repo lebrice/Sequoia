@@ -22,13 +22,6 @@ class PackNet(Callback, nn.Module):
     @dataclass
     class HParams(HyperParameters):
         """ Hyper-parameters of the Packnet callback. """
-
-        # Ratio of training epochs to finetuning epochs.
-        # TODO: Need to adapt this a bit to better work with the BaseMethod, which has
-        # a `max_epochs` parameter, and also uses early stopping. Maybe it could be
-        # something like: Do a minimum of 3 epochs of training, and the rest is just
-        # fine-tuning?
-
         prune_instructions: Union[float, List[float]] = uniform(.1, .9, default=.5)
 
         train_epochs: int = uniform(1, 5, default=3)
