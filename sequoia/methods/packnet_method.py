@@ -161,10 +161,9 @@ class PackNet(Callback, nn.Module):
             prev_mask = torch.zeros_like(param_layer, dtype=torch.bool)
 
             for task_masks in self.masks:
-                # TODO: @lebrice: Q: Under what circumstances would it OK to not already
-                # have a mask for a given parameter? (assuming)
-                if param_full_name in task_masks:
-                    prev_mask |= task_masks[param_full_name]
+                # TODO: check for bug here
+                # if param_full_name in task_masks:
+                prev_mask |= task_masks[param_full_name]
 
             curr_mask = torch.abs(param_layer).ge(cutoff)  # q
             curr_mask &= ~prev_mask  # (q & ~p)
@@ -228,17 +227,6 @@ class PackNet(Callback, nn.Module):
         for mod_name, mod in model.named_modules():
             if isinstance(mod, nn.BatchNorm2d):
                 mod.affine = False
-                for param_layer in mod.parameters():
-                    param_layer.requires_grad = False
-
-    def fix_output_heads(self, model: nn.Module):
-        """
-        Fix output head parameters
-
-        TODO: (@lebrice) This shouldn't be needed.
-        """
-        for mod_name, mod in model.named_modules():
-            if "output_head" in mod_name:
                 for param_layer in mod.parameters():
                     param_layer.requires_grad = False
 
@@ -322,7 +310,7 @@ class PackNet(Callback, nn.Module):
     def on_train_epoch_end(
         self, trainer: Trainer, pl_module: LightningModule, *args, **kwargs
     ):
-        super().on_train_epoch_end
+        super().on_train_epoch_end(trainer, pl_module)
         if pl_module.current_epoch == self.epoch_split[0] - 1:  # Train epochs completed
             self.mode = "fine_tune"
             new_masks: Dict[str, Tensor]
