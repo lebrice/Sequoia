@@ -60,13 +60,14 @@ class PackNet(Callback, nn.Module):
     def prune(self, model: nn.Module, prune_quantile: float):
         """
         Create task-specific mask and prune least relevant weights
+        :param model: the model to be pruned
         :param prune_quantile: The percentage of weights to prune as a decimal
         """
         # Calculate Quantile
         all_prunable = torch.tensor([])
         mask_idx = 0
         for mod_name, mod in model.named_modules():
-            if isinstance(mod, nn.Conv2d) or isinstance(mod, nn.Linear):
+            if (isinstance(mod, nn.Conv2d) or isinstance(mod, nn.Linear)) and 'output_head' not in mod_name:
                 for name, param_layer in mod.named_parameters():
                     if 'bias' not in name:
                         # get fixed weights for this layer
@@ -88,7 +89,7 @@ class PackNet(Callback, nn.Module):
         mask = []  # create mask for this task
         with torch.no_grad():
             for mod_name, mod in model.named_modules():
-                if isinstance(mod, nn.Conv2d) or isinstance(mod, nn.Linear):
+                if (isinstance(mod, nn.Conv2d) or isinstance(mod, nn.Linear)) and 'output_head' not in mod_name:
                     for name, param_layer in mod.named_parameters():
                         if 'bias' not in name:
                             # get weight mask for this layer
@@ -116,7 +117,7 @@ class PackNet(Callback, nn.Module):
 
         mask_idx = 0
         for mod_name, mod in model.named_modules():
-            if isinstance(mod, nn.Conv2d) or isinstance(mod, nn.Linear):
+            if (isinstance(mod, nn.Conv2d) or isinstance(mod, nn.Linear)) and 'output_head' not in mod_name:
                 for name, param_layer in mod.named_parameters():
                     if 'bias' not in name:
                         param_layer.grad *= self.masks[self.current_task][mask_idx]
@@ -133,10 +134,10 @@ class PackNet(Callback, nn.Module):
 
         mask_idx = 0
         for mod_name, mod in model.named_modules():
-            if isinstance(mod, nn.Conv2d) or isinstance(mod, nn.Linear):
+            if (isinstance(mod, nn.Conv2d) or isinstance(mod, nn.Linear)) and 'output_head' not in mod_name:
                 for name, param_layer in mod.named_parameters():
                     if 'bias' not in name:
-                        # get mask of weights from previous tasks
+
                         prev_mask = torch.zeros(param_layer.size(), dtype=torch.bool, requires_grad=False)
                         for task_masks in self.masks:
                             prev_mask |= task_masks[mask_idx]
@@ -151,7 +152,7 @@ class PackNet(Callback, nn.Module):
         Fix the gradient of bias parameters
         """
         for mod in model.modules():
-            if isinstance(mod, nn.Conv2d) or isinstance(mod, nn.Linear):
+            if isinstance(mod, nn.Conv2d) or isinstance(mod, nn.Linear) and 'output_head' not in name:
                 for name, param_layer in mod.named_parameters():
                     if 'bias' in name:
                         param_layer.requires_grad = False
@@ -204,7 +205,7 @@ class PackNet(Callback, nn.Module):
         mask_idx = 0
         with torch.no_grad():
             for mod_name, mod in model.named_modules():
-                if isinstance(mod, nn.Conv2d) or isinstance(mod, nn.Linear):
+                if (isinstance(mod, nn.Conv2d) or isinstance(mod, nn.Linear)) and 'output_head' not in mod_name:
                     for name, param_layer in mod.named_parameters():
                         if 'bias' not in name:
 
@@ -225,7 +226,7 @@ class PackNet(Callback, nn.Module):
         mask_idx = 0
         mask = []
         for mod_name, mod in model.named_modules():
-            if isinstance(mod, nn.Conv2d) or isinstance(mod, nn.Linear):
+            if (isinstance(mod, nn.Conv2d) or isinstance(mod, nn.Linear)) and 'output_head' not in mod_name:
                 for name, param_layer in mod.named_parameters():
                     if 'bias' not in name:
                         prev_mask = torch.zeros(param_layer.size(), dtype=torch.bool, requires_grad=False)
@@ -265,9 +266,8 @@ class PackNet(Callback, nn.Module):
 
     def load_final_state(self, model):
         """
-
-         Load the final state of the model
-         """
+        Load the final state of the model
+        """
         model.load_state_dict(torch.load(self.PATH))
 
     def on_init_end(self, trainer):
@@ -294,8 +294,7 @@ class PackNet(Callback, nn.Module):
         elif pl_module.current_epoch == self.total_epochs() - 1:  # Train and fine tune epochs completed
             self.fix_biases(pl_module)  # Fix biases after first task
             self.fix_batch_norm(pl_module)  # Fix batch norm mean, var, and params
-            # self.fix_output_heads(pl_module)
-            self.save_final_state(pl_module)  # Not sure I like this here though:
+            self.save_final_state(pl_module)
             self.mode = 'train'
 
 
