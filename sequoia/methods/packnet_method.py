@@ -320,7 +320,9 @@ class PackNet(Callback, nn.Module):
         """
         Load the final state of the model
         """
+        device = model.device
         model.load_state_dict(torch.load(self.PATH))
+        model = model.to(device)
 
     def on_init_end(self, trainer: Trainer):
         self.mode = "train"
@@ -348,17 +350,15 @@ class PackNet(Callback, nn.Module):
                 )
             self.masks.append(new_masks)
 
-        elif (
-                pl_module.current_epoch == self.total_epochs() - 1
-        ):  # Train and fine tune epochs completed
-            self.fix_biases(pl_module)  # Fix biases after first task
-            self.fix_batch_norm(pl_module)  # Fix batch norm mean, var, and params
+    def on_fit_end(self, trainer: Trainer, pl_module: LightningModule):
+        self.fix_biases(pl_module)  # Fix biases after first task
+        self.fix_batch_norm(pl_module)  # Fix batch norm mean, var, and params
 
-            # TODO: This may cause issues with output heads
-            # self.fix_all_layers(pl_module)  # Fix all other layers -> may not be necessary?
+        # TODO: This may cause issues with output heads
+        # self.fix_all_layers(pl_module)  # Fix all other layers -> may not be necessary?
 
-            self.save_final_state(pl_module)
-            self.mode = "train"
+        self.save_final_state(pl_module)
+        self.mode = "train"
 
 
 from sequoia.methods.trainer import TrainerConfig
