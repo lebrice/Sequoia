@@ -40,12 +40,12 @@ class PackNet(Callback, nn.Module):
         fine_tune_epochs: int = uniform(0, 5, default=1)
 
     def __init__(
-        self,
-        n_tasks: int,
-        hparams: "PackNet.HParams",
-        prunable_types: Sequence[Type[nn.Module]] = (nn.Conv2d, nn.Linear),
-        ignore_modules: Sequence[str] = None,
-        ignore_parameters: Sequence[str] = ("bias",),
+            self,
+            n_tasks: int,
+            hparams: "PackNet.HParams",
+            prunable_types: Sequence[Type[nn.Module]] = (nn.Conv2d, nn.Linear),
+            ignore_modules: Sequence[str] = None,
+            ignore_parameters: Sequence[str] = ("bias",),
     ):
         """Create the PackNet callback.
 
@@ -84,9 +84,10 @@ class PackNet(Callback, nn.Module):
         # 3-dimensions: task, layer, parameter mask
         self.masks: List[Dict[str, Tensor]] = []
         self.mode: str = None
+        self.params_dict: dict = None
 
     def filtered_parameter_iterator(
-        self, module: nn.Module
+            self, module: nn.Module
     ) -> Iterable[Tuple[str, nn.Parameter]]:
         """Iterator that, given a module, yields tuples with the full name of the
         parameters that will be modified by the PackNet callback, as well as the
@@ -230,6 +231,28 @@ class PackNet(Callback, nn.Module):
                 for param_layer in mod.parameters():
                     param_layer.requires_grad = False
 
+    def set_params_dict(self, model):
+        """
+        Set a dictionary containing all prunable parameters
+        useful for fixing all layers, but may be wasted memory
+        """
+        self.params_dict = dict()
+        for param_full_name, param in self.filtered_parameter_iterator(model):
+            self.params_dict[param_full_name] = param
+
+    def fix_all_layers(self, model):
+        """
+        Fix grad of all parameters outside of params_dict
+        """
+        self.set_params_dict(model)  # Not necessary for fixed model
+
+        # Fix grad of all non-prunable layers in this
+        for mod_name, mod in model.named_modules():
+            for param_name, param_layer in mod.named_parameters():
+                key = f"{mod_name}.{param_name}"
+                if key not in self.params_dict:
+                    param_layer.requires_grad = False
+
     @torch.no_grad()
     def apply_eval_mask(self, model: nn.Module, task_idx: int):
         """
@@ -279,7 +302,7 @@ class PackNet(Callback, nn.Module):
             assert 0 < self.prune_instructions < 1
             self.prune_instructions = [self.prune_instructions] * (self.n_tasks - 1)
         assert (
-            len(self.prune_instructions) == self.n_tasks - 1
+                len(self.prune_instructions) == self.n_tasks - 1
         ), "Must give prune instructions for every task"
 
     def save_final_state(self, model, PATH="model_weights.pth"):
@@ -308,7 +331,7 @@ class PackNet(Callback, nn.Module):
             self.fine_tune_mask(pl_module)
 
     def on_train_epoch_end(
-        self, trainer: Trainer, pl_module: LightningModule, *args, **kwargs
+            self, trainer: Trainer, pl_module: LightningModule, *args, **kwargs
     ):
         super().on_train_epoch_end(trainer, pl_module)
         if pl_module.current_epoch == self.epoch_split[0] - 1:  # Train epochs completed
@@ -324,10 +347,12 @@ class PackNet(Callback, nn.Module):
             self.masks.append(new_masks)
 
         elif (
-            pl_module.current_epoch == self.total_epochs() - 1
+                pl_module.current_epoch == self.total_epochs() - 1
         ):  # Train and fine tune epochs completed
             self.fix_biases(pl_module)  # Fix biases after first task
             self.fix_batch_norm(pl_module)  # Fix batch norm mean, var, and params
+            # self.fix_all_layers(pl_module)  # Fix all other layers -> may not be necessary?
+            self.p_net.save_final_state(self.model)
             self.mode = "train"
 
 
@@ -349,12 +374,12 @@ class PackNetMethod(BaseMethod, target_setting=IncrementalSetting):
     packnet_hparams: PackNet.HParams = mutable_field(PackNet.HParams)
 
     def __init__(
-        self,
-        hparams: BaseModel.HParams = None,
-        config: Config = None,
-        trainer_options: TrainerConfig = None,
-        packnet_hparams: PackNet.HParams = None,
-        **kwargs,
+            self,
+            hparams: BaseModel.HParams = None,
+            config: Config = None,
+            trainer_options: TrainerConfig = None,
+            packnet_hparams: PackNet.HParams = None,
+            **kwargs,
     ):
         super().__init__(
             hparams=hparams, config=config, trainer_options=trainer_options
@@ -387,7 +412,6 @@ class PackNetMethod(BaseMethod, target_setting=IncrementalSetting):
 
     def fit(self, train_env, valid_env):
         super().fit(train_env=train_env, valid_env=valid_env)
-        self.p_net.save_final_state(self.model.encoder)
 
     def on_task_switch(self, task_id: Optional[int]) -> None:
         """Called when switching between tasks.
@@ -399,12 +423,12 @@ class PackNetMethod(BaseMethod, target_setting=IncrementalSetting):
         """
         super().on_task_switch(task_id=task_id)
         if task_id is not None and len(self.p_net.masks) > task_id:
-            self.p_net.load_final_state(model=self.model.encoder)
+            self.p_net.load_final_state(model=self.model)
             self.p_net.apply_eval_mask(task_idx=task_id, model=self.model)
         self.p_net.current_task = task_id
 
     def configure_callbacks(
-        self, setting: TaskIncrementalSLSetting = None
+            self, setting: TaskIncrementalSLSetting = None
     ) -> List[Callback]:
         """Create the PyTorch-Lightning Callbacks for this Setting.
 
@@ -432,7 +456,7 @@ class PackNetMethod(BaseMethod, target_setting=IncrementalSetting):
             Trainer: the Trainer object.
         """
         self.trainer_options.max_epochs = (
-            self.packnet_hparams.train_epochs + self.packnet_hparams.fine_tune_epochs
+                self.packnet_hparams.train_epochs + self.packnet_hparams.fine_tune_epochs
         )
         return super().create_trainer(setting)
 
