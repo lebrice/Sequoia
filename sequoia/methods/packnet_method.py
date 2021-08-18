@@ -351,7 +351,10 @@ class PackNet(Callback, nn.Module):
         ):  # Train and fine tune epochs completed
             self.fix_biases(pl_module)  # Fix biases after first task
             self.fix_batch_norm(pl_module)  # Fix batch norm mean, var, and params
-            # self.fix_all_layers(pl_module)  # Fix all other layers -> may not be necessary?
+
+            # TODO: This may cause issues with output heads
+            self.fix_all_layers(pl_module)  # Fix all other layers -> may not be necessary?
+
             self.p_net.save_final_state(self.model)
             self.mode = "train"
 
