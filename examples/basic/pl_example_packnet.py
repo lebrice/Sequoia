@@ -47,7 +47,7 @@ class ExamplePackNetMethod(ExampleMethod, target_setting=TaskIncrementalSLSettin
         self.trainer = Trainer(
             gpus=torch.cuda.device_count(),
             min_epochs=self.p_net.total_epochs(),
-            max_epochs=self.hparams.max_epochs_per_task,
+            max_epochs=self.p_net.total_epochs(),
             callbacks=[self.p_net]
         )
 

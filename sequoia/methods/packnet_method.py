@@ -357,11 +357,7 @@ class PackNet(Callback, nn.Module):
             # TODO: This may cause issues with output heads
             # self.fix_all_layers(pl_module)  # Fix all other layers -> may not be necessary?
 
-<<<<<<< HEAD
-            self.save_final_state(self.model)
-=======
             self.save_final_state(pl_module)
->>>>>>> Fix min_epochs issue with pl_example_packnet
             self.mode = "train"
 
 
