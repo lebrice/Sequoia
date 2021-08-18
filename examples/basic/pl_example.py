@@ -273,6 +273,9 @@ class ExampleMethod(Method, target_setting=ContinualSLSetting):
         NOTE: The test environment will close itself when done, signifying the end
         of the test period. At that point, `test_env.is_closed()` will return `True`.
         """
+        # BUG: There is currently a bug with the test loop with Trainer: on_task_switch
+        # doesn't get called properly.
+        raise NotImplementedError
         # Use ckpt_path=None to use the current weights, rather than the "best" ones.
         self.trainer.test(self.model, ckpt_path=None, test_dataloaders=test_env)
 
