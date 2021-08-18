@@ -43,7 +43,7 @@ class PackNet(Callback, nn.Module):
     def __init__(
             self,
             n_tasks: int,
-            hparams: "PackNet.HParams",
+            hparams: Optional["PackNet.HParams"]=None,
             prunable_types: Sequence[Type[nn.Module]] = (nn.Conv2d, nn.Linear),
             ignore_modules: Sequence[str] = None,
             ignore_parameters: Sequence[str] = ("bias",),
@@ -69,12 +69,12 @@ class PackNet(Callback, nn.Module):
             ignored. Defaults to ["bias"].
         """
         super().__init__()
+        hparams = hparams or self.HParams()
         self.n_tasks = n_tasks
         self.prune_instructions = hparams.prune_instructions
         self.prunable_types = prunable_types or [nn.Conv2d, nn.Linear]
         self.ignore_modules = list(ignore_modules or [])
         self.ignore_parameters = list(ignore_parameters or [])
-
         # Set up an array of quantiles for pruning procedure
         if n_tasks:
             self.config_instructions()
@@ -177,7 +177,7 @@ class PackNet(Callback, nn.Module):
 
         return masks
 
-    def fine_tune_mask(self, model):
+    def fine_tune_mask(self, model: nn.Module):
         """
         Zero the gradient of pruned weights this task as well as previously fixed weights
         Apply this mask before each optimizer step during fine-tuning
@@ -186,7 +186,7 @@ class PackNet(Callback, nn.Module):
         for param_full_name, param in self.filtered_parameter_iterator(model):
             param.grad *= self.masks[self.current_task][param_full_name]
 
-    def training_mask(self, model):
+    def training_mask(self, model: nn.Module):
         """
         Zero the gradient of only fixed weights for previous tasks
         Apply this mask after .backward() and before
@@ -222,7 +222,7 @@ class PackNet(Callback, nn.Module):
                 if "bias" in name:
                     param_layer.requires_grad = False
 
-    def fix_batch_norm(self, model):
+    def fix_batch_norm(self, model: nn.Module):
         """
         Fix batch norm gain, bias, running mean and variance
         """
@@ -232,16 +232,17 @@ class PackNet(Callback, nn.Module):
                 for param_layer in mod.parameters():
                     param_layer.requires_grad = False
 
-    def set_params_dict(self, model):
+    def set_params_dict(self, model: nn.Module):
         """
         Set a dictionary containing all prunable parameters
         useful for fixing all layers, but may be wasted memory
         """
+        # TODO: This dict actually doesn't copy the parameters, it saves references.
         self.params_dict = dict()
         for param_full_name, param in self.filtered_parameter_iterator(model):
             self.params_dict[param_full_name] = param
 
-    def fix_all_layers(self, model):
+    def fix_all_layers(self, model: nn.Module):
         """
         Fix grad of all parameters outside of params_dict
         """
@@ -356,7 +357,11 @@ class PackNet(Callback, nn.Module):
             # TODO: This may cause issues with output heads
             # self.fix_all_layers(pl_module)  # Fix all other layers -> may not be necessary?
 
+<<<<<<< HEAD
             self.save_final_state(self.model)
+=======
+            self.save_final_state(pl_module)
+>>>>>>> Fix min_epochs issue with pl_example_packnet
             self.mode = "train"
 
 

@@ -7,57 +7,47 @@ from simple_parsing import mutable_field
 from sequoia.common import Config
 from sequoia.methods import BaseModel
 from sequoia.methods.trainer import Trainer, TrainerConfig
-from sequoia.settings.sl import (
-    TaskIncrementalSLSetting
-)
+from sequoia.settings.sl import ContinualSLSetting, TaskIncrementalSLSetting
 from examples.basic.pl_example import ExampleMethod, Model
 from sequoia.methods.packnet_method import PackNet
 
 
-@dataclass
 class ExamplePackNetMethod(ExampleMethod, target_setting=TaskIncrementalSLSetting):
-    # NOTE: these two fields are also used to create the command-line arguments.
-    # HyperParameters of the method.
-    hparams: BaseModel.HParams = mutable_field(BaseModel.HParams)
-    # Configuration options.
-    config: Config = mutable_field(Config)
-    # Options for the Trainer object.
-    trainer_options: TrainerConfig = mutable_field(TrainerConfig)
-    # Hyper-Parameters of the PackNet callback
-    packnet_hparams: PackNet.HParams = mutable_field(PackNet.HParams)
-
-    def __init__(self, hparams: Model.HParams = None,
-                 config=None,
-                 trainer_options=None,
-                 packnet_hparams=None,
-                 **kwargs):
+    def __init__(
+        self, hparams: Model.HParams = None, packnet_hparams: PackNet.HParams = None
+    ):
         super().__init__(hparams=hparams)
-
         self.packnet_hparams = packnet_hparams or PackNet.HParams()
+        # TODO: Modify `hparams.max_epochs_per_task` to at least be enough so that
+        # PackNet will work.
+        min_epochs = (
+            self.packnet_hparams.train_epochs + self.packnet_hparams.fine_tune_epochs
+        )
+        if self.hparams.max_epochs_per_task < min_epochs:
+            self.hparams.max_epochs_per_task = min_epochs
         self.p_net: PackNet
 
     def configure(self, setting: TaskIncrementalSLSetting):
-        ignored_modules = ["output_heads", "output_head"]
-
+        super().configure(setting)
+        # TODO: Why does PackNet need access to the number of tasks again?
         self.p_net = PackNet(
             n_tasks=setting.nb_tasks,
             hparams=self.packnet_hparams,
-            ignore_modules=ignored_modules
         )
-
+        # TODO: This could be set as default values in the PackNet constructor.
         self.p_net.current_task = -1
         self.p_net.config_instructions()
-        super().configure(setting)
 
     def fit(
-            self,
-            train_env: TaskIncrementalSLSetting.Environment,
-            valid_env: TaskIncrementalSLSetting.Environment,
+        self,
+        train_env: TaskIncrementalSLSetting.Environment,
+        valid_env: TaskIncrementalSLSetting.Environment,
     ):
         # NOTE: PackNet is not compatible with EarlyStopping, thus we set max_epochs==min_epochs
         self.trainer = Trainer(
-            gpus=torch.cuda.device_count(), max_epochs=self.p_net.total_epochs(),
+            gpus=torch.cuda.device_count(),
             min_epochs=self.p_net.total_epochs(),
+            max_epochs=self.hparams.max_epochs_per_task,
             callbacks=[self.p_net]
         )
 
@@ -65,7 +55,7 @@ class ExamplePackNetMethod(ExampleMethod, target_setting=TaskIncrementalSLSettin
             self.model, train_dataloader=train_env, val_dataloaders=valid_env
         )
 
-    def on_task_switch(self, task_id):
+    def on_task_switch(self, task_id: Optional[int]):
         """Called when switching between tasks.
 
         Args:
@@ -81,8 +71,7 @@ class ExamplePackNetMethod(ExampleMethod, target_setting=TaskIncrementalSLSettin
 
 
 def main():
-    """ Runs the example: applies the method on a Continual Supervised Learning Setting.
-    """
+    """Runs the example: applies the method on a Continual Supervised Learning Setting."""
     # You could use any of the settings in SL, since this example methods targets the
     # most general Continual SL Setting in Sequoia: `ContinualSLSetting`:
     # from sequoia.settings.sl import ClassIncrementalSetting
@@ -90,14 +79,16 @@ def main():
     # Create the Setting:
     # NOTE: Since our model above uses an adaptive pooling layer, it should work on any
     # dataset!
-    setting = TaskIncrementalSLSetting(dataset="mnist", nb_tasks=2, monitor_training_performance=True)
+    setting = TaskIncrementalSLSetting(
+        dataset="mnist", nb_tasks=5, monitor_training_performance=True
+    )
 
     # Create the Method:
     method = ExamplePackNetMethod()
 
     # Create a config for the experiment (just so we can set a few options for this
     # example)
-    config = Config(debug=True, log_dir="results/pl_example")
+    config = Config(debug=False, log_dir="results/pl_example_packnet")
 
     # Launch the experiment: trains and tests the method according to the chosen
     # setting and returns a Results object.
