@@ -1,6 +1,7 @@
 from torch import nn
 from sequoia.methods.base_method import BaseMethod
 from sequoia.settings.sl import TaskIncrementalSLSetting
+from pytorch_lightning.callbacks import EarlyStopping
 import torch
 from torch import Tensor
 from simple_parsing.helpers import mutable_field
@@ -353,9 +354,9 @@ class PackNet(Callback, nn.Module):
             self.fix_batch_norm(pl_module)  # Fix batch norm mean, var, and params
 
             # TODO: This may cause issues with output heads
-            self.fix_all_layers(pl_module)  # Fix all other layers -> may not be necessary?
+            # self.fix_all_layers(pl_module)  # Fix all other layers -> may not be necessary?
 
-            self.p_net.save_final_state(self.model)
+            self.save_final_state(self.model)
             self.mode = "train"
 
 
@@ -449,6 +450,11 @@ class PackNetMethod(BaseMethod, target_setting=IncrementalSetting):
         """
         callbacks = super().configure_callbacks(setting=setting)
         assert self.p_net not in callbacks
+
+        for i in range(len(callbacks)):
+            if isinstance(callbacks[i], EarlyStopping):
+                callbacks.pop(i)
+        print(callbacks)
         if not setting.stationary_context:
             callbacks.append(self.p_net)
         return callbacks
@@ -461,6 +467,7 @@ class PackNetMethod(BaseMethod, target_setting=IncrementalSetting):
         self.trainer_options.max_epochs = (
                 self.packnet_hparams.train_epochs + self.packnet_hparams.fine_tune_epochs
         )
+
         return super().create_trainer(setting)
 
     def adapt_to_new_hparams(self, new_hparams: Dict[str, Any]) -> None:

@@ -8,7 +8,6 @@ from sequoia.common import Config
 from sequoia.methods import BaseModel
 from sequoia.methods.trainer import Trainer, TrainerConfig
 from sequoia.settings.sl import (
-    ContinualSLSetting,
     TaskIncrementalSLSetting
 )
 from examples.basic.pl_example import ExampleMethod, Model
@@ -38,13 +37,12 @@ class ExamplePackNetMethod(ExampleMethod, target_setting=TaskIncrementalSLSettin
         self.p_net: PackNet
 
     def configure(self, setting: TaskIncrementalSLSetting):
-
         ignored_modules = ["output_heads", "output_head"]
 
         self.p_net = PackNet(
             n_tasks=setting.nb_tasks,
             hparams=self.packnet_hparams,
-            ignore_modules=ignored_modules,
+            ignore_modules=ignored_modules
         )
 
         self.p_net.current_task = -1
@@ -56,10 +54,13 @@ class ExamplePackNetMethod(ExampleMethod, target_setting=TaskIncrementalSLSettin
             train_env: TaskIncrementalSLSetting.Environment,
             valid_env: TaskIncrementalSLSetting.Environment,
     ):
+        # NOTE: PackNet is not compatible with EarlyStopping, thus we set max_epochs==min_epochs
         self.trainer = Trainer(
-            gpus=torch.cuda.device_count(), max_epochs=self.hparams.max_epochs_per_task,
+            gpus=torch.cuda.device_count(), max_epochs=self.p_net.total_epochs(),
+            min_epochs=self.p_net.total_epochs(),
             callbacks=[self.p_net]
         )
+
         self.trainer.fit(
             self.model, train_dataloader=train_env, val_dataloaders=valid_env
         )
