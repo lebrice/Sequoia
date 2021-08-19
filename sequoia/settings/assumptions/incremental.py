@@ -24,10 +24,7 @@ from wandb.wandb_run import Run
 
 from sequoia.common import ClassificationMetrics, Metrics, RegressionMetrics
 from sequoia.common.config import Config, WandbConfig
-from sequoia.common.gym_wrappers.step_callback_wrapper import (
-    Callback,
-    StepCallbackWrapper,
-)
+from sequoia.common.gym_wrappers.step_callback_wrapper import StepCallbackWrapper
 from sequoia.common.gym_wrappers.utils import IterableWrapper
 from sequoia.settings.base import (
     Actions,

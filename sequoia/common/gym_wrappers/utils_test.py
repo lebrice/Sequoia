@@ -78,14 +78,15 @@ class TestIterableWrapper:
 
     @pytest.mark.parametrize("active", [True, False])
     def test_reward_isnt_applied_twice_when_iterating_passive_env(self, active: bool):
+        from dataclasses import replace
+        
         class DoubleRewardsWrapper(TransformReward):
             def __init__(self, env: IterableWrapper, f: Callable = None):
                 super().__init__(env, f=self.double_rewards)
 
             @staticmethod
             def double_rewards(rewards: Rewards) -> Rewards:
-                rewards.y.mul_(2)
-                return rewards
+                return replace(rewards, y=rewards.y * 2)
 
         env = self.sl_env(
             task_id=1, n_samples=100, batch_size=10, pretend_to_be_active=active

@@ -53,6 +53,10 @@ class EnvDataset(
 
     One pass through __iter__ is one episode. The __iter__ method can be called
     at most `max_episodes` times.
+    
+    TODO: Refactor this EnvDataset class from the ground up. Needs to be as lightweight
+    as possible: Just adds an __iter__ loop to a gym.Env.
+    TODO: Fix any issues with PyTorch 1.9 compatibility.
     """
 
     def __init__(

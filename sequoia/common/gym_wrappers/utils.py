@@ -111,8 +111,7 @@ def is_classic_control_env(env: Union[str, gym.Env, Type[gym.Env]]) -> bool:
 def is_proxy_to(
     env, env_type_or_types: Union[Type[gym.Env], Tuple[Type[gym.Env], ...]]
 ) -> bool:
-    """ Returns wether `env` is a proxy to an env of the given type or types.
-    """
+    """Returns wether `env` is a proxy to an env of the given type or types."""
     from sequoia.client.env_proxy import EnvironmentProxy
 
     return isinstance(env.unwrapped, EnvironmentProxy) and issubclass(
@@ -253,9 +252,9 @@ def has_wrapper(
 
 
 class MayCloseEarly(gym.Wrapper, ABC):
-    """ ABC for Wrappers that may close an environment early depending on some
+    """ABC for Wrappers that may close an environment early depending on some
     conditions.
-    
+
     WIP: Also prevents calling `step` and `reset` on a closed env.
     """
 
@@ -272,8 +271,8 @@ class MayCloseEarly(gym.Wrapper, ABC):
         return self._is_closed
 
     def closed_error_message(self) -> str:
-        """ Return the error message to use when attempting to use the closed env.
-        
+        """Return the error message to use when attempting to use the closed env.
+
         This can be useful for wrappers that close when a given condition is reached,
         e.g. a number of episodes has been performed, which could return a more relevant
         message here.
@@ -308,16 +307,16 @@ from .policy_env import PolicyEnv
 
 
 class IterableWrapper(MayCloseEarly, IterableDataset, Generic[EnvType], ABC):
-    """ ABC for a gym Wrapper that supports iterating over the environment.
+    """ABC for a gym Wrapper that supports iterating over the environment.
 
     This allows us to wrap dataloader-based Environments and still use the gym
     wrapper conventions, as well as iterate over a gym environment as in the
     Active-dataloader case.
-    
+
     NOTE: We have IterableDataset as a base class here so that we can pass a wrapped env
     to the DataLoader function. This wrapper however doesn't perform the actual
     iteration, and instead depends on the wrapped environment already supporting
-    iteration. 
+    iteration.
     """
 
     def __init__(self, env: gym.Env, call_hooks: bool = False):
@@ -333,7 +332,7 @@ class IterableWrapper(MayCloseEarly, IterableDataset, Generic[EnvType], ABC):
 
     @property
     def is_vectorized(self) -> bool:
-        """ Returns wether this wrapper is wrapping a vectorized environment. """
+        """Returns wether this wrapper is wrapping a vectorized environment."""
         return isinstance(self.unwrapped, VectorEnv)
 
     def __next__(self):
@@ -395,12 +394,11 @@ class IterableWrapper(MayCloseEarly, IterableDataset, Generic[EnvType], ABC):
     #     return self.env.__len__()
 
     def length(self) -> Optional[int]:
-        """ Attempts to return the "length" (in number of steps/batches) of this env.
-        
+        """Attempts to return the "length" (in number of `step` calls) of this env.
+
         When not possible, returns None.
-        
-        NOTE: This is a bit ugly, but the idea seems alright: Check for `__len__`,
-        otherwise 
+
+        NOTE: This is a bit ugly, but the idea seems alright.
         """
         try:
             # Try to call self.__len__() without recursing into the wrapped env:
@@ -415,7 +413,7 @@ class IterableWrapper(MayCloseEarly, IterableDataset, Generic[EnvType], ABC):
         try:
             # Try to call self.env.__len__(), allowing recursing down the chain:
             return self.env.__len__()
-        except TypeError:
+        except AttributeError:
             pass
         try:
             # If all else fails, delegate to the wrapped env's length() method, if any:
@@ -431,15 +429,17 @@ class IterableWrapper(MayCloseEarly, IterableDataset, Generic[EnvType], ABC):
         if self.wrapping_passive_env:
             action = self.action(action)
             reward = self.env.send(action)
-            # reward = self.reward(reward)
-            # NOTE: Use this `_reward_applied` flag to make sure that `self.reward`
-            # isn't called in both the `self.send` and `self.__iter__`.
-            if not self._reward_applied:
-                reward = self.reward(reward)
-                self._reward_applied = True
+            reward = self.reward(reward)
             return reward
 
+            # if not self._reward_applied:
+            #     reward = self.reward(reward)
+            #     self._reward_applied = True
+
+            # return reward
+
         self.action_ = action
+        self.unwrapped.action_ = action
         self.observation_, self.reward_, self.done_, self.info_ = self.step(action)
         return self.reward_
 
@@ -492,18 +492,19 @@ class IterableWrapper(MayCloseEarly, IterableDataset, Generic[EnvType], ABC):
                     assert not self._reward_applied
                     rewards = self.reward(rewards)
                     self._reward_applied = True
+                    self._reward = rewards
 
                 yield obs, rewards
         else:
-            self.unwrapped.observation_ = self.reset()
-            self.unwrapped.done_ = False
-            self.unwrapped.action_ = None
-            self.unwrapped.reward_ = None
+            self.observation_ = self.reset()
+            self.done_ = False
+            self.action_ = None
+            self.reward_ = None
 
             # Yield the first observation_.
-            yield self.unwrapped.observation_
+            yield self.observation_
 
-            if self.unwrapped.action_ is None:
+            if self.action_ is None:
                 raise RuntimeError(
                     f"You have to send an action using send() between every "
                     f"observation. (env = {self})"
@@ -512,15 +513,15 @@ class IterableWrapper(MayCloseEarly, IterableDataset, Generic[EnvType], ABC):
             def done_is_true(done: Union[bool, np.ndarray, Sequence[bool]]) -> bool:
                 return done if isinstance(done, bool) or not done.shape else all(done)
 
-            while not any([done_is_true(self.unwrapped.done_), self.is_closed()]):
+            while not any([done_is_true(self.done_), self.is_closed()]):
                 # logger.debug(f"step {self.n_steps_}/{self.max_steps},  (episode {self.n_episodes_})")
 
                 # Set those to None to force the user to call .send()
-                self.unwrapped.action_ = None
-                self.unwrapped.reward_ = None
-                yield self.unwrapped.observation_
+                self.action_ = None
+                self.reward_ = None
+                yield self.observation_
 
-                if self.unwrapped.action_ is None:
+                if self.action_ is None:
                     raise RuntimeError(
                         f"You have to send an action using send() between every "
                         f"observation. (env = {self})"
@@ -622,7 +623,7 @@ class IterableWrapper(MayCloseEarly, IterableDataset, Generic[EnvType], ABC):
 
 
 class RenderEnvWrapper(IterableWrapper):
-    """ Simple Wrapper that renders the env at each step. """
+    """Simple Wrapper that renders the env at each step."""
 
     def __init__(self, env: gym.Env, display: Any = None):
         super().__init__(env)

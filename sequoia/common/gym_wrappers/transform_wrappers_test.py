@@ -29,7 +29,7 @@ from sequoia.common.transforms import Compose
 
 @pytest.mark.skipif(not torch.cuda.is_available(), reason="Need cuda for this test.")
 def test_move_wrapper_and_iteration():
-    batch_size = 1
+    batch_size = 10
     transforms = Compose([Transforms.to_tensor])
     dataset = MNIST("data", transform=transforms)
     obs_space = Image(0, 255, (1, 28, 28), np.uint8)
@@ -50,4 +50,4 @@ def test_move_wrapper_and_iteration():
     rewards_send = env.send(env.action_space.sample())
     assert obs.device.type == "cuda"
     assert rewards_next.device.type == "cuda"
-    assert rewards_send.device.type == "cuda"
+    assert rewards_send.device.type == "cuda", (rewards_next, rewards_send)
