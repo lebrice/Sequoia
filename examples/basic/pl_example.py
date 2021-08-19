@@ -254,7 +254,7 @@ class ExampleMethod(Method, target_setting=ContinualSLSetting):
         """
         # NOTE: Currently have to 'reset' the Trainer for each call to `fit`.
         self.trainer = Trainer(
-            gpus=torch.cuda.device_count(), max_epochs=self.hparams.max_epochs_per_task
+            gpus=torch.cuda.device_count(), max_epochs=self.hparams.max_epochs_per_task,
         )
         self.trainer.fit(
             self.model, train_dataloader=train_env, val_dataloaders=valid_env
@@ -273,6 +273,9 @@ class ExampleMethod(Method, target_setting=ContinualSLSetting):
         NOTE: The test environment will close itself when done, signifying the end
         of the test period. At that point, `test_env.is_closed()` will return `True`.
         """
+        # BUG: There is currently a bug with the test loop with Trainer: on_task_switch
+        # doesn't get called properly.
+        raise NotImplementedError
         # Use ckpt_path=None to use the current weights, rather than the "best" ones.
         self.trainer.test(self.model, ckpt_path=None, test_dataloaders=test_env)
 
