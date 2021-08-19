@@ -46,7 +46,7 @@ class TypedObjectsWrapper(IterableWrapper, Environment[ObservationType, ActionTy
         self.Observations = observations_type
         self.Rewards = rewards_type
         self.Actions = actions_type
-        super().__init__(env=env)
+        super().__init__(env=env, call_hooks=True)
 
         # TODO: Also change the action and reward spaces?
         if isinstance(self.env.observation_space, (TypedDictSpace, NamedTupleSpace)):
@@ -63,11 +63,11 @@ class TypedObjectsWrapper(IterableWrapper, Environment[ObservationType, ActionTy
                                                 Union[bool, Sequence[bool]],
                                                 Union[Dict, Sequence[Dict]]]:
         # "unwrap" the actions before passing it to the wrapped environment.
-        action = self.action(action)        
-        observation, reward, done, info = self.env.step(action)
+        # action = self.action(action)        
+        observation, reward, done, info = super().step(action)
         # TODO: Make the observation space a Dict
-        observation = self.observation(observation)
-        reward = self.reward(reward)
+        # observation = self.observation(observation)
+        # reward = self.reward(reward)
         return observation, reward, done, info
 
     def observation(self, observation: Any) -> ObservationType:
@@ -98,26 +98,20 @@ class TypedObjectsWrapper(IterableWrapper, Environment[ObservationType, ActionTy
         return action
 
     def reward(self, reward: Any) -> RewardType:
+        if isinstance(reward, Rewards):
+            if isinstance(reward, self.Rewards):
+                return reward
+            raise NotImplementedError(
+                f"TODO: Convert rewards {reward} to type {self.Rewards}."
+            )
         return self.Rewards(reward)
 
     def reset(self, **kwargs) -> ObservationType:
-        observation = self.env.reset(**kwargs)
-        return self.observation(observation)
-    
-    def __iter__(self):
-        for batch in self.env:
-            if isinstance(batch, tuple) and len(batch) == 2:
-                yield self.observation(batch[0]), self.reward(batch[1])
-            elif isinstance(batch, tuple) and len(batch) == 1:
-                yield self.observation(batch[0])
-            else:
-                yield self.observation(batch)
+        return super().reset(**kwargs)
 
     def send(self, action: ActionType) -> RewardType:
-        action = self.action(action)
-        reward = self.env.send(action)
-        return self.reward(reward)
-
+        reward = super().send(action)
+        return reward
 
 # TODO: turn unwrap into a single-dispatch callable.
 # TODO: Atm 'unwrap' basically means "get rid of everything apart from the first

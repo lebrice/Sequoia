@@ -38,7 +38,7 @@ class MeasureSLPerformanceWrapper(
     ):
         super().__init__(env)
         # Metrics mapping from step to the metrics at that step.
-        self._metrics: Dict[int, ClassificationMetrics] = defaultdict(Metrics)
+        self._metrics: Dict[int, ClassificationMetrics] = {}
         self.first_epoch_only = first_epoch_only
         self.wandb_prefix = wandb_prefix
         # Counter for the number of steps.
@@ -60,7 +60,7 @@ class MeasureSLPerformanceWrapper(
                 )
             )
         self.env.unwrapped.pretend_to_be_active = True
-        self.__epochs = 0
+        self.__epochs = -1
 
         # TODO: Remove this: only works for classification:
         self._n_classes = self._get_n_classes()
@@ -69,25 +69,27 @@ class MeasureSLPerformanceWrapper(
         self._action: Optional[Actions] = None
 
     def reset(self) -> Observations:
+        # NOTE: This calls the `observation` hook.
         return super().reset()
 
     @property
     def in_evaluation_period(self) -> bool:
         if self.first_epoch_only:
-            # TODO: Double-check the iteraction of IterableDataset and __len__
             return self.__epochs == 0
         return True
 
     def step(self, action: Actions):
+        # NOTE: This calls all of the the `observation`, `action`, `reward`, etc hooks.
         observation, reward, done, info = super().step(action)
         return observation, reward, done, info
 
     def observation(self, observation):
-        self._steps += 1
         return super().observation(observation)
 
     def action(self, action):
         if not isinstance(action, Actions):
+            # TODO: Remove this conversion to Actions, and instead expect methods to
+            # give back the proper kind of 'Actions'.
             assert isinstance(action, (np.ndarray, Tensor))
             action = Actions(action)
         action = super().action(action)
@@ -95,33 +97,21 @@ class MeasureSLPerformanceWrapper(
         return action
 
     def reward(self, reward):
-        assert not self._reward_applied
-        assert self._reward is None
         reward = super().reward(reward)
-        self._reward = reward
-
-        assert self._action is not None
         # TODO: Make this wrapper task-aware, using the task ids in this `observation`?
-        if self.in_evaluation_period:
-            # TODO: Edge case, but we also need the prediction for the last batch to be
-            # counted.
-            self._metrics[self._steps] += self.get_metrics(self._action, self._reward)
-        elif self.first_epoch_only:
-            # If we are at the last batch in the first epoch, we still keep the metrics
-            # for that batch, even though we're technically not in the first epoch
-            # anymore.
-            # TODO: CHeck the length through the dataset? or through a more 'clean' way
-            # e.g. through the `max_steps` property of a TimeLimit wrapper or something?
-            num_batches = len(self.unwrapped.dataset) // self.batch_size
-            if not self.unwrapped.drop_last:
-                num_batches += 1 if len(self.unwrapped.dataset) % self.batch_size else 0
-            # currently_at_last_batch = self._steps == num_batches - 1
-            currently_at_last_batch = self._steps == num_batches - 1
-            if self.__epochs == 1 and currently_at_last_batch:
-                self._metrics[self._steps] += self.get_metrics(self._action, self._reward)
+        if not self.in_evaluation_period:
+            return reward
+
+        assert self.unwrapped.pretend_to_be_active
+        # TODO: Edge case, but we also need the prediction for the last batch to be
+        # counted.
+        assert self._action is not None
+        assert self._steps not in self._metrics, (self._steps, self._metrics)
+        self._metrics[self._steps] = self.get_metrics(self._action, reward)
 
         self._action = None
         self._reward = None
+        self._steps += 1
 
         return reward
 
@@ -174,6 +164,7 @@ class MeasureSLPerformanceWrapper(
         return metric
     
     def __iter__(self) -> Iterator[Tuple[Observations, Optional[Rewards]]]:
+        self.__epochs += 1
         if self.__epochs == 1 and self.first_epoch_only:
             print(
                 colorize(
@@ -185,39 +176,21 @@ class MeasureSLPerformanceWrapper(
                 )
             )
             self.env.unwrapped.pretend_to_be_active = False
-        
-        if self._generator is not None:
-            self._generator.close()
-        
-        self._generator = env_generator_loop(self)
-        yield from self._generator
+
+        #     if self._generator is not None:
+        #         self._generator.close()          
+        #     self._generator = env_generator_loop(self)
+        #     yield from self._generator
 
         # yield from super().__iter__()
-        # for obs, rew in self.env.__iter__():
-        #     if self.in_evaluation_period:
-        #         yield obs, None
-        #     else:
-        #         yield obs, rew
-        self.__epochs += 1
+
+        for obs, rew in super().__iter__():
+            if self.in_evaluation_period:
+                assert rew is None, rew
+                yield obs, None
+            else:
+                yield obs, rew
     
     def send(self, action: Actions):
-        return self._generator.send(action)
-        # reward = super().send(action)
-        return reward
-
-
-import gym
-from typing import Generator
-# IDEA: Have a static 'generator' loop, which `send` sends the actions to.
-# NOTE: This actually works for passive envs! (But it forces the 'active' style).
-def env_generator_loop(env: gym.Env) -> Generator:
-    # This would be cool, but we'd need to somehow store the iterator somewhere.
-    obs = env.reset()
-    done = False
-    while not done:
-        action = yield obs, None
-        assert action is not None
-        obs, reward, done, info = env.step(action)
-        yield reward
-    
-    # What about the "final" reward in SL?
+        # NOTE: This calls the `action` and the `reward` hooks.
+        return super().send(action)

@@ -79,7 +79,9 @@ def test_measure_performance_wrapper():
     # TODO: Do we want to require Observations / Actions / Rewards objects?
     env = MeasureSLPerformanceWrapper(env, first_epoch_only=False)
     for epoch in range(3):
+        print(f"Start Epoch {epoch}")
         for i, (observations, rewards) in enumerate(env):
+            print(f"Step {i}")
             assert observations is not None
             assert rewards is None
             assert (observations.x == i).all()
