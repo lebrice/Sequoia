@@ -5,7 +5,7 @@ from typing import Any, Dict, Sequence, TypeVar
 import numpy as np
 
 from ..categorical import Categorical
-from ._namedtuple import NamedTuple
+from sequoia.utils.generic_functions._namedtuple import is_namedtuple
 
 T = TypeVar("T")
 
@@ -32,12 +32,9 @@ def no_op_detach(v: Any) -> Any:
 @detach.register(tuple)
 @detach.register(set)
 def _detach_sequence(x: Sequence[T]) -> Sequence[T]:
+    if is_namedtuple(x):
+        return type(x)(*[detach(v) for v in x])
     return type(x)(detach(v) for v in x)
-
-
-@detach.register(NamedTuple)
-def _detach_namedtuple(x: NamedTuple) -> NamedTuple:
-    return type(x)(*[detach(v) for v in x])
 
 
 @detach.register(Mapping)

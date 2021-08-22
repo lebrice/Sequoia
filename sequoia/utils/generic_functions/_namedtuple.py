@@ -23,21 +23,21 @@ def is_namedtuple_type(obj: Type) -> bool:
             hasattr(obj, '_fields')
     )
 
-
-def _instance_check_for_namedtuples(self: Type[Type[NamedTuple]], instance: Type[NamedTuple]):
-    # print(self, instance)
-    if self is NamedTuple:
-        return is_namedtuple(instance)
-    return super().__instancecheck__(instance)  # type: ignore
-
-
-def _subclass_check_for_namedtuples(self: Type[Type[NamedTuple]], subclass: Type[NamedTuple]):
-    # print(self, subclass)
-    if self is NamedTuple:
-        return is_namedtuple_type(subclass)
-    return super().__subclasscheck__(subclass)  # type: ignore
+## NOTE: Removing this, because it raises errors with some python versions.
+# def _instance_check_for_namedtuples(self: Type[Type[NamedTuple]], instance: Type[NamedTuple]):
+#     # print(self, instance)
+#     if self is NamedTuple:
+#         return is_namedtuple(instance)
+#     return super().__instancecheck__(instance)  # type: ignore
 
 
-type(NamedTuple).__instancecheck__ = _instance_check_for_namedtuples
-type(NamedTuple).__subclasscheck__ = _subclass_check_for_namedtuples
+# def _subclass_check_for_namedtuples(self: Type[Type[NamedTuple]], subclass: Type[NamedTuple]):
+#     # print(self, subclass)
+#     if self is NamedTuple:
+#         return is_namedtuple_type(subclass)
+#     return super().__subclasscheck__(subclass)  # type: ignore
+
+
+# type(NamedTuple).__instancecheck__ = _instance_check_for_namedtuples
+# type(NamedTuple).__subclasscheck__ = _subclass_check_for_namedtuples
 

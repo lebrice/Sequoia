@@ -223,7 +223,7 @@ ActionType = TypeVar("ActionType")
 RewardType = TypeVar("RewardType")
 
 
-class StepResult(NamedTuple, Generic[ObservationType, RewardType]):
+class StepResult(NamedTuple):
     observation: ObservationType
     reward: RewardType
     done: Union[bool, Sequence[bool]]
