@@ -238,6 +238,7 @@ class IncrementalRLSetting(IncrementalAssumption, DiscreteTaskAgnosticRLSetting)
             if self.test_max_steps in [defaults["test_max_steps"], None]:
                 if self.test_steps_per_task is None:
                     self.test_steps_per_task = 10_000
+                self.test_max_steps = self.test_steps_per_task * self.nb_tasks
 
             # TODO: Double-check that the train/val/test wrappers are added to each env.
             self.train_envs = [
