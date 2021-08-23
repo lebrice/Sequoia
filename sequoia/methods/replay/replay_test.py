@@ -12,12 +12,11 @@ from sequoia.methods.base_method import BaseMethod, BaseModel
 from sequoia.methods.base_method_test import TestBaseMethod as BaseMethodTests
 
 
-class TestExperienceReplay(BaseMethodTests):
+class TestReplay(BaseMethodTests):
     Method: ClassVar[Type[BaseMethod]] = Replay
 
-    @classmethod
-    @pytest.fixture
-    def method(cls, config: Config) -> Replay:
+    @pytest.fixture()
+    def method(self, config: Config) -> Replay:
         """ Fixture that returns the Method instance to use when testing/debugging.
         """
         return cls.Method()

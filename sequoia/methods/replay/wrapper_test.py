@@ -55,7 +55,8 @@ class TestReplayWrapper:
                 task_labels=TensorDiscrete(5),
                 dtype=Observations,
             ),
-            # TODO: The Settings don't yet have this kind of structured action/reward spaces.
+            # TODO: The Settings don't yet have this kind of structured action/reward
+            # spaces.
             action_space=TensorDiscrete(10),
             reward_space=TensorDiscrete(10),
             # action_space=TypedDictSpace(y_pred=TensorDiscrete(10), dtype=Actions,),
