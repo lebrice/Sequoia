@@ -109,10 +109,15 @@ class AddInfoToObservation(IterableWrapper):
             if self.is_vectorized:
                 info_space = batch_space(info_space, self.env.num_envs)
         self.info_space = info_space
-        self.observation = add_info(self.env.observation_space, self.info_space)
+        self.observation_space = add_info(self.env.observation_space, self.info_space)
 
-    def reset(self, **kwargs):
-        observation = self.env.reset()
+    def info(self, info):
+        info = {}
+        if self.is_vectorized:
+            info = np.array([{} for _ in range(self.env.num_envs)])
+
+    def reset(self):
+        observation = super().reset()
         info = {}
         if self.is_vectorized:
             info = np.array([{} for _ in range(self.env.num_envs)])
@@ -120,6 +125,6 @@ class AddInfoToObservation(IterableWrapper):
         return obs
 
     def step(self, action):
-        observation, reward, done, info = self.env.step(action)
+        observation, reward, done, info = super().step(action)
         observation = add_info(observation, info)
         return observation, reward, done, info
