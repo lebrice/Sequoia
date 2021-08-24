@@ -177,7 +177,7 @@ class GymDataLoader(
             collate_fn=None,
             **kwargs,
         )
-        Wrapper.__init__(self, env=self.env)
+        IterableWrapper.__init__(self, env=self.env)
         assert not isinstance(
             self.env, GymDataLoader
         ), "Something very wrong is happening."

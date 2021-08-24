@@ -222,20 +222,19 @@ class ContinualSLEnvironment(
 import pytorch_lightning.profiler.profilers
 from pytorch_lightning.profiler.profilers import BaseProfiler
 
-def profile_iterable(self: BaseProfiler, iterable, action_name: str) -> None:
-    iterator = iter(iterable)
-    while True:
-        try:
-            self.start(action_name)
-            value = next(iterator)
-            self.stop(action_name)
-            action = yield value
-            assert False, action
-        except StopIteration:
-            self.stop(action_name)
-            break
+# def profile_iterable(self: BaseProfiler, iterable, action_name: str) -> None:
+#     iterator = iter(iterable)
+#     while True:
+#         try:
+#             self.start(action_name)
+#             value = next(iterator)
+#             self.stop(action_name)
+#             action = yield value
+#         except StopIteration:
+#             self.stop(action_name)
+#             break
 
-BaseProfiler.profile_iterable = profile_iterable
+# BaseProfiler.profile_iterable = profile_iterable
     
     # TODO: Remove / fix this 'split batch function'. The problem is that we need to
     # tell the environment how to take the three items from continuum and convert them

@@ -176,6 +176,7 @@ class MeasureSLPerformanceWrapper(
                 )
             )
             self.env.unwrapped.pretend_to_be_active = False
+        self.env.unwrapped._reward_queue.clear()
 
         #     if self._generator is not None:
         #         self._generator.close()          
@@ -190,7 +191,7 @@ class MeasureSLPerformanceWrapper(
                 yield obs, None
             else:
                 yield obs, rew
-    
+
     def send(self, action: Actions):
         # NOTE: This calls the `action` and the `reward` hooks.
         return super().send(action)

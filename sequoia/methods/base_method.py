@@ -19,7 +19,7 @@ import gym
 import numpy as np
 import torch
 import wandb
-from pytorch_lightning import Callback, Trainer
+from pytorch_lightning import Callback
 from pytorch_lightning.callbacks.early_stopping import EarlyStopping
 from simple_parsing import mutable_field
 from wandb.wandb_run import Run
