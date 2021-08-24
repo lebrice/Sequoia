@@ -12,8 +12,9 @@ from sequoia.settings.sl.continual.objects import (
     Rewards,
     RewardType,
 )
-
+from sequoia.utils.logging_utils import get_logger
 from .buffer import Buffer
+logger = get_logger(__file__)
 
 
 class ReplayEnvWrapper(
@@ -97,8 +98,8 @@ class ReplayEnvWrapper(
         # NOTE: Since `reset` is the beginning of an epoch in SL, we disable collection
         # on the start of the second epoch.
         if self.collection_enabled and self._epochs == 1:
+            logger.info("Disabling replay collection since first epoch is done.")
             self.disable_collection()
-
         obs = super().reset()
         return obs
 

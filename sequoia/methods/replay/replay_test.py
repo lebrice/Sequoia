@@ -1,15 +1,14 @@
-from sequoia.settings.sl import ClassIncrementalSetting, TaskIncrementalSLSetting
-import pytest
-from .replay import Replay
-from sequoia.common.config import Config
-from sequoia.methods import Method
-from sequoia.methods.method_test import MethodTests
-from sequoia.conftest import slow
-from sequoia.settings.sl import SLSetting
 from typing import ClassVar, Type
 
-from sequoia.methods.base_method import BaseMethod, BaseModel
+import pytest
+from sequoia.common.config import Config
+from sequoia.conftest import slow
+from sequoia.methods.base_method import BaseMethod
 from sequoia.methods.base_method_test import TestBaseMethod as BaseMethodTests
+from sequoia.methods.method_test import MethodType, Setting
+from sequoia.settings.sl import ClassIncrementalSetting, SLSetting
+
+from .replay import Replay
 
 
 class TestReplay(BaseMethodTests):
@@ -17,9 +16,16 @@ class TestReplay(BaseMethodTests):
 
     @pytest.fixture()
     def method(self, config: Config) -> Replay:
-        """ Fixture that returns the Method instance to use when testing/debugging.
-        """
-        return cls.Method()
+        """Fixture that returns the Method instance to use when testing/debugging."""
+        config.num_workers = 0
+        return self.Method(config=config)
+
+    def test_debug(self, method: MethodType, setting: Setting, config: Config):
+        """Apply the Method onto a setting, and validate the results."""
+        setting.num_workers = 0
+        setting.drop_last = True
+        results: Setting.Results = setting.apply(method, config=config)
+        self.validate_results(setting=setting, method=method, results=results)
 
     def validate_results(
         self,
@@ -35,7 +41,8 @@ class TestReplay(BaseMethodTests):
     def test_class_incremental_mnist(self, config: Config):
         method = self.Method(buffer_capacity=200, max_epochs_per_task=1)
         setting = ClassIncrementalSetting(
-            dataset="mnist", monitor_training_performance=True,
+            dataset="mnist",
+            monitor_training_performance=True,
         )
         results = setting.apply(method, config=config)
         assert 0.90 <= results.average_online_performance.objective

@@ -5,32 +5,36 @@ from dataclasses import dataclass
 
 from sequoia.common.config import Config
 from sequoia.methods.trainer import TrainerConfig
-
+from simple_parsing.helpers.hparams import HyperParameters, uniform 
+from simple_parsing.helpers import mutable_field 
 from .wrapper import ReplayEnvWrapper
 
 
 @dataclass
-class HParams(BaseModel.HParams):
+class ReplayHParams(HyperParameters):
+    """ Hyper-parameters specific to the Replay method. """
     # Maximum size of the replay buffer.
-    replay_buffer_capacity: int = 1000
+    replay_buffer_capacity: int = uniform(100, 10_000, default=1000)
     # Number of replay samples to add to each batch.
-    replay_sample_size: int = 32
+    replay_sample_size: int = uniform(10, 128, default=32)
 
 
 @dataclass
 class Replay(BaseMethod, target_setting=SLSetting):
-    hparams: HParams = HParams()
+    replay_params: ReplayHParams = mutable_field(ReplayHParams)
 
     def __init__(
         self,
-        hparams: HParams = None,
+        hparams: BaseModel.HParams = None,
         config: Config = None,
         trainer_options: TrainerConfig = None,
+        replay_hparams: ReplayHParams = None,
         **kwargs
     ):
         super().__init__(
             hparams=hparams, config=config, trainer_options=trainer_options, **kwargs
         )
+        self.replay_hparams = replay_hparams or ReplayHParams()
         self.replay_wrapper: Optional[ReplayEnvWrapper] = None
 
     def configure(self, setting: SLSetting):
@@ -45,8 +49,8 @@ class Replay(BaseMethod, target_setting=SLSetting):
         if self.replay_wrapper is None:
             self.replay_wrapper = ReplayEnvWrapper(
                 train_env,
-                capacity=self.hparams.replay_buffer_capacity,
-                sample_size=self.hparams.replay_sample_size,
+                capacity=self.replay_hparams.replay_buffer_capacity,
+                sample_size=self.replay_hparams.replay_sample_size,
                 device=self.config.device,
             )
         else:

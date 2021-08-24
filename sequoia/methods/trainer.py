@@ -254,8 +254,10 @@ class PatchedDataConnector(DataConnector):
         )
         return profiled_dl
 
+
 import pytorch_lightning.trainer.connectors.data_connector
 from pytorch_lightning.trainer.connectors.data_connector import prefetch_iterator
+
 
 setattr(
     pytorch_lightning.trainer.connectors.data_connector,
