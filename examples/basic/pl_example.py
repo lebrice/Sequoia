@@ -18,7 +18,6 @@ from torch.optim import Adam
 from sequoia.common.config import Config
 from sequoia.common.spaces import Image
 from sequoia.methods import Method
-from sequoia.settings.assumptions.task_type import ClassificationActions
 from sequoia.settings.sl.continual import (
     Actions,
     ContinualSLSetting,
@@ -26,17 +25,29 @@ from sequoia.settings.sl.continual import (
     ObservationSpace,
     Rewards,
 )
+from typing import Union
+
+
+@dataclass(frozen=True)
+class ClassificationActions(ContinualSLSetting.Actions):
+    """Typed dict-like class that represents the 'forward pass'/output of a
+    classification head, which correspond to the 'actions' to be sent to the
+    environment, in the general formulation.
+    """
+
+    y_pred: Union[torch.LongTensor, Tensor]
+    logits: Tensor
 
 
 class Model(LightningModule):
-    """ Example Pytorch Lightning model used for continual image classification.
+    """Example Pytorch Lightning model used for continual image classification.
 
     Used by the `ExampleMethod` below.
     """
 
     @dataclass
     class HParams:
-        """ Hyper-parameters of our model.
+        """Hyper-parameters of our model.
 
         NOTE: dataclasses are totally optional. This is just much nicer than dicts or
         ugly namespaces.
@@ -66,7 +77,18 @@ class Model(LightningModule):
         # NOTE: Can't set the `hparams` attribute in PL, so use hp instead:
         self.hp = hparams
         self.save_hyperparameters({"hparams": asdict(hparams)})
+        if not isinstance(image_space, Image):
+            image_space = Image.wrap(image_space)
         in_channels: int = image_space.channels
+
+        if not isinstance(output_space, spaces.Discrete):
+            if isinstance(output_space, spaces.Dict):
+                output_space = output_space["y_pred"]
+            else:
+                raise NotImplementedError(
+                    f"This example model only works with action spaces that are Discrete or a Dict "
+                    f"with a single `y_pred` key. (got {output_space}) "
+                )
         num_classes: int = output_space.n
 
         # Imitates the SimpleConvNet from  sequoia.common.models.simple_convnet
@@ -104,7 +126,9 @@ class Model(LightningModule):
         self.loss = nn.CrossEntropyLoss()
         self.trainer: Trainer
 
-    def forward(self, observations: ContinualSLSetting.Observations) -> Tensor:
+    def forward(
+        self, observations: ContinualSLSetting.Observations
+    ) -> ContinualSLSetting.Actions:
         """Returns the logits for the given observation.
 
         Parameters
@@ -124,7 +148,9 @@ class Model(LightningModule):
         t: Optional[Tensor] = observations.task_labels
         h_x = self.features(x)
         logits = self.fc(h_x)
-        return logits
+        y_pred = logits.argmax(-1)
+        actions = ClassificationActions(y_pred=y_pred, logits=logits)
+        return actions
 
     def training_step(
         self, batch: Tuple[Observations, Optional[Rewards]], batch_idx: int
@@ -142,13 +168,15 @@ class Model(LightningModule):
         return self.shared_step(batch=batch, batch_idx=batch_idx, stage="test")
 
     def shared_step(
-        self, batch: Tuple[Observations, Optional[Rewards]], batch_idx: int, stage: str,
+        self,
+        batch: Tuple[Observations, Optional[Rewards]],
+        batch_idx: int,
+        stage: str,
     ) -> Tensor:
         observations, rewards = batch
 
-        logits = self(observations)
-        y_pred = logits.argmax(-1)
-        actions = ClassificationActions(y_pred=y_pred, logits=logits)
+        actions: ClassificationActions = self(observations)
+        y_pred = actions.y_pred
 
         if rewards is None:
             environment: ContinualSLSetting.Environment
@@ -158,15 +186,15 @@ class Model(LightningModule):
             #
             # When that is the case, we need to send the "action" (predictions) to the
             # environment using `send()` to get the rewards.
-            actions = y_pred
             # Get the current environment / dataloader from the Trainer.
             environment = self.trainer.request_dataloader(self, stage)
-            rewards = environment.send(actions)
-        y: Tensor = rewards.y
+            rewards: ContinualSLSetting.Rewards = environment.send(actions)
+        y: Tensor = rewards.y.to(y_pred.device)
 
         accuracy = (y_pred == y).int().sum() / len(y)
         self.log(f"{stage}/accuracy", accuracy, prog_bar=True)
 
+        logits = actions.logits
         loss = self.loss(logits, y)
         return loss
 
@@ -175,7 +203,7 @@ class Model(LightningModule):
 
 
 class ExampleMethod(Method, target_setting=ContinualSLSetting):
-    """ Example method for solving Continual SL Settings with PyTorch-Lightning
+    """Example method for solving Continual SL Settings with PyTorch-Lightning
 
     This ExampleMethod declares that it can be applied to any `Setting` that inherits
     from this `ContinualSLSetting`.
@@ -187,7 +215,7 @@ class ExampleMethod(Method, target_setting=ContinualSLSetting):
     to the usual methodology for that setting in the litterature.
 
     Importantly, settings do NOT describe **how** the method is to be trained, that is
-    entirely up to the Method! 
+    entirely up to the Method!
     """
 
     def __init__(self, hparams: Model.HParams = None):
@@ -199,7 +227,7 @@ class ExampleMethod(Method, target_setting=ContinualSLSetting):
         self.trainer: Trainer
 
     def configure(self, setting: ContinualSLSetting):
-        """ Called by the Setting so the method can configure itself before training.
+        """Called by the Setting so the method can configure itself before training.
 
         This could be used to, for example, create a model, since the observation space
         (which describes the types and shapes of the data) and the `nb_tasks` can be
@@ -227,10 +255,10 @@ class ExampleMethod(Method, target_setting=ContinualSLSetting):
         train_env: ContinualSLSetting.Environment,
         valid_env: ContinualSLSetting.Environment,
     ):
-        """ Called by the Setting to allow the method to train.
+        """Called by the Setting to allow the method to train.
 
         The passed environments inherit from `DataLoader` as well as from `gym.Env`.
-        They produce `Observations` (which have an `x` Tensor field, for instance), and 
+        They produce `Observations` (which have an `x` Tensor field, for instance), and
         return `Rewards` when they receive `Actions`.
         This interface is the same between RL and SL, making it easy to create methods
         that can adapt to both domains.
@@ -254,14 +282,15 @@ class ExampleMethod(Method, target_setting=ContinualSLSetting):
         """
         # NOTE: Currently have to 'reset' the Trainer for each call to `fit`.
         self.trainer = Trainer(
-            gpus=torch.cuda.device_count(), max_epochs=self.hparams.max_epochs_per_task,
+            gpus=torch.cuda.device_count(),
+            max_epochs=self.hparams.max_epochs_per_task,
         )
         self.trainer.fit(
             self.model, train_dataloader=train_env, val_dataloaders=valid_env
         )
 
     def test(self, test_env: ContinualSLSetting.Environment):
-        """ Called to let the Method handle the test loop by itself.
+        """Called to let the Method handle the test loop by itself.
 
         The `test_env` will only give back rewards (y) once an action (y_pred) is sent
         to it via its `send` method.
@@ -282,19 +311,18 @@ class ExampleMethod(Method, target_setting=ContinualSLSetting):
     def get_actions(
         self, observations: Observations, action_space: spaces.MultiDiscrete
     ):
-        """ Called by the Setting to query for individual predictions.
+        """Called by the Setting to query for individual predictions.
 
         You currently have to implement this, but if `test` is implemented, it will be
         used instead. Sorry if this isn't super clear.
         """
         self.model.eval()
         with torch.no_grad():
-            logits = self.model(observations.to(self.model.device))
-            y_pred = logits.argmax(-1)
-        return Actions(y_pred=y_pred)
+            actions = self.model(observations)
+        return actions
 
     def on_task_switch(self, task_id: Optional[int]) -> None:
-        """ Can be called by the Setting when a task boundary is reached.
+        """Can be called by the Setting when a task boundary is reached.
 
         This will be called if `setting.known_task_boundaries_at_[train/test]_time` is
         True, depending on if this is called during training or during testing.
@@ -310,8 +338,7 @@ class ExampleMethod(Method, target_setting=ContinualSLSetting):
 
 
 def main():
-    """ Runs the example: applies the method on a Continual Supervised Learning Setting.
-    """
+    """Runs the example: applies the method on a Continual Supervised Learning Setting."""
     # You could use any of the settings in SL, since this example methods targets the
     # most general Continual SL Setting in Sequoia: `ContinualSLSetting`:
     # from sequoia.settings.sl import ClassIncrementalSetting
