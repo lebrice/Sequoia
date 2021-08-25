@@ -192,13 +192,13 @@ class IterableWrapper(MayCloseEarly, IterableDataset, Generic[EnvType], ABC):
                 )
 
             def done_is_true(done: Union[bool, np.ndarray, Sequence[bool]]) -> bool:
-                return done if isinstance(done, bool) or not done.shape else all(done)
+                return bool(done) if isinstance(done, bool) or not done.shape else all(done)
 
             while not any([done_is_true(self.done_), self.is_closed()]):
-                logger.debug(
-                    f"step {self.n_steps_}/{self.max_steps}, "
-                    f"(episode {self.n_episodes_})"
-                )
+                # logger.debug(
+                #     f"step {self.n_steps_}/{self.max_steps}, "
+                #     f"(episode {self.n_episodes_})"
+                # )
 
                 # Set those to None to force the user to call .send()
                 self.action_ = None

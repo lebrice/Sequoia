@@ -185,20 +185,37 @@ from sequoia.common.gym_wrappers.utils import IterableWrapper, has_wrapper
 from sequoia.settings.rl.continual.environment import GymDataLoader
 from torch.utils.data import DataLoader
 
+import numpy as np
+from typing import Union, Sequence
 
-class ProfiledActiveEnvironment(IterableWrapper, DataLoader):
+
+def done_is_true(done: Union[bool, np.ndarray, Sequence[bool]]) -> bool:
+    return bool(done) if isinstance(done, bool) or not done.shape else all(done)
+
+class ProfiledActiveEnvironment(IterableWrapper):
+    def iterator(self):
+        obs = self.reset()
+        steps = 0
+        done = False
+        while not done:
+            action = yield steps, (obs, done_is_true(done))
+            steps += 1
+            if action is None:
+                action = self.action_
+                obs, rewards, done, info = self.step(action)
+            else:
+                assert action is not None, steps
+                obs, rewards, done, info = self.step(action)
+                yield rewards
+
+        yield steps, (obs, True)
+
     def __iter__(self):
-        for i, obs in enumerate(super().__iter__()):
-            # logger.debug(f"Step {i}, obs.done={obs.done}")
-            done = obs.done
-            if not isinstance(done, bool) or not done.shape:
-                # TODO: When we have batch size of 1, or more generally in RL, do we
-                # want one call to `trainer.fit` to last a given number of episodes ?
-                # TODO: Look into the `max_steps` argument to Trainer.
-                done = all(done)
-            # done = done or self.is_closed()
-            done = self.is_closed()
-            yield i, (obs, done)
+        self.__iterator = self.iterator()
+        return self.__iterator
+
+    def send(self, action):
+        return self.__iterator.send(action)
 
 
 from typing import TypeVar

@@ -502,14 +502,10 @@ class BaseMethod(Method, Serializable, Parseable, target_setting=Setting):
             A List of `Callaback` objects to use during training.
         """
         setting = setting or self.setting
-        # TODO: Move this to something like a `configure_callbacks` method in the model,
-        # once PL adds it.
-        # from sequoia.common.callbacks.vae_callback import SaveVaeSamplesCallback
-        return [
-            EarlyStopping(monitor="val/loss"),
-            # self.hparams.knn_callback,
-            # SaveVaeSamplesCallback(),
-        ]
+        callbacks: List[Callback] = []
+        if not self.config.debug:
+            callbacks.append(EarlyStopping(monitor="val/loss"))
+        return callbacks
 
     def apply_all(
         self, argv: Union[str, List[str]] = None
