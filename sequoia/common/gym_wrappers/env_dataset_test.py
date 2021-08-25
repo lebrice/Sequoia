@@ -227,13 +227,13 @@ class TestEnvDataset:
         print(f"Before send")
         reward = env.send(action)
 
-        # TODO: Perhaps going to drop this API, because if really complicates the
-        # wrappers.
-        print("Before __next__")
-        next_obs = next(env)
+        # # TODO: Perhaps going to drop this API, because if really complicates the
+        # # wrappers.
+        # print("Before __next__")
+        # next_obs = next(env)
 
-        assert next_obs.shape == env.observation_space.shape
-        assert next_obs in env.observation_space
+        # assert next_obs.shape == env.observation_space.shape
+        # assert next_obs in env.observation_space
 
         print(f"Before iterating")
         # TODO: This still doesn't call the right .observation() method!
@@ -285,10 +285,13 @@ class TestEnvDataset:
         action = env.action_space.sample()
         print(f"Before send")
         reward = env.send(action)
+        if getattr(env, "reward_space", None):
+            assert reward in env.reward_space
 
-        print("Before __next__")
-        next_obs = next(env).numpy()
-        assert next_obs in env.observation_space
+        # NOTE: Dropping support for `next(env)` for now, complicates things a lot.
+        # print("Before __next__")
+        # next_obs = next(env).numpy()
+        # assert next_obs in env.observation_space
 
         print(f"Before iterating")
         # TODO: This still doesn't call the right .observation() method!

@@ -17,7 +17,7 @@ ActionType = TypeVar("ActionType")
 RewardType = TypeVar("RewardType")
 
 
-class IterableWrapper(MayCloseEarly, IterableDataset, Generic[EnvType], ABC):
+class _IterableWrapper(MayCloseEarly, IterableDataset, Generic[EnvType], ABC):
     """ABC for a gym Wrapper that supports iterating over the environment.
 
     This allows us to wrap dataloader-based Environments and still use the gym
@@ -204,21 +204,23 @@ class IterableWrapper(MayCloseEarly, IterableDataset, Generic[EnvType], ABC):
                 self.action_ = None
                 self.reward_ = None
                 yield self.observation_
+                self._episode_steps += 1
 
                 if self.action_ is None:
                     raise RuntimeError(
                         f"You have to send an action using send() between every "
-                        f"observation. (env = {self})"
+                        f"observation. (env = {self},  episode_steps={self._episode_steps})"
                     )
 
 
-class SimplerIterableWrapper(MayCloseEarly, IterableDataset, Generic[EnvType], ABC):
+class IterableWrapper(MayCloseEarly, IterableDataset, Generic[EnvType], ABC):
     """ WIP: Simpler version of IterableWrapper. """
     def __init__(self, env: gym.Env, call_hooks: bool = False):
         super().__init__(env=env)
         self.call_hooks = call_hooks
         from sequoia.settings.sl import PassiveEnvironment
         self.wrapping_passive_env = isinstance(self.unwrapped, PassiveEnvironment)
+        self._iterator: Optional[Iterator] = None
 
     @property
     def is_vectorized(self) -> bool:
@@ -299,13 +301,21 @@ class SimplerIterableWrapper(MayCloseEarly, IterableDataset, Generic[EnvType], A
             self._iterator = self.rl_iterator()
         return self._iterator
 
+    # def __next__(self):
+    #     if self._iterator is not None:
+    #         return next(self._iterator)
+    #     return self.env.__next__()
+
     def send(self, action: ActionType) -> RewardType:
-        if self.call_hooks:
-            action = self.action(action)
-        # if self._iterator is not None:
-        #     rewards = self._iterator.send(action)
+        # if self.call_hooks:
+        #     action = self.action(action)
+        if self._iterator is not None:
+            return self._iterator.send(action)
+        action = self.action(action)
+        reward = self.env.send(action)
+        return self.reward(reward)
         # else:
-        rewards = self.env.send(action)
-        if self.call_hooks:
-            rewards = self.reward(rewards)
-        return rewards
+        # rewards = self.env.send(action)
+        # if self.call_hooks:
+        #     rewards = self.reward(rewards)
+        # return rewards

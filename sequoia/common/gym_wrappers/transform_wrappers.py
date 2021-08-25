@@ -20,6 +20,7 @@ class TransformObservation(TransformObservation_, IterableWrapper):
         if isinstance(f, list) and not callable(f):
             f = Compose(f)
         super().__init__(env, f=f)
+        self.call_hooks = True
         self.f: Transform
         # try:
         self.observation_space = self(self.env.observation_space)
@@ -46,10 +47,11 @@ class TransformObservation(TransformObservation_, IterableWrapper):
 
 
 class TransformReward(TransformReward_, IterableWrapper):
-    def __init__(self, env: gym.Env, f: Union[Callable, Compose]):
+    def __init__(self, env: gym.Env, f: Callable):
         if isinstance(f, list) and not callable(f):
             f = Compose(f)
         super().__init__(env, f=f)
+        self.call_hooks = True
         self.f: Compose
         # Modify the reward space, if it exists.
         if hasattr(self.env, "reward_space"):
@@ -76,6 +78,7 @@ class TransformAction(IterableWrapper):
         if isinstance(f, list) and not callable(f):
             f = Compose(f)
         super().__init__(env)
+        self.call_hooks = True
         self.f: Compose = f
         # Modify the action space by applying the transform onto it.
         self.action_space = self.env.action_space
