@@ -1,56 +1,40 @@
-from collections import defaultdict
-import inspect
-import json
 import operator
 import sys
 import warnings
-from contextlib import redirect_stdout
 from dataclasses import dataclass, fields
-from functools import partial, wraps
-from io import StringIO
+from functools import partial
 from itertools import islice
-from pathlib import Path
-from typing import Any, Callable, ClassVar, Dict, List, Optional, Type, Union
+from typing import Callable, ClassVar, Dict, List, Optional, Type, Union
 
 import gym
 import numpy as np
 from gym import spaces
 from gym.utils import colorize
+from simple_parsing import list_field
+from simple_parsing.helpers import choice
+from typing_extensions import Final
+
 from sequoia.common.gym_wrappers import MultiTaskEnvironment, TransformObservation
-from sequoia.common.gym_wrappers.utils import EnvType, is_monsterkong_env
+from sequoia.common.gym_wrappers.utils import is_monsterkong_env
 from sequoia.common.metrics import EpisodeMetrics
 from sequoia.common.spaces import Sparse
 from sequoia.common.transforms import Transforms
-from sequoia.settings.assumptions.incremental import (
-    IncrementalAssumption,
-    TaskResults,
-    TaskSequenceResults,
-)
-from sequoia.settings.base import Method, Results
+from sequoia.settings.assumptions.incremental import IncrementalAssumption, TaskResults
+from sequoia.settings.base import Method
 from sequoia.settings.rl.continual import ContinualRLSetting
 from sequoia.settings.rl.envs import (
-    ATARI_PY_INSTALLED,
     METAWORLD_INSTALLED,
-    MONSTERKONG_INSTALLED,
     MTENV_INSTALLED,
-    MUJOCO_INSTALLED,
-    MetaMonsterKongEnv,
     MetaWorldEnv,
     MTEnv,
-    MujocoEnv,
     metaworld_envs,
     mtenv_envs,
 )
 from sequoia.settings.rl.wrappers.task_labels import FixedTaskLabelWrapper
-from sequoia.utils import constant, deprecated_property, dict_union, pairwise
+from sequoia.utils import constant, dict_union, pairwise
 from sequoia.utils.logging_utils import get_logger
-from simple_parsing import field, list_field
-from simple_parsing.helpers import choice
-from typing_extensions import Final
-
 from ..discrete.setting import DiscreteTaskAgnosticRLSetting
 from ..discrete.setting import supported_envs as _parent_supported_envs
-from .objects import Actions, ActionType, Observations, ObservationType, Rewards, RewardType
 from .results import IncrementalRLResults
 from .tasks import EnvSpec, IncrementalTask, is_supported, make_incremental_task, sequoia_registry
 
@@ -88,9 +72,7 @@ class IncrementalRLSetting(IncrementalAssumption, DiscreteTaskAgnosticRLSetting)
     Rewards: ClassVar[Type[Rewards]] = Rewards
 
     # The function used to create the tasks for the chosen env.
-    _task_sampling_function: ClassVar[
-        Callable[..., IncrementalTask]
-    ] = make_incremental_task
+    _task_sampling_function: ClassVar[Callable[..., IncrementalTask]] = make_incremental_task
     Results: ClassVar[Type[Results]] = IncrementalRLResults
 
     # Class variable that holds the dict of available environments.
@@ -147,15 +129,14 @@ class IncrementalRLSetting(IncrementalAssumption, DiscreteTaskAgnosticRLSetting)
                 ContinualWalker2dV2Env,
                 ContinualWalker2dV3Env,
             )
-            
-            from gym.envs.mujoco.hopper_v3 import HopperEnv
+
             env_classes: Dict[str, Dict[str, Type[gym.Env]]] = {
                 "HalfCheetah": {"v2": ContinualHalfCheetahV2Env, "v3": ContinualHalfCheetahV3Env},
                 "Hopper": {"v2": ContinualHopperV2Env, "v3": ContinualHopperV3Env},
                 "Walker2d": {"v2": ContinualWalker2dV2Env, "v3": ContinualWalker2dV3Env},
             }
             env_class = env_classes[env_name][version]
-            
+
             # TODO: Hard-setting the number of tasks to 20 for now, but there's no reason we
             # couldn't set a different number.
             if self.nb_tasks is None:
@@ -163,7 +144,7 @@ class IncrementalRLSetting(IncrementalAssumption, DiscreteTaskAgnosticRLSetting)
             else:
                 assert False, self.nb_tasks
             self.nb_tasks = 20
-            
+
             # NOTE: All envs in LPG-FTW use max_episode_steps of 1000.
             self.max_episode_steps = 1000
             task_creation_seed = task_creation_seeds[env_name]
@@ -176,7 +157,7 @@ class IncrementalRLSetting(IncrementalAssumption, DiscreteTaskAgnosticRLSetting)
 
             if modification_type == "gravity":
                 # This is a function that will be called for each task, and must produce a set of
-                # (distinct, reproducible) keyword arguments for the given task. 
+                # (distinct, reproducible) keyword arguments for the given task.
                 original_gravity = -9.81
 
                 def get_task_kwargs() -> Dict:
@@ -185,8 +166,8 @@ class IncrementalRLSetting(IncrementalAssumption, DiscreteTaskAgnosticRLSetting)
             elif modification_type == "bodysize":
                 bodies_to_change_for_env: Dict[str, List[str]] = {
                     "HalfCheetah": ["torso", "fthigh", "fshin", "ffoot"],
-                    "Hopper": ['torso_geom','thigh_geom','leg_geom','foot_geom'],
-                    "Walker2d": ['torso_geom','thigh_geom','leg_geom','foot_geom'],
+                    "Hopper": ["torso_geom", "thigh_geom", "leg_geom", "foot_geom"],
+                    "Walker2d": ["torso_geom", "thigh_geom", "leg_geom", "foot_geom"],
                 }
 
                 body_names = bodies_to_change_for_env[env_name]
@@ -201,9 +182,9 @@ class IncrementalRLSetting(IncrementalAssumption, DiscreteTaskAgnosticRLSetting)
             train_seed = 123
             val_seed = 456
             test_seed = 789
-            
+
             from gym.wrappers import TimeLimit
-            
+
             for task_id in range(self.nb_tasks):
                 task_kwargs = get_task_kwargs()
                 logger.info(f"Arguments for task {task_id}: {task_kwargs}")
@@ -232,16 +213,12 @@ class IncrementalRLSetting(IncrementalAssumption, DiscreteTaskAgnosticRLSetting)
                 f"Creating metaworld benchmark {benchmark_class}, this might take a "
                 f"while (~15 seconds)."
             )
-            self._benchmark = benchmark_class(
-                seed=self.config.seed if self.config else None
-            )
+            self._benchmark = benchmark_class(seed=self.config.seed if self.config else None)
 
             envs: Dict[str, Type[MetaWorldEnv]] = self._benchmark.train_classes
             env_tasks: Dict[str, List[Task]] = {
                 env_name: [
-                    task
-                    for task in self._benchmark.train_tasks
-                    if task.env_name == env_name
+                    task for task in self._benchmark.train_tasks if task.env_name == env_name
                 ]
                 for env_name, env_class in self._benchmark.train_classes.items()
             }
@@ -257,9 +234,7 @@ class IncrementalRLSetting(IncrementalAssumption, DiscreteTaskAgnosticRLSetting)
                 n_train_tasks = len(env_tasks) - n_val_tasks - n_test_tasks
                 if n_train_tasks <= 1:
                     # Can't create train, val and test tasks.
-                    raise RuntimeError(
-                        f"There aren't enough tasks for env {env_name} ({n_tasks}) "
-                    )
+                    raise RuntimeError(f"There aren't enough tasks for env {env_name} ({n_tasks}) ")
                 tasks_iterator = iter(env_tasks)
                 train_env_tasks[env_name] = list(islice(tasks_iterator, n_train_tasks))
                 val_env_tasks[env_name] = list(islice(tasks_iterator, n_val_tasks))
@@ -287,8 +262,7 @@ class IncrementalRLSetting(IncrementalAssumption, DiscreteTaskAgnosticRLSetting)
                     f"peg-unplug-side-v{version}",
                 ]
                 if (
-                    self.train_steps_per_task
-                    not in [defaults["train_steps_per_task"], None]
+                    self.train_steps_per_task not in [defaults["train_steps_per_task"], None]
                     and self.train_steps_per_task > max_train_steps_per_task
                 ):
                     raise RuntimeError(
@@ -406,8 +380,7 @@ class IncrementalRLSetting(IncrementalAssumption, DiscreteTaskAgnosticRLSetting)
                 or any(self.test_task_schedule.values())
             ):
                 raise RuntimeError(
-                    "Can't use a non-empty task schedule when passing the "
-                    "train/valid/test envs."
+                    "Can't use a non-empty task schedule when passing the " "train/valid/test envs."
                 )
 
             self.train_dataset: Union[str, Callable[[], gym.Env]] = self.train_envs[0]
@@ -435,9 +408,7 @@ class IncrementalRLSetting(IncrementalAssumption, DiscreteTaskAgnosticRLSetting)
         # TODO: If the dataset has a `max_path_length` attribute, then it's probably
         # a Mujoco / metaworld / etc env, and so we set a limit on the episode length to
         # avoid getting an error.
-        max_path_length: Optional[int] = getattr(
-            self._temp_train_env, "max_path_length", None
-        )
+        max_path_length: Optional[int] = getattr(self._temp_train_env, "max_path_length", None)
         if self.max_episode_steps is None and max_path_length is not None:
             assert max_path_length > 0
             self.max_episode_steps = max_path_length
@@ -469,29 +440,25 @@ class IncrementalRLSetting(IncrementalAssumption, DiscreteTaskAgnosticRLSetting)
 
     @property
     def train_task_lengths(self) -> List[int]:
-        """ Gives the length of each training task (in steps for now). """
+        """Gives the length of each training task (in steps for now)."""
         return [
             task_b_step - task_a_step
-            for task_a_step, task_b_step in pairwise(
-                sorted(self.train_task_schedule.keys())
-            )
+            for task_a_step, task_b_step in pairwise(sorted(self.train_task_schedule.keys()))
         ]
 
     @property
     def train_phase_lengths(self) -> List[int]:
-        """ Gives the length of each training 'phase', i.e. the maximum number of (steps
+        """Gives the length of each training 'phase', i.e. the maximum number of (steps
         for now) that can be taken in the training environment, in a single call to .fit
         """
         return [
             task_b_step - task_a_step
-            for task_a_step, task_b_step in pairwise(
-                sorted(self.train_task_schedule.keys())
-            )
+            for task_a_step, task_b_step in pairwise(sorted(self.train_task_schedule.keys()))
         ]
 
     @property
     def current_train_task_length(self) -> int:
-        """ Deprecated field, gives back the max number of steps per task. """
+        """Deprecated field, gives back the max number of steps per task."""
         if self.stationary_context:
             return sum(self.train_task_lengths)
         return self.train_task_lengths[self.current_task_id]
@@ -567,13 +534,13 @@ class IncrementalRLSetting(IncrementalAssumption, DiscreteTaskAgnosticRLSetting)
                     for env in envs
                 ]
 
-
             if self.stationary_context:
                 from sequoia.settings.rl.discrete.multienv_wrappers import (
                     ConcatEnvsWrapper,
                     RandomMultiEnvWrapper,
-                    RoundRobinWrapper
+                    RoundRobinWrapper,
                 )
+
                 self.train_envs = instantiate_all_envs_if_needed(self.train_envs)
                 self.val_envs = instantiate_all_envs_if_needed(self.val_envs)
                 self.test_envs = instantiate_all_envs_if_needed(self.test_envs)
@@ -618,14 +585,17 @@ class IncrementalRLSetting(IncrementalAssumption, DiscreteTaskAgnosticRLSetting)
             # Check that the observation/action spaces are all the same for all
             # the train/valid/test envs
             self._check_all_envs_have_same_spaces(
-                envs_or_env_functions=self.train_envs, wrappers=self.train_wrappers,
+                envs_or_env_functions=self.train_envs,
+                wrappers=self.train_wrappers,
             )
             # TODO: Inconsistent naming between `val_envs` and `valid_wrappers` etc.
             self._check_all_envs_have_same_spaces(
-                envs_or_env_functions=self.val_envs, wrappers=self.val_wrappers,
+                envs_or_env_functions=self.val_envs,
+                wrappers=self.val_wrappers,
             )
             self._check_all_envs_have_same_spaces(
-                envs_or_env_functions=self.test_envs, wrappers=self.test_wrappers,
+                envs_or_env_functions=self.test_envs,
+                wrappers=self.test_wrappers,
             )
         else:
             # TODO: Should we populate the `self.train_envs`, `self.val_envs` and
@@ -642,13 +612,9 @@ class IncrementalRLSetting(IncrementalAssumption, DiscreteTaskAgnosticRLSetting)
             # assert False, self.train_task_schedule
             pass
 
-    def test_dataloader(
-        self, batch_size: Optional[int] = None, num_workers: Optional[int] = None
-    ):
+    def test_dataloader(self, batch_size: Optional[int] = None, num_workers: Optional[int] = None):
         if not self._using_custom_envs_foreach_task:
-            return super().test_dataloader(
-                batch_size=batch_size, num_workers=num_workers
-            )
+            return super().test_dataloader(batch_size=batch_size, num_workers=num_workers)
 
         # IDEA: Pretty hacky, but might be cleaner than adding fields for the moment.
         test_max_steps = self.test_max_steps
@@ -658,9 +624,7 @@ class IncrementalRLSetting(IncrementalAssumption, DiscreteTaskAgnosticRLSetting)
             self.test_max_episodes = test_max_episodes // self.nb_tasks
         # self.test_env = self.TestEnvironment(self.test_envs[self.current_task_id])
 
-        task_test_env = super().test_dataloader(
-            batch_size=batch_size, num_workers=num_workers
-        )
+        task_test_env = super().test_dataloader(batch_size=batch_size, num_workers=num_workers)
 
         self.test_max_steps = test_max_steps
         self.test_max_episodes = test_max_episodes
@@ -738,7 +702,7 @@ class IncrementalRLSetting(IncrementalAssumption, DiscreteTaskAgnosticRLSetting)
         wrappers: List[Callable[[gym.Env], gym.Env]] = None,
         **base_env_kwargs: Dict,
     ) -> gym.Env:
-        """ Helper function to create a single (non-vectorized) environment.
+        """Helper function to create a single (non-vectorized) environment.
 
         This is also used to create the env whenever `self.dataset` is a string that
         isn't registered in gym. This happens for example when using an environment from
@@ -784,11 +748,16 @@ class IncrementalRLSetting(IncrementalAssumption, DiscreteTaskAgnosticRLSetting)
                     )
 
         return ContinualRLSetting._make_env(
-            base_env=base_env, wrappers=wrappers, **base_env_kwargs,
+            base_env=base_env,
+            wrappers=wrappers,
+            **base_env_kwargs,
         )
 
     def create_task_schedule(
-        self, temp_env: gym.Env, change_steps: List[int], seed: int = None,
+        self,
+        temp_env: gym.Env,
+        change_steps: List[int],
+        seed: int = None,
     ) -> Dict[int, Dict]:
         task_schedule: Dict[int, Dict] = {}
         if self._using_custom_envs_foreach_task:
@@ -813,7 +782,10 @@ class IncrementalRLSetting(IncrementalAssumption, DiscreteTaskAgnosticRLSetting)
             # at train vs test time, allow the test task schedule to have different
             # ordering than train / valid.
             task = type(self)._task_sampling_function(
-                temp_env, step=step, change_steps=change_steps, seed=seed,
+                temp_env,
+                step=step,
+                change_steps=change_steps,
+                seed=seed,
             )
             task_schedule[step] = task
 
@@ -931,7 +903,7 @@ class IncrementalRLSetting(IncrementalAssumption, DiscreteTaskAgnosticRLSetting)
         envs_or_env_functions: List[Union[str, gym.Env, Callable[[], gym.Env]]],
         wrappers: List[Callable[[gym.Env], gym.Wrapper]],
     ) -> None:
-        """ Checks that all the environments in the list have the same
+        """Checks that all the environments in the list have the same
         observation/action spaces.
         """
         first_env = self._make_env(
@@ -952,8 +924,10 @@ class IncrementalRLSetting(IncrementalAssumption, DiscreteTaskAgnosticRLSetting)
                     RuntimeWarning(
                         colorize(
                             f"Env at task {task_id} doesn't have the same observation "
-                            f"space ({task_env.observation_space}) as the environment of "
-                            f"the first task: {first_env.observation_space}. "
+                            f"space as the environment of the first task: \n"
+                            f"{task_env.observation_space} \n"
+                            f"!=\n"
+                            f"{first_env.observation_space} \n"
                             f"This isn't fully supported yet. Don't expect this to work.",
                             "yellow",
                         )
@@ -1054,9 +1028,7 @@ class MTEnvAdapterWrapper(TransformObservation):
     #     return observation["env_obs"]
 
 
-def make_metaworld_env(
-    env_class: Type[MetaWorldEnv], tasks: List["Task"]
-) -> MetaWorldEnv:
+def make_metaworld_env(env_class: Type[MetaWorldEnv], tasks: List["Task"]) -> MetaWorldEnv:
     env = env_class()
     env.set_task(tasks[0])
     # TODO: Could maybe replace this with the 'RoundRobin' or 'Random' wrapper from
