@@ -1,12 +1,12 @@
+from collections import defaultdict
 import inspect
 import json
 import operator
-import warnings
 import sys
-
+import warnings
 from contextlib import redirect_stdout
 from dataclasses import dataclass, fields
-from functools import partial
+from functools import partial, wraps
 from io import StringIO
 from itertools import islice
 from pathlib import Path
@@ -16,12 +16,8 @@ import gym
 import numpy as np
 from gym import spaces
 from gym.utils import colorize
-from simple_parsing import field, list_field
-from simple_parsing.helpers import choice
-from typing_extensions import Final
-
 from sequoia.common.gym_wrappers import MultiTaskEnvironment, TransformObservation
-from sequoia.common.gym_wrappers.utils import is_monsterkong_env
+from sequoia.common.gym_wrappers.utils import EnvType, is_monsterkong_env
 from sequoia.common.metrics import EpisodeMetrics
 from sequoia.common.spaces import Sparse
 from sequoia.common.transforms import Transforms
@@ -48,25 +44,15 @@ from sequoia.settings.rl.envs import (
 from sequoia.settings.rl.wrappers.task_labels import FixedTaskLabelWrapper
 from sequoia.utils import constant, deprecated_property, dict_union, pairwise
 from sequoia.utils.logging_utils import get_logger
+from simple_parsing import field, list_field
+from simple_parsing.helpers import choice
+from typing_extensions import Final
 
 from ..discrete.setting import DiscreteTaskAgnosticRLSetting
 from ..discrete.setting import supported_envs as _parent_supported_envs
-from .objects import (
-    Actions,
-    ActionType,
-    Observations,
-    ObservationType,
-    Rewards,
-    RewardType,
-)
+from .objects import Actions, ActionType, Observations, ObservationType, Rewards, RewardType
 from .results import IncrementalRLResults
-from .tasks import (
-    EnvSpec,
-    IncrementalTask,
-    is_supported,
-    make_incremental_task,
-    sequoia_registry,
-)
+from .tasks import EnvSpec, IncrementalTask, is_supported, make_incremental_task, sequoia_registry
 
 logger = get_logger(__file__)
 
@@ -91,7 +77,7 @@ available_datasets: Dict[str, str] = {env_id: env_id for env_id in supported_env
 
 @dataclass
 class IncrementalRLSetting(IncrementalAssumption, DiscreteTaskAgnosticRLSetting):
-    """ Continual RL setting in which:
+    """Continual RL setting in which:
     - Changes in the environment's context occur suddenly (same as in Discrete, Task-Agnostic RL)
     - Task boundary information (and task labels) are given at training time
     - Task boundary information is given at test time, but task identity is not.
@@ -135,6 +121,102 @@ class IncrementalRLSetting(IncrementalAssumption, DiscreteTaskAgnosticRLSetting)
 
     def __post_init__(self):
         defaults = {f.name: f.default for f in fields(self)}
+        if isinstance(self.dataset, str) and self.dataset.startswith("LPG-FTW"):
+            # IDEA: "LPG-FTW-{bodypart|gravity}-{HalfCheetah|Hopper|Walker2d}-{v2|v3}",
+            # TODO: Instead of doing what I'm doing here, we could instead add an argument that gets
+            # passed to the task creation function, for instance to get only a bodysize task, or
+            # only a gravity task, etc.
+
+            name_parts = self.dataset.split("-")
+            if len(name_parts) != 5:
+                raise ValueError(
+                    "Expected the name to follow this format: \n"
+                    "\t 'LPG-FTW-{bodypart|gravity}-{HalfCheetah|Hopper|Walker2d}-{v2|v3}' \n"
+                    f"but got {self.dataset}"
+                )
+            _, _, modification_type, env_name, version = name_parts
+
+            # 500 for halfcheetah, 600 for hopper, 700 for walker
+            task_creation_seeds = {"HalfCheetah": 500, "Hopper": 600, "Walker2d": 700}
+
+            from sequoia.settings.rl.envs.mujoco import (
+                ContinualHalfCheetahV2Env,
+                ContinualHalfCheetahV3Env,
+                ContinualHopperV2Env,
+                ContinualHopperV3Env,
+                ContinualWalker2dV2Env,
+                ContinualWalker2dV3Env,
+            )
+            
+            from gym.envs.mujoco.hopper_v3 import HopperEnv
+            env_classes: Dict[str, Dict[str, Type[gym.Env]]] = {
+                "HalfCheetah": {"v2": ContinualHalfCheetahV2Env, "v3": ContinualHalfCheetahV3Env},
+                "Hopper": {"v2": ContinualHopperV2Env, "v3": ContinualHopperV3Env},
+                "Walker2d": {"v2": ContinualWalker2dV2Env, "v3": ContinualWalker2dV3Env},
+            }
+            env_class = env_classes[env_name][version]
+            
+            # TODO: Hard-setting the number of tasks to 20 for now, but there's no reason we
+            # couldn't set a different number.
+            if self.nb_tasks is None:
+                self.nb_tasks = 20
+            else:
+                assert False, self.nb_tasks
+            self.nb_tasks = 20
+            
+            # NOTE: All envs in LPG-FTW use max_episode_steps of 1000.
+            self.max_episode_steps = 1000
+            task_creation_seed = task_creation_seeds[env_name]
+            # np.random.seed(task_creation_seed)
+            rng = np.random.default_rng(task_creation_seed)
+
+            # Function to be used to create the kwargs that will be passed to the constructors of
+            # the envs for each task.
+            get_task_kwargs: Callable[[], Dict]
+
+            if modification_type == "gravity":
+                # This is a function that will be called for each task, and must produce a set of
+                # (distinct, reproducible) keyword arguments for the given task. 
+                original_gravity = -9.81
+
+                def get_task_kwargs() -> Dict:
+                    {"gravity": (rng.random() + 0.5) * original_gravity}
+
+            elif modification_type == "bodysize":
+                bodies_to_change_for_env: Dict[str, List[str]] = {
+                    "HalfCheetah": ["torso", "fthigh", "fshin", "ffoot"],
+                    "Hopper": ['torso_geom','thigh_geom','leg_geom','foot_geom'],
+                    "Walker2d": ['torso_geom','thigh_geom','leg_geom','foot_geom'],
+                }
+
+                body_names = bodies_to_change_for_env[env_name]
+
+                def get_task_kwargs() -> Dict:
+                    # between 0.5 and 1.5, with 4 digits of precision.
+                    size_factors = (rng.random(len(body_names)) + 0.5).round(4)
+                    body_name_to_size_scale = dict(zip(body_names, size_factors))
+                    return {"body_name_to_size_scale": body_name_to_size_scale}
+
+            # FIXME: Seeding for the train/val/test envs.
+            train_seed = 123
+            val_seed = 456
+            test_seed = 789
+            
+            from gym.wrappers import TimeLimit
+            
+            for task_id in range(self.nb_tasks):
+                task_kwargs = get_task_kwargs()
+                logger.info(f"Arguments for task {task_id}: {task_kwargs}")
+                # Function that will create the env with the given task.
+                base_env_fn = partial(env_class, **task_kwargs)
+                wrappers = [partial(TimeLimit, max_episode_steps=self.max_episode_steps)]
+                # Now, for training, validation, and testing, we use different seeds:
+                train_env_fn = partial(create_env, base_env_fn, wrappers=wrappers, seed=train_seed)
+                val_env_fn = partial(create_env, base_env_fn, wrappers=wrappers, seed=val_seed)
+                test_env_fn = partial(create_env, base_env_fn, wrappers=wrappers, seed=test_seed)
+                self.train_envs.append(train_env_fn)
+                self.val_envs.append(val_env_fn)
+                self.test_envs.append(test_env_fn)
 
         if self.dataset in ["MT10", "MT50", "CW10", "CW20"]:
             from metaworld import MT10, MT50, MetaWorldEnv, Task
@@ -982,11 +1064,29 @@ def make_metaworld_env(
     # share the env instance
     env = MultiTaskEnvironment(
         env,
-        task_schedule={
-            i: operator.methodcaller("set_task", task) for i, task in enumerate(tasks)
-        },
+        task_schedule={i: operator.methodcaller("set_task", task) for i, task in enumerate(tasks)},
         new_random_task_on_reset=True,
         add_task_dict_to_info=False,
         add_task_id_to_obs=False,
     )
+    return env
+
+
+def create_env(
+    env_class: Union[Type[gym.Env], Callable[[], gym.Env]],
+    kwargs: Dict = None,
+    wrappers: List[Callable[[gym.Env], gym.Env]] = None,
+    seed: int = None,
+) -> gym.Env:
+    """
+    1. Create an env instance by calling `env_fn`;
+    2. Wrap it with the wrappers in `wrappers`, if any;
+    3. seed it with `seed` if it is not None.
+    """
+    env = env_class(**(kwargs or {}))
+    wrappers = wrappers or []
+    for wrapper in wrappers:
+        env = wrapper(env)
+    if seed is not None:
+        env.seed(seed)
     return env
