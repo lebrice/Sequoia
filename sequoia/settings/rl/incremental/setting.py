@@ -30,11 +30,14 @@ from sequoia.settings.rl.envs import (
     metaworld_envs,
     mtenv_envs,
 )
+
+from sequoia.settings.base import Results
 from sequoia.settings.rl.wrappers.task_labels import FixedTaskLabelWrapper
 from sequoia.utils import constant, dict_union, pairwise
 from sequoia.utils.logging_utils import get_logger
 from ..discrete.setting import DiscreteTaskAgnosticRLSetting
 from ..discrete.setting import supported_envs as _parent_supported_envs
+from .objects import Actions, ActionType, Observations, ObservationType, Rewards, RewardType
 from .results import IncrementalRLResults
 from .tasks import EnvSpec, IncrementalTask, is_supported, make_incremental_task, sequoia_registry
 
