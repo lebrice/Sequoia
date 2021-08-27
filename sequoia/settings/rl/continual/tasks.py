@@ -131,11 +131,11 @@ def task_sampling_function(
     the new function.
     3. Adds a 'is_supported' function on that function (see NOTE below);
     4. Adds all the registered handlers from the `based_on` function, if passed;
-    
+
     NOTE (@lebrice): not sure about this is_supported being created and set on the
     function itself. It would probably be cleaner to create a class like TaskCreator or
     something that has the same methods as the underlying singledispatch callable.
-    
+
     NOTE: A task sampling function should give back the same task when given the same
     seed, step and change_steps.
     """

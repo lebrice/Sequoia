@@ -41,6 +41,7 @@ logger = get_logger(__file__)
 # HalfCheetahEnv = HalfCheetahV3Env
 # Walker2dEnv = Walker2dV3Env
 ContinualHalfCheetahEnv = ContinualHalfCheetahV3Env
+ContinualHopperEnv = ContinualHopperV3Env
 ContinualWalker2dEnv = ContinualWalker2dV3Env
 
 SOURCE_DIR = Path(os.path.dirname(os.path.abspath(__file__)))
