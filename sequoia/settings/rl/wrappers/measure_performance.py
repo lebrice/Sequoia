@@ -179,4 +179,3 @@ class MeasureRLPerformanceWrapper(
             wandb.log(log_dict)
 
         return metric
-

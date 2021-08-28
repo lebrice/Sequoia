@@ -10,6 +10,7 @@ import gym
 import numpy as np
 from gym import spaces
 from gym.utils import colorize
+from sequoia.common.spaces.typed_dict import TypedDictSpace
 from simple_parsing import list_field
 from simple_parsing.helpers import choice
 from typing_extensions import Final
@@ -528,14 +529,34 @@ class IncrementalRLSetting(IncrementalAssumption, DiscreteTaskAgnosticRLSetting)
             def instantiate_all_envs_if_needed(
                 envs: List[Union[Callable[[], gym.Env], gym.Env]]
             ) -> List[gym.Env]:
-                return [
-                    env
-                    if isinstance(env, gym.Env)
-                    else gym.make(env)
-                    if isinstance(env, str)
-                    else env()
-                    for env in envs
-                ]
+                live_envs: List[gym.Env] = []
+                for i, env in enumerate(envs):
+                    live_env: gym.Env
+                    if isinstance(env, gym.Env):
+                        live_env = env
+                        live_envs.append(env)
+                    elif isinstance(env, str):
+                        logger.info(f"Instantiating environment for task {i}, stage {stage}")
+                        live_env = gym.make(env)
+                        live_envs.append(live_env)
+                    elif callable(env):
+                        live_env = env()
+                        live_envs.append(live_env)
+                    else:
+                        raise ValueError(
+                            f"Expect the envs to be either gym.Env instances, strings, or "
+                            f"callables that produce gym.Env instances, but received {env} instead."
+                        )
+
+                return live_envs
+                # return [
+                #     env
+                #     if isinstance(env, gym.Env)
+                #     else gym.make(env)
+                #     if isinstance(env, str)
+                #     else env()
+                #     for env in envs
+                # ]
 
             if self.stationary_context:
                 from sequoia.settings.rl.discrete.multienv_wrappers import (
@@ -588,17 +609,14 @@ class IncrementalRLSetting(IncrementalAssumption, DiscreteTaskAgnosticRLSetting)
             # Check that the observation/action spaces are all the same for all
             # the train/valid/test envs
             self._check_all_envs_have_same_spaces(
-                envs_or_env_functions=self.train_envs,
-                wrappers=self.train_wrappers,
+                envs_or_env_functions=self.train_envs, wrappers=self.train_wrappers,
             )
             # TODO: Inconsistent naming between `val_envs` and `valid_wrappers` etc.
             self._check_all_envs_have_same_spaces(
-                envs_or_env_functions=self.val_envs,
-                wrappers=self.val_wrappers,
+                envs_or_env_functions=self.val_envs, wrappers=self.val_wrappers,
             )
             self._check_all_envs_have_same_spaces(
-                envs_or_env_functions=self.test_envs,
-                wrappers=self.test_wrappers,
+                envs_or_env_functions=self.test_envs, wrappers=self.test_wrappers,
             )
         else:
             # TODO: Should we populate the `self.train_envs`, `self.val_envs` and
@@ -751,16 +769,11 @@ class IncrementalRLSetting(IncrementalAssumption, DiscreteTaskAgnosticRLSetting)
                     )
 
         return ContinualRLSetting._make_env(
-            base_env=base_env,
-            wrappers=wrappers,
-            **base_env_kwargs,
+            base_env=base_env, wrappers=wrappers, **base_env_kwargs,
         )
 
     def create_task_schedule(
-        self,
-        temp_env: gym.Env,
-        change_steps: List[int],
-        seed: int = None,
+        self, temp_env: gym.Env, change_steps: List[int], seed: int = None,
     ) -> Dict[int, Dict]:
         task_schedule: Dict[int, Dict] = {}
         if self._using_custom_envs_foreach_task:
@@ -785,10 +798,7 @@ class IncrementalRLSetting(IncrementalAssumption, DiscreteTaskAgnosticRLSetting)
             # at train vs test time, allow the test task schedule to have different
             # ordering than train / valid.
             task = type(self)._task_sampling_function(
-                temp_env,
-                step=step,
-                change_steps=change_steps,
-                seed=seed,
+                temp_env, step=step, change_steps=change_steps, seed=seed,
             )
             task_schedule[step] = task
 
@@ -909,44 +919,67 @@ class IncrementalRLSetting(IncrementalAssumption, DiscreteTaskAgnosticRLSetting)
         """Checks that all the environments in the list have the same
         observation/action spaces.
         """
+
         first_env = self._make_env(
             base_env=envs_or_env_functions[0], wrappers=wrappers, **self.base_env_kwargs
         )
-        first_env.close()
+        if not isinstance(envs_or_env_functions[0], gym.Env):
+            first_env.close()
+
         for task_id, task_env_id_or_function in zip(
             range(1, len(envs_or_env_functions)), envs_or_env_functions[1:]
         ):
             task_env = self._make_env(
-                base_env=task_env_id_or_function,
-                wrappers=wrappers,
-                **self.base_env_kwargs,
+                base_env=task_env_id_or_function, wrappers=wrappers, **self.base_env_kwargs,
             )
-            task_env.close()
-            if task_env.observation_space != first_env.observation_space:
+            if not isinstance(task_env_id_or_function, gym.Env):
+                task_env.close()
+
+            def warn_spaces_are_different(
+                task_id: int, kind: str, first_env: gym.Env, task_env: gym.Env
+            ) -> None:
+                task_space = (
+                    task_env.observation_space if kind == "observation" else task_env.action_space
+                )
+                first_space = (
+                    first_env.observation_space if kind == "observation" else first_env.action_space
+                )
                 warnings.warn(
                     RuntimeWarning(
                         colorize(
-                            f"Env at task {task_id} doesn't have the same observation "
+                            f"Env at task {task_id} doesn't have the same {kind} "
                             f"space as the environment of the first task: \n"
-                            f"{task_env.observation_space} \n"
+                            f"{task_space} \n"
                             f"!=\n"
-                            f"{first_env.observation_space} \n"
+                            f"{first_space} \n"
                             f"This isn't fully supported yet. Don't expect this to work.",
                             "yellow",
                         )
                     )
                 )
-            if task_env.action_space != first_env.action_space:
-                warnings.warn(
-                    RuntimeWarning(
-                        colorize(
-                            f"Env at task {task_id} doesn't have the same action "
-                            f"space ({task_env.action_space}) as the environment of "
-                            f"the first task: {first_env.action_space}",
-                            "yellow",
+
+            if task_env.observation_space != first_env.observation_space:
+                if (
+                    isinstance(task_env.observation_space, spaces.Box)
+                    and isinstance(first_env.observation_space, spaces.Box)
+                    and task_env.observation_space.shape == first_env.observation_space.shape
+                ) or (
+                    isinstance(task_env.observation_space, TypedDictSpace)
+                    and isinstance(first_env.observation_space, TypedDictSpace)
+                    and "x" in task_env.observation_space.spaces and "x" in first_env.observation_space.spaces
+                    and task_env.observation_space.x.shape == first_env.observation_space.x.shape
+                ):
+                    warnings.warn(
+                        RuntimeWarning(
+                            f"The shape of the observation space is the same, but the bounds are "
+                            f"different between the first env and the env of task {task_id}!"
                         )
                     )
-                )
+                else:
+                    warn_spaces_are_different(task_id, "observation", first_env, task_env)
+
+            if task_env.action_space != first_env.action_space:
+                warn_spaces_are_different(task_id, "action", first_env, task_env)
 
     def _make_wrappers(
         self,

@@ -354,6 +354,8 @@ class TestEnvironment(gym.wrappers.Monitor, IterableWrapper[EnvType], ABC):
         **kwargs,
     ):
         super().__init__(env, directory, *args, **kwargs)
+        # TODO: Need to stop re-creating the Monitor wrappers when we already have the list of envs
+        # for each task!
         logger.info(f"Creating test env (Monitor) with log directory {self.directory}")
         self.step_limit = step_limit
         self.no_rewards = no_rewards
