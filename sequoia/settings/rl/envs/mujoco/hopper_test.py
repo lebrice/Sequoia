@@ -1,7 +1,7 @@
 from sequoia.conftest import mujoco_required
 pytestmark = mujoco_required
 
-from .hopper import HopperEnv, ContinualHopperEnv
+from .hopper import HopperEnv, ContinualHopperV2Env, ContinualHopperV3Env
 from .modified_gravity_test import ModifiedGravityEnvTests
 from .modified_size_test import ModifiedSizeEnvTests
 from .modified_mass_test import ModifiedMassEnvTests
@@ -15,10 +15,17 @@ from sequoia.conftest import mujoco_required
 
 
 @mujoco_required
-class TestContinualHopperEnv(
+class TestContinualHopperV2Env(
     ModifiedGravityEnvTests, ModifiedSizeEnvTests, ModifiedMassEnvTests
 ):
-    Environment: ClassVar[Type[ContinualHopperEnv]] = ContinualHopperEnv
+    Environment: ClassVar[Type[ContinualHopperV2Env]] = ContinualHopperV2Env
+
+
+@mujoco_required
+class TestContinualHopperV3Env(
+    ModifiedGravityEnvTests, ModifiedSizeEnvTests, ModifiedMassEnvTests
+):
+    Environment: ClassVar[Type[ContinualHopperV3Env]] = ContinualHopperV3Env
 
 
 import pytest

@@ -8,6 +8,7 @@ NOTE: This is based on https://github.com/Breakend/gym-extensions
 import os
 from pathlib import Path
 from typing import Callable, Union
+from typing import Dict, List, Type
 
 import gym
 from gym.envs import register
@@ -23,7 +24,7 @@ from .half_cheetah import (
     HalfCheetahV2Env,
     HalfCheetahV3Env,
 )
-from .hopper import ContinualHopperEnv, HopperEnv
+from .hopper import ContinualHopperV2Env, ContinualHopperV3Env, HopperV2Env, HopperV3Env
 from .modified_gravity import ModifiedGravityEnv
 from .modified_size import ModifiedSizeEnv
 from .walker2d import (
@@ -40,6 +41,7 @@ logger = get_logger(__file__)
 # HalfCheetahEnv = HalfCheetahV3Env
 # Walker2dEnv = Walker2dV3Env
 ContinualHalfCheetahEnv = ContinualHalfCheetahV3Env
+ContinualHopperEnv = ContinualHopperV3Env
 ContinualWalker2dEnv = ContinualWalker2dV3Env
 
 SOURCE_DIR = Path(os.path.dirname(os.path.abspath(__file__)))
@@ -48,7 +50,8 @@ __all__ = [
     "ContinualHalfCheetahEnv",
     "ContinualHalfCheetahV2Env",
     "ContinualHalfCheetahV3Env",
-    "ContinualHopperEnv",
+    "ContinualHopperV2Env",
+    "ContinualHopperV3Env",
     "ContinualWalker2dEnv",
     "ContinualWalker2dV2Env",
     "ContinualWalker2dV3Env",
@@ -56,8 +59,6 @@ __all__ = [
     "ModifiedSizeEnv",
     "MujocoEnv",
 ]
-
-from typing import Dict, List, Type
 
 
 def get_entry_point(Env: Type[gym.Env]) -> str:
@@ -73,7 +74,8 @@ def get_entry_point(Env: Type[gym.Env]) -> str:
 CURRENTLY_SUPPORTED_MUJOCO_ENVS: Dict[str, Type[MujocoEnv]] = {
     "HalfCheetah-v2": ContinualHalfCheetahV2Env,
     "HalfCheetah-v3": ContinualHalfCheetahV3Env,
-    "Hopper-v2": ContinualHopperEnv,
+    "Hopper-v2": ContinualHopperV2Env,
+    "Hopper-v3": ContinualHopperV3Env,
     "Walker2d-v2": ContinualWalker2dV2Env,
     "Walker2d-v3": ContinualWalker2dV3Env,
 }
