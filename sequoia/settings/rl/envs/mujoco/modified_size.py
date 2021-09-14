@@ -24,7 +24,7 @@ def change_size_in_xml(
         # print(body_name)
         # print("Old size: ", geom.attrib["size"])
         sizes: List[float] = [float(s) for s in geom.attrib["size"].split(" ")]
-        new_sizes = [size * scale for size, scale in zip(sizes, [1.0, size_scale])]
+        new_sizes = [size * size_scale for size in sizes]
         geom.attrib["size"] = " ".join(map(str, new_sizes))
         # print("New size: ", geom.attrib['size'])
     return tree
