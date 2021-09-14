@@ -31,25 +31,63 @@ The goal of this repo is to:
 ## Installation
 Requires python >= 3.7
 
-1. Clone the repo:
 
+### Basic installation:
+
+```console
+$ git clone https://www.github.com/lebrice/Sequoia.git
+$ pip install -e Sequoia
+```
+
+### Optional Addons
+You can also install optional "addons" for Sequoia, each of which either adds new Methods, new environments/datasets, or both.
+using either the usual `extras_require` feature of setuptools, or by pip-installing other repositories which register Methods for Sequoia using an `entry_point` in their `setup.py` file.
+
+
+```console
+pip install -e Sequoia[<all>|<plugin name>]
+```
+
+### Supervised Learning Plugins
+
+- `avalanche`:
+  
+  Continual Supervised Learning methods, provided by the [Avalanche](https://github.com/ContinualAI/avalanche) library:
+  
     ```console
-    $ git clone https://www.github.com/lebrice/Sequoia.git
+    $ pip install -e Sequoia[avalanche]`
+    ```
+
+- `CN-DPM`: Continual Neural Dirichlet Process Mixture model:
+    ```console
     $ cd Sequoia
+    $ git submodule init  # to setup the submodules
+    $ pip install -e sequoia/methods/cn_dpm    
     ```
 
-2. Optional: Create the conda environment (only once):
 
-    ```console
-    $ conda env create -f environment.yaml
-    $ conda activate sequoia
-    ```
+- `orion`:
+  
+  Hyper-parameter optimization using [Orion](https://github.com/epistimio/orion)
+  > `pip install -e Sequoia[orion]`
 
-3. Install the dependencies:
+- `metaworld`:
+  
+  Continual / Multi-Task Reinforcement Learning environments, thanks to the [metaworld](https://github.com/rlworkgroup/metaworld) package. The usual setup for mujoco needs to be done, Sequoia unfortunately can't do it for you ;(
+  >`pip install -e Sequoia[metaworld]`
 
-    ```console
-    $ pip install -e .
-    ```
+- `monsterkong`:
+  
+  Continual Reinforcement Learning environment from [the Meta-MonsterKong repo](https://github.com/lebrice/MetaMonsterkong).
+  > `pip install -e Sequoia[monsterkong]`
+
+
+- `continual_world`: The Continual World benchmark for Continual Reinforcement learning.
+
+### Plugins:
+
+Plugins, similarly to `optional_extras` 'addons' add new Methods to Sequoia through the `entry_points` feature of setuptools.
+
 
 ### Additional Installation Steps for Mac
 
