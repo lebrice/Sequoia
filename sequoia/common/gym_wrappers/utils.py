@@ -171,12 +171,12 @@ def is_atari_env(env: Union[str, gym.Env]) -> bool:
             return False
 
     try:
-        from gym.envs.atari import AtariEnv
-
+        from gym.envs import atari
+        AtariEnv = atari.AtariEnv
         if inspect.isclass(env) and issubclass(env, AtariEnv):
             return True
         return isinstance(env, gym.Env) and isinstance(env.unwrapped, AtariEnv)
-    except gym.error.DependencyNotInstalled:
+    except (ImportError, gym.error.DependencyNotInstalled):
         return False
     return False
 

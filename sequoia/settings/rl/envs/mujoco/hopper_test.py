@@ -1,11 +1,21 @@
 from sequoia.conftest import mujoco_required
-pytestmark = mujoco_required
 
-from .hopper import HopperEnv, ContinualHopperV2Env, ContinualHopperV3Env
+pytestmark = mujoco_required
+import itertools
+
+from .hopper import ContinualHopperV2Env, ContinualHopperV3Env
 from .modified_gravity_test import ModifiedGravityEnvTests
 from .modified_size_test import ModifiedSizeEnvTests
 from .modified_mass_test import ModifiedMassEnvTests
 from typing import ClassVar, Type
+
+import pytest
+import os
+import inspect
+from gym.envs.mujoco import MujocoEnv
+from xml.etree.ElementTree import ElementTree, Element, parse, fromstring, tostring
+from pathlib import Path
+
 
 from sequoia.conftest import mujoco_required
 
@@ -15,26 +25,13 @@ from sequoia.conftest import mujoco_required
 
 
 @mujoco_required
-class TestContinualHopperV2Env(
-    ModifiedGravityEnvTests, ModifiedSizeEnvTests, ModifiedMassEnvTests
-):
+class TestContinualHopperV2Env(ModifiedGravityEnvTests, ModifiedSizeEnvTests, ModifiedMassEnvTests):
     Environment: ClassVar[Type[ContinualHopperV2Env]] = ContinualHopperV2Env
 
 
 @mujoco_required
-class TestContinualHopperV3Env(
-    ModifiedGravityEnvTests, ModifiedSizeEnvTests, ModifiedMassEnvTests
-):
+class TestContinualHopperV3Env(ModifiedGravityEnvTests, ModifiedSizeEnvTests, ModifiedMassEnvTests):
     Environment: ClassVar[Type[ContinualHopperV3Env]] = ContinualHopperV3Env
-
-
-import pytest
-import os
-import inspect
-from gym.envs.mujoco import MujocoEnv
-from xml.etree.ElementTree import ElementTree, Element, parse, fromstring, tostring
-from .hopper import update_torso
-from pathlib import Path
 
 
 def load_tree(model_path: Path) -> ElementTree:
@@ -80,7 +77,7 @@ default_hopper_body_xml = f"""\
 
 
 def elements_equal(e1, e2) -> bool:
-    """ Taken from https://stackoverflow.com/a/24349916/6388696 """
+    """Taken from https://stackoverflow.com/a/24349916/6388696"""
     assert e1.tag == e2.tag
     assert e1.text == e2.text
     assert e1.tail == e2.tail
@@ -89,14 +86,15 @@ def elements_equal(e1, e2) -> bool:
     assert all(elements_equal(c1, c2) for c1, c2 in zip(e1, e2))
 
 
-import itertools
-
-
 @pytest.mark.xfail(reason="Dropping this for now, XML is really annoying.")
 @pytest.mark.parametrize(
     "input_xml_str, scale_factor, output_xml_str",
     [
-        (default_hopper_body_xml, 1.0, default_hopper_body_xml,),
+        (
+            default_hopper_body_xml,
+            1.0,
+            default_hopper_body_xml,
+        ),
         (
             default_hopper_body_xml,
             2.0,

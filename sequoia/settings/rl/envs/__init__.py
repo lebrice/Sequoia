@@ -23,12 +23,11 @@ register_classic_control_variants(sequoia_registry)
 
 ATARI_PY_INSTALLED = False
 try:
-    # from .atari import *
-    from gym.envs.atari import AtariEnv
+    from gym.envs import atari
+    AtariEnv = atari.AtariEnv
 
     ATARI_PY_INSTALLED = True
-except gym.error.DependencyNotInstalled:
-
+except (gym.error.DependencyNotInstalled, ImportError):
     class AtariEnv(gym.Env):
         pass
 
@@ -150,8 +149,9 @@ try:
         json.dump(all_metaworld_envs, f)
 
     metaworld_envs = sum([list(envs) for envs in all_metaworld_envs.values()], [])
-except (ImportError, AttributeError, gym.error.DependencyNotInstalled):
-    pass
+except (ImportError, AttributeError, gym.error.DependencyNotInstalled) as e:
+    logger.debug(f"Unable to import metaworld: {e}")
+    # raise e
 
 
 if not METAWORLD_INSTALLED:

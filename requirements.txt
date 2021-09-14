@@ -5,7 +5,8 @@ nngeometry @ git+https://github.com/oleksost/nngeometry.git#egg=nngeometry
 # Temporary fix for issue#128
 pyyaml!=5.4.*,>=5.1
 simple_parsing>=0.0.16.post2
-matplotlib==3.2.2
+# matplotlib==3.2.2
+matplotlib
 # NOTE: @lebrice: PyTorch suddenly got really picky about type annotations in 1.9.0 for
 # some reason, and they really don't do a great job at evaluating them, so removing it
 # for now.
