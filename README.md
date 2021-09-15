@@ -45,10 +45,10 @@ using either the usual `extras_require` feature of setuptools, or by pip-install
 
 
 ```console
-pip install -e Sequoia[<all>|<plugin name>]
+pip install -e Sequoia[all|<plugin name>]
 ```
 
-### Supervised Learning Plugins
+Here are some of the optional addons:
 
 - `avalanche`:
   
@@ -88,7 +88,7 @@ pip install -e Sequoia[<all>|<plugin name>]
     ```
 
 
-- `continual_world`: The Continual World benchmark for Continual Reinforcement learning.
+- `continual_world`: The Continual World benchmark for Continual Reinforcement learning. Adds 6 different Continual RL Methods to Sequoia.
     ```console
     $ cd Sequoia
     $ git submodule init  # to setup the submodules
