@@ -143,10 +143,14 @@ class IncrementalRLSetting(IncrementalAssumption, DiscreteTaskAgnosticRLSetting)
 
             # TODO: Hard-setting the number of tasks to 20 for now, but there's no reason we
             # couldn't set a different number.
-            if self.nb_tasks is None:
+            if self.nb_tasks in {None, defaults["nb_tasks"]}:
                 self.nb_tasks = 20
             else:
-                assert False, self.nb_tasks
+                warnings.warn(
+                    UserWarning(
+                        f"Ignoring passed number of tasks {self.nb_tasks} for now."
+                    )
+                )
             self.nb_tasks = 20
 
             # NOTE: All envs in LPG-FTW use max_episode_steps of 1000.
@@ -181,6 +185,8 @@ class IncrementalRLSetting(IncrementalAssumption, DiscreteTaskAgnosticRLSetting)
                     size_factors = (rng.random(len(body_names)) + 0.5).round(4)
                     body_name_to_size_scale = dict(zip(body_names, size_factors))
                     return {"body_name_to_size_scale": body_name_to_size_scale}
+            else:
+                raise NotImplementedError(modification_type)
 
             # FIXME: Seeding for the train/val/test envs.
             train_seed = 123

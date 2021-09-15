@@ -7,3 +7,6 @@
 [submodule "examples/clcomp21/Real_DEEL"]
 	path = examples/clcomp21/Real_DEEL
 	url = https://github.com/mostafaelaraby/Real-DEEL-Dark-Experience.git
+[submodule "sequoia/methods/continual_world"]
+	path = sequoia/methods/continual_world
+	url = https://www.github.com/lebrice/continual_world.git

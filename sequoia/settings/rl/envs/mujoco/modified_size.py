@@ -80,6 +80,7 @@ class ModifiedSizeEnv(MujocoEnv):
 
         if body_name_to_size_scale:
             print(f"Default XML path: {full_path}")
+            print(f"Changing parts: {body_name_to_size_scale}")
             # NOTE: For now this still modifies `tree` in-place.
             tree = change_size_in_xml(tree, **body_name_to_size_scale)
             # create new xml
@@ -87,6 +88,6 @@ class ModifiedSizeEnv(MujocoEnv):
             tree.write(new_xml_path)
             print(f"Generated XML path: {new_xml_path}")
             full_path = new_xml_path
-
+        self.body_name_to_size_scale = body_name_to_size_scale
         # load the modified xml
         super().__init__(model_path=full_path, frame_skip=frame_skip, **kwargs)
