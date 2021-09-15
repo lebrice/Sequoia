@@ -133,7 +133,7 @@ sudo chown root /tmp/.X11-unix/
 | [Task-Incremental SL](sequoia/settings/sl/task_incremental/setting.py)     | SL                                                                       | **yes**                | **yes**                | **yes**                       | **yes**                  | no                  | no                 |
 | [Traditional SL](sequoia/settings/sl/traditional/setting.py)               | SL                                                                       | **yes**                | **yes**                | **yes**                       | no                       | **yes**             | no                 |
 | [Multi-Task SL](sequoia/settings/sl/multi_task/setting.py)                 | SL                                                                       | **yes**                | **yes**                | **yes**                       | **yes**                  | **yes**             | no                 |
-| <!--                                                                       | [Class-Incremental SL](sequoia/settings/sl/class_incremental/setting.py) | SL                     | **yes**                | **yes**                       | no                       | no                  | no                 | --> |
+<!--|                                                                        | [Class-Incremental SL](sequoia/settings/sl/class_incremental/setting.py) | SL                     | **yes**                | **yes**                       | no                       | no                  | no                 |  |-->
 
 #### Notes
 
