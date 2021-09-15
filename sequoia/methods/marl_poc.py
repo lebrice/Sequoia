@@ -14,8 +14,15 @@ from sequoia.settings.base import Method
 from sequoia.settings.base.setting import Setting as MARLSetting
 from stable_baselines3.sac.sac import SAC
 
+try:
+    from typing import Literal
+except ImportError:
+    from typing_extensions import Literal
 
-def make_pistonball_env(vector_env_type: str = "stable_baselines3") -> VectorEnv:
+
+def make_pistonball_env(
+    vector_env_type: Literal["gym", "stable_baselines3", "stable_baselines"] = "stable_baselines3"
+) -> VectorEnv:
     env = pistonball_v4.parallel_env(
         n_pistons=20,
         local_ratio=0,
@@ -78,9 +85,9 @@ from sequoia.settings.rl import TaskIncrementalRLSetting
 
 
 def main():
-    env = make_pistonball_env() #gym.make("Sequoia_PistonBall-v4")
-    val_env = make_pistonball_env() #gym.make("Sequoia_PistonBall-v4")
-    test_env = make_pistonball_env() #gym.make("Sequoia_PistonBall-v4")
+    env = make_pistonball_env()  # gym.make("Sequoia_PistonBall-v4")
+    val_env = make_pistonball_env()  # gym.make("Sequoia_PistonBall-v4")
+    test_env = make_pistonball_env()  # gym.make("Sequoia_PistonBall-v4")
 
     setting = TaskIncrementalRLSetting(train_envs=[env], val_envs=[val_env], test_envs=[test_env])
 
