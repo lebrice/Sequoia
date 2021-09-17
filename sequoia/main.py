@@ -1,11 +1,12 @@
-""" Sequoia - The Research Tree 
+"""Sequoia - The Research Tree 
 
 Used to run experiments, which consist in applying a Method to a Setting.
 """
+from dataclasses import dataclass
+import sequoia
 from sequoia.settings.base import Setting, Method
 from simple_parsing import ArgumentParser
 
-# from sequoia.experiment import Experiment
 from sequoia.common.config import Config
 from sequoia.methods import get_all_methods
 from sequoia.settings import all_settings
@@ -13,48 +14,240 @@ from sequoia.utils import get_logger
 from sequoia.experiments import Experiment
 from sequoia.settings.base import Results
 from argparse import Namespace
-from typing import Tuple
+from typing import Tuple, Union, Type
 from simple_parsing.help_formatter import SimpleHelpFormatter
+import textwrap
+import argparse
+from pathlib import Path
+from typing import Optional
+from simple_parsing.helpers import choice
 
-
+# TODO: Fix all the `get_logger` to use __name__ instead of __file__.
 logger = get_logger(__file__)
 
 
-def extract_args(args: Namespace) -> Tuple[Setting, Method, Config]:
-    setting: Setting = args.setting
-    method: Method = args.method
-    config: Config = args.config
-    return setting, method, config
+def main():
+    """ Adds all command-line arguments, parses the args, and runs the selected action.
+    """
+    parser = ArgumentParser(
+        prog="sequoia", description=__doc__, add_dest_to_option_strings=False
+    )
+    parser.add_argument(
+        "--version",
+        action="version",
+        version=sequoia.__version__,
+        help="Displays the installed version of Sequoia and exits. (help)",
+    )
+
+    command_subparsers = parser.add_subparsers(
+        title="command",
+        dest="command",
+        description="Command to execute",
+        parser_class=ArgumentParser,
+        required=False,
+    )
+
+    add_run_command(command_subparsers)
+    add_sweep_command(command_subparsers)
+    add_info_command(command_subparsers)
+
+    args = parser.parse_args()
+
+    command: str = getattr(args, "command", None)
+    if command is None:
+        return parser.print_help()
+    elif command == "run":
+        method_type: Type[Method] = args.method
+        method: Method = method_type.from_argparse_args(args.method, dest="method")
+        return run(setting=args.setting, method=method, config=args.config)
+    elif command == "sweep":
+        method_type: Type[Method] = args.method
+        method: Method = method_type.from_argparse_args(args.method, dest="method")
+        return sweep(setting=args.setting, method=method, config=args.config)
+    elif command == "info":
+        return info(component=args.component)
 
 
-def run(args: Namespace) -> None:
-    setting, method, config = extract_args(args)
-    print("Run!")
-    print(f"Setting: {setting}")
-    print(f"Method: {method}")
-    print(f"Config: {config}")
+def add_run_command(command_subparsers: argparse._SubParsersAction) -> None:
+    run_parser = command_subparsers.add_parser(
+        "run",
+        description="Run an experiment on a given setting.",
+        help="Run an experiment on a given setting.",
+        add_dest_to_option_strings=False,
+        formatter_class=SimpleHelpFormatter,
+    )
+    run_parser.add_arguments(Config, dest="config")
+    add_args_for_settings_and_methods(run_parser)
 
 
-def sweep(args: Namespace) -> None:
-    setting, method, config = extract_args(args)
+def run(setting: Setting, method: Method, config: Config) -> Results:
+    """ Performs a single run, applying a method to a setting, and returns the results."""
+    logger.debug("Setting:")
+    logger.debug(setting.dumps_yaml())
+    logger.debug("Config:")
+    logger.debug(config.dumps_yaml())
+    logger.debug(f"Method: {method}")
+    results = setting.apply(method, config=config)
+    logger.debug("Results:")
+    logger.debug(results.summary())
+    return results
+
+
+@dataclass
+class SweepConfig(Config):
+    """ Configuration options for a HPO sweep. """
+
+    # Path indicating where the pickle database will be loaded or be created.
+    database_path: Path = Path("orion_db.pkl")
+    # manual, unique identifier for this experiment. This should only really be used
+    # when launching multiple different experiments that involve the same method and
+    # the same exact setting configurations, but where some other aspect of the
+    # experiment is changed.
+    experiment_id: Optional[str] = None
+
+    # Maximum number of runs to perform.
+    max_runs: Optional[int] = 10
+
+    # Which hyper-parameter optimization algorithm to use.
+    hpo_algorithm: str = choice(
+        {"random": "random", "bayesian": "BayesianOptimizer",}, default="bayesian"
+    )  # TODO: BayesianOptimizer does not support num > 1
+
+
+def sweep(setting: Setting, method: Method, config: SweepConfig) -> Setting.Results:
+    """ Performs a Hyper-Parameter Optimization sweep, consisting in running the method
+    on the given setting, each run having a different set of hyper-parameters.
+    """
     print("Sweep!")
-    print(f"Setting: {setting}")
-    print(f"Method: {method}")
-    print(f"Config: {config}")
+    logger.debug("Setting:")
+    logger.debug(setting.dumps_yaml())
+    logger.debug("Config:")
+    logger.debug(config.dumps_yaml())
+    logger.debug(f"Method: {method}")
 
-def get_help(setting_or_method: Setting) -> str:
-    return setting_or_method.__doc__ + " " + "(help)"
+    # TODO: IDEA: It could actually be really cool if we created a list of
+    # Experiment objects here, and just call their 'launch' methods in parallel,
+    # rather than do the sweep logic in the Method class!
+    # TODO: Need to add these arguments again to the parser?
+    best_params, best_objective = method.hparam_sweep(
+        setting,
+        database_path=config.database_path,
+        experiment_id=config.experiment_id,
+        max_runs=config.max_runs,
+        hpo_algorithm=config.hpo_algorithm,
+    )
+    logger.info(
+        "Best params:\n"
+        + "\n".join(f"\t{key}: {value}" for key, value in best_params.items())
+    )
+    logger.info(f"Best objective: {best_objective}")
+    return (best_params, best_objective)
 
-def get_description(setting_or_method: Setting) -> str:
-    return setting_or_method.__doc__ + " " + "(description)"
 
-def help_action(args: Namespace):
-    logger.debug("Registered Settings: \n" + "\n".join(
-        f"- {setting.get_name()}: {setting} ({setting.get_path_to_source_file()})" for setting in all_settings
-    ))
-    logger.debug("Registered Methods: \n" + "\n".join(
-        f"- {method.get_full_name()}: {method} ({method.get_path_to_source_file()})" for method in get_all_methods()
-    ))
+def add_sweep_command(command_subparsers: argparse._SubParsersAction) -> None:
+    sweep_parser = command_subparsers.add_parser(
+        "sweep",
+        description="Run a hyper-parameter optimization sweep.",
+        help="Run a hyper-parameter optimization sweep.",
+        add_dest_to_option_strings=False,
+    )
+    sweep_parser.set_defaults(action=sweep)
+    sweep_parser.add_arguments(SweepConfig, dest="config")
+    add_args_for_settings_and_methods(sweep_parser)
+
+
+def add_info_command(command_subparsers: argparse._SubParsersAction) -> None:
+    """ Add commands to display some information about the settings or methods. """
+    info_parser = command_subparsers.add_parser(
+        "info",
+        # NOTE: Not 100% sure what the difference is between help and description.
+        description="Displays some information about a Setting or Method. (help)",
+        help="Displays some information about a Setting or Method. (description)",
+        add_dest_to_option_strings=False,
+    )
+    info_parser.set_defaults(**{"component": None})
+    info_parser.set_defaults(action=lambda namespace: info(namespace.component))
+
+    component_subparser = info_parser.add_subparsers(
+        title="component",
+        dest="component",
+        description="Setting or Method to display more information about.",
+        help="heyo",
+        required=False,
+    )
+
+    for setting in all_settings:
+        setting_name = setting.get_name()
+        component_parser: ArgumentParser = component_subparser.add_parser(
+            name=setting_name,
+            description=f"Show more info about the {setting_name} setting.",
+            help=get_help(setting),
+            add_dest_to_option_strings=False,
+        )
+        component_parser.set_defaults(**{"component": setting})
+
+    for method in get_all_methods():
+        method_name = method.get_full_name()
+        component_parser: ArgumentParser = component_subparser.add_parser(
+            name=method_name,
+            description=f"Show more info about the {method_name} method.",
+            help=get_help(method),
+            add_dest_to_option_strings=False,
+        )
+        component_parser.set_defaults(**{"component": method})
+
+
+def info(component: Union[Type[Setting], Type[Method]] = None) -> None:
+    """ Prints some info about a given component (method class or setting class), or
+    prints the list of available settings and methods.
+    """
+    if component is None:
+        from sequoia.utils.readme import get_tree_string
+
+        print(get_tree_string())
+
+        # print("Registered Settings:")
+        # for setting in all_settings:
+        #     print(f"- {setting.get_name()}: {setting.get_path_to_source_file()}")
+
+        print()
+        print("Registered Methods:")
+        print()
+        for method in get_all_methods():
+            src = method.get_path_to_source_file()
+            print(f"- {method.get_full_name()}: {src}")
+
+    else:
+        # IDEA: Could colorize the tree with red or green depending on if the method is
+        # applicable to the setting or not!
+        help(component)
+
+
+def get_help(component: Type[Setting]) -> str:
+    """ Returns the string to be passed as the 'help' argument to the parser.
+    """
+    # todo
+    # IDEA: Get the first two sentences, or a shortened version of the docstring,
+    # whichever one is shorter.
+    docstring = component.__doc__
+    shortened_docstring = textwrap.shorten(docstring, 150)
+    first_two_sentences = ". ".join(docstring.split(".")[:2]) + "."
+    return first_two_sentences
+    return min(shortened_docstring, first_two_sentences, key=len) + "(help)"
+
+
+# def get_description(command: str, setting: Type[Setting], method: Type[Method] = None) -> str:
+#     """ Returns the text to be displayed right under the "usage" line in the command-line
+#     when either
+#     `sequoia run <setting> --help`
+#     or
+#     `sequoia run <setting> <method> --help` is invoked.
+#     """
+#     if command == "run":
+#         if method is not None:
+#             return f"Run an experiment consisting of applying method {method.get_full_name()} on the {setting.get_name()} setting. (desc.)"
+#         else:
+#             return f"Run an experiment in the {setting.get_name()} setting. (desc.)"
 
 
 def add_args_for_settings_and_methods(command_subparser: ArgumentParser):
@@ -66,12 +259,17 @@ def add_args_for_settings_and_methods(command_subparser: ArgumentParser):
         metavar="<setting>",
         required=True,
     )
-    for setting in all_settings:
+    # TODO: Need to sort the settings so the actions come up in a nice order.
+    key_fn = lambda setting_class: (
+        len(setting_class.parents()),
+        setting_class.__name__,
+    )
+    for setting in sorted(all_settings, key=key_fn):
         setting_name = setting.get_name()
         setting_parser: ArgumentParser = setting_subparsers.add_parser(
-            setting.get_name(),
+            setting_name,
             help=get_help(setting),
-            description=get_description(setting),
+            description=f"Run an experiment in the {setting.get_name()} setting.",
             add_dest_to_option_strings=False,
             formatter_class=SimpleHelpFormatter,
         )
@@ -79,6 +277,7 @@ def add_args_for_settings_and_methods(command_subparser: ArgumentParser):
 
         method_subparsers = setting_parser.add_subparsers(
             title="method",
+            dest="method",
             metavar="<method>",
             description=f"which method to apply to the {setting_name} Setting.",
             required=True,
@@ -88,116 +287,16 @@ def add_args_for_settings_and_methods(command_subparser: ArgumentParser):
             method_parser: ArgumentParser = method_subparsers.add_parser(
                 method_name,
                 help=get_help(method),
-                description=get_description(method),
-                add_dest_to_option_strings=False,
+                description=(
+                    f"Run an experiment where method {method.get_full_name()} is applied "
+                    f"to the {setting.get_name()} setting."
+                ),
                 formatter_class=SimpleHelpFormatter,
             )
-            # TODO: Could also pass the setting to the method's `add_argparse_args`.
+            method_parser.set_defaults(method=method)
+            # TODO: Could also pass the setting to the method's `add_argparse_args` so
+            # that it gets to change its default values!
             method.add_argparse_args(parser=method_parser, dest="method")
-            # method_parser.add_arguments(method, dest="method")
-
-
-def main():
-    parser = ArgumentParser(prog="sequoia", description=__doc__,
-                            add_dest_to_option_strings=False)
-
-    subparsers = parser.add_subparsers(
-        title="command",
-        dest="command",
-        description="Command to execute",
-        parser_class=ArgumentParser,
-        required=True,  # assuming python > 3.7
-    )
-    setting_parser = subparsers.add_parser(
-        "run",
-        description="Run an experiment on a given setting.",
-        help="Run an experiment on a given setting.",
-        add_dest_to_option_strings=False,
-        formatter_class=SimpleHelpFormatter,
-    )
-    setting_parser.set_defaults(action=run)
-    setting_parser.add_arguments(Config, dest="config")
-    add_args_for_settings_and_methods(setting_parser)
-
-    sweep_parser = subparsers.add_parser(
-        "sweep",
-        description="Run a hyper-parameter optimization sweep.",
-        help="Run a hyper-parameter optimization sweep.",
-        add_dest_to_option_strings=False,
-    )
-    sweep_parser.set_defaults(action=sweep)
-    sweep_parser.add_arguments(Config, dest="config")
-    add_args_for_settings_and_methods(sweep_parser)
-
-    info_parser = subparsers.add_parser(
-        "info",
-        description="Get some information on a given setting.",
-        help="Print some information about a given setting or method.",
-        add_dest_to_option_strings=False,
-    )
-
-    setting_subparsers = info_parser.add_subparsers(
-        title="setting_choice",
-        description="choice of experimental setting",
-        dest="setting",
-        required=True,
-    )
-    for setting in all_settings:
-        setting_name = setting.get_name()
-        setting_parser: ArgumentParser = setting_subparsers.add_parser(
-            setting.get_name(),
-            description=get_description(setting),
-            help=get_help(setting),
-            add_dest_to_option_strings=False,
-        )
-        from functools import partial
-        setting_parser.set_defaults(action=partial(help, setting))
-        # setting.add_argparse_args(parser=setting_parser, dest="setting")
-
-    # method_subparsers = sweep_parser.add_subparsers(
-    #     title="method_choice",
-    #     description="choice of method?",
-    #     required=True,
-    # )
-    # for method in all_methods:
-    #     method_name = method.get_name()
-    #     sweep_parser: ArgumentParser = method_subparsers.add_parser(
-    #         method.get_name(),
-    #         description=method.__doc__,
-    #         add_dest_to_option_strings=False,
-    #     )
-    #     method.add_argparse_args(parser=sweep_parser, dest="method")
-        
-    #     setting_subparsers = sweep_parser.add_subparsers(
-    #         title="setting",
-    #         description=f"which setting to apply to the {method_name} method."
-    #     )
-    #     for setting in method.get_applicable_settings():
-    #         setting_name = setting.get_name()
-    #         run_parser: ArgumentParser = setting_subparsers.add_parser(
-    #             setting_name,
-    #             description=setting.__doc__,
-    #             add_dest_to_option_strings=False,
-    #         )
-    #         setting.add_argparse_args(parser=run_parser, dest="setting")
-    #         # setting_parser.add_arguments(setting, dest="setting")
-    
-    args = parser.parse_args()
-    
-    action = args.action
-
-    return action(args)
-
-    
-        
-    # subparsers.add_parser("help", )    
-    
-    
-    # results = Experiment.main()
-    # if results:
-    #     print("\n\n EXPERIMENT IS DONE \n\n")
-    #     # Experiment didn't crash, show results:
-    #     print(f"Results: {results}")
 
 
 if __name__ == "__main__":
