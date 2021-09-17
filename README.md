@@ -110,7 +110,9 @@ sudo chown root /tmp/.X11-unix/
 ```
 
 ## Documentation overview:
-- ### **[Getting Started / Examples (read this first!)](examples/)**
+
+
+- ### **[Getting Started / Examples (take a look at this first)](examples/)**
 - ### Runing Experiments (below)
 - ### [Settings overview](sequoia/settings/)
 - ### [Methods overview](sequoia/methods/)
@@ -149,7 +151,7 @@ sudo chown root /tmp/.X11-unix/
 
 
 
-### Running experiments
+## Running experiments
 
 --> **(Reminder) First, take a look at the [Examples](/examples)** <--
 
@@ -158,25 +160,69 @@ sudo chown root /tmp/.X11-unix/
 ```python
 from sequoia.settings import TaskIncrementalSLSetting
 from sequoia.methods import BaseMethod
+# Create the setting
 setting = TaskIncrementalSLSetting(dataset="mnist")
+# Create the method
 method = BaseMethod(max_epochs=1)
-
+# Apply the setting to the method to generate results.
 results = setting.apply(method)
 print(results.summary())
 ```
 
-#### From the command-line:
+### Command-line:
+
 ```console
-sequoia --setting <some_setting> --method <some_method>  (arguments)
+$ sequoia --help
+usage: sequoia [-h] [--version] {run,sweep,info} ...
+
+Sequoia - The Research Tree 
+
+Used to run experiments, which consist in applying a Method to a Setting.
+
+optional arguments:
+  -h, --help        show this help message and exit
+  --version         Displays the installed version of Sequoia and exits.
+
+command:
+  Command to execute
+
+  {run,sweep,info}
+    run             Run an experiment on a given setting.
+    sweep           Run a hyper-parameter optimization sweep.
+    info            Displays some information about a Setting or Method.
 ```
+For example:
+```console
+$ sequoia run [--debug] <setting> (setting arguments) <method> (method arguments)
+$ sequoia sweep [--debug] <setting> (setting arguments) <method> (method arguments)
+$ sequoia info [setting or method]
+```
+
+For a detailed description of all the arguments, use the `--help` command for any of the actions:
+```console 
+$ sequoia --help
+$ sequoia run --help
+$ sequoia run <some_setting> --help
+$ sequoia run <some_setting> <some_method> --help
+$ sequoia sweep --help
+$ sequoia sweep <some_setting> --help
+$ sequoia sweep <some_setting> <some_method> --help
+```
+
+For example:
+
+```console
+$ sequoia run --debug task_incremental_sl --dataset mnist random_baseline
+```
+
 For example:
 - Run the BaseMethod on task-incremental MNIST, with one epoch per task, and without wandb:
     ```console
-    sequoia --setting task_incremental_sl --dataset mnist --method base --max_epochs 1
+    $ sequoia run task_incremental_sl --dataset mnist base --max_epochs 1
     ```
 - Run the PPO Method from stable-baselines3 on an incremental RL setting, with the default dataset (CartPole) and 5 tasks: 
     ```console
-    sequoia --setting incremental_rl --nb_tasks 5 --method ppo --steps_per_task 10_000
+    $ sequoia --setting incremental_rl --nb_tasks 5 --method sb3.ppo --steps_per_task 10_000
     ```
 
-More questions? Please let us know by creating an issue!
+More questions? Please let us know by creating an issue or posting in the discussions!

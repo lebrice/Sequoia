@@ -54,12 +54,11 @@ def get_tree_string(
             f"somehow."
         )
     setting: Type["Setting"] = root_setting
-    prefix: str = ""
+    # prefix: str = ""
 
     message: List[str] = []
     source_file = get_relative_path_to(setting)
-    message += [f"{setting.__name__} ({source_file})"]
-
+    message += [f"{setting.get_name()} found in [{setting.__name__}]({source_file})"]
     applicable_methods = setting.get_applicable_methods()
 
     n_children = len(setting.get_immediate_children())
@@ -68,6 +67,7 @@ def get_tree_string(
     if with_docstrings:
         p = f"{bar}  "
         docstring = setting.__doc__
+        # Note: why not use something like textwrap.indent?
         message.extend([p + line for line in docstring.splitlines()])
         message += [p]
 
@@ -89,9 +89,10 @@ def get_tree_string(
 
         child_message_lines = child_message.splitlines()
         for j, line in enumerate(child_message_lines):
-            first: str = "x  "
+            first: str = "x  "  # just for debugging, shouldn't be an x left after.
             if j == 0:
                 if i == n_children - 1:
+                    # Last child uses different graphic
                     first = "└──"
                 else:
                     first = "├──"
@@ -100,12 +101,12 @@ def get_tree_string(
                     first = "   "
                 else:
                     first = "│  "
-            message += [first + prefix + line]
+            message += [first + line]
 
     first_line = f"─ {message[0]}\n"
-    message = "\n".join(message[1:])
-    message = textwrap.indent(message, prefix)
-    return first_line + message
+    message_str = "\n".join(message[1:])
+    message_str = textwrap.indent(message_str, "  ")
+    return first_line + message_str
 
 
 def get_tree_string_markdown(

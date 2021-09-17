@@ -36,7 +36,7 @@ def main():
         "--version",
         action="version",
         version=sequoia.__version__,
-        help="Displays the installed version of Sequoia and exits. (help)",
+        help="Displays the installed version of Sequoia and exits.",
     )
 
     command_subparsers = parser.add_subparsers(
@@ -161,8 +161,8 @@ def add_info_command(command_subparsers: argparse._SubParsersAction) -> None:
     info_parser = command_subparsers.add_parser(
         "info",
         # NOTE: Not 100% sure what the difference is between help and description.
-        description="Displays some information about a Setting or Method. (help)",
-        help="Displays some information about a Setting or Method. (description)",
+        description="Displays some information about a Setting or Method.",
+        help="Displays some information about a Setting or Method.",
         add_dest_to_option_strings=False,
     )
     info_parser.set_defaults(**{"component": None})
@@ -266,6 +266,13 @@ def add_args_for_settings_and_methods(command_subparser: ArgumentParser):
     )
     for setting in sorted(all_settings, key=key_fn):
         setting_name = setting.get_name()
+
+        # IDEA:
+        if not getattr(setting, "available_datasets", {}):
+            # Don't add a parser for this setitng, since it has no available datasets.
+            # e.g.: Setting, SL, RL 
+            continue
+
         setting_parser: ArgumentParser = setting_subparsers.add_parser(
             setting_name,
             help=get_help(setting),
@@ -288,8 +295,8 @@ def add_args_for_settings_and_methods(command_subparser: ArgumentParser):
                 method_name,
                 help=get_help(method),
                 description=(
-                    f"Run an experiment where method {method.get_full_name()} is applied "
-                    f"to the {setting.get_name()} setting."
+                    f"Run an experiment where the {method.get_full_name()} method is "
+                    f"applied to the {setting.get_name()} setting."
                 ),
                 formatter_class=SimpleHelpFormatter,
             )
