@@ -59,6 +59,8 @@ class IncrementalAssumption(ContinualAssumption):
     is quite important.
 
     """
+    # Which dataset to use.
+    dataset: str
 
     Results: ClassVar[Type[Results]] = IncrementalResults
 

@@ -20,7 +20,7 @@ class Parseable:
 
     @classmethod
     def add_argparse_args(cls, parser: ArgumentParser, dest: str = None) -> None:
-        """Add the command-line arguments for this Method to the given parser.
+        """Add the command-line arguments for this class to the given parser.
         
         Override this if you don't use simple-parsing to add the args.
         
