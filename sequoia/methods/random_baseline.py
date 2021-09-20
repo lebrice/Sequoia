@@ -123,11 +123,11 @@ class RandomBaselineMethod(Method, target_setting=Setting):
         print(f"Using new suggested value {foo}")
 
     @classmethod
-    def add_argparse_args(cls, parser: ArgumentParser, dest: str = ""):
+    def add_argparse_args(cls, parser: ArgumentParser):
         pass
 
     @classmethod
-    def from_argparse_args(cls, args: Namespace, dest: str = ""):
+    def from_argparse_args(cls, args: Namespace):
         return cls()
 
 

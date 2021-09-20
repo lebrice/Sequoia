@@ -53,11 +53,14 @@ def main():
         return parser.print_help()
     if command == "run":
         method_type: Type[Method] = args.method_type
+        setting_type: Type[Setting] = args.setting_type
         # NOTE: There will most likely not be any conflict between these arguments here and those of
         # the setting, since they now each have their own subparser!
         # Therefore we don't really need the `dest` argument and all the associated messy prefixes.
         method: Method = method_type.from_argparse_args(args)
-        return run(setting=args.setting, method=method, config=args.config)
+        setting: Setting = setting_type.from_argparse_args(args)
+        config: Config = args.config
+        return run(setting=setting, method=method, config=config)
     if command == "sweep":
         method_type: Type[Method] = args.method_type
         method: Method = method_type.from_argparse_args(args)
@@ -265,7 +268,7 @@ def add_args_for_settings_and_methods(command_subparser: ArgumentParser):
     setting_subparsers = command_subparser.add_subparsers(
         title="setting_choice",
         description="choice of experimental setting",
-        dest="setting",
+        dest="setting_type",
         metavar="<setting>",
         required=True,
     )
@@ -293,7 +296,13 @@ def add_args_for_settings_and_methods(command_subparser: ArgumentParser):
             add_dest_to_option_strings=False,
             formatter_class=SimpleHelpFormatter,
         )
-        setting.add_argparse_args(parser=setting_parser, dest="setting")
+        setting_parser.set_defaults(**{"setting_type": setting})
+        # NOTE: By removing the `dest` argument to `add_argparse_args, we're moving the place where
+        # the setting's values are stored from 'setting' to `camel_case(setting_class.__name__).
+        # Alternative would be to just assume that the settings are dataclasses and add arguments 
+        # for the setting at destination 'setting' as before.
+        setting.add_argparse_args(parser=setting_parser)
+        # setting_parser.add_arguments(setting, dest="setting")
 
         method_subparsers = setting_parser.add_subparsers(
             title="method",

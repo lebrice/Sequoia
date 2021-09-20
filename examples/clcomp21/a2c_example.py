@@ -1,3 +1,4 @@
+from argparse import Namespace
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
@@ -312,13 +313,11 @@ class ExampleA2CMethod(Method, target_setting=RLSetting):
             self.task = task_id
 
     @classmethod
-    def add_argparse_args(cls, parser: ArgumentParser, dest: str = ""):
-        parser.add_arguments(cls.HParams, dest=(dest + "." if dest else "") + "hparams")
+    def add_argparse_args(cls, parser: ArgumentParser):
+        parser.add_arguments(cls.HParams, dest="hparams")
 
     @classmethod
-    def from_argparse_args(cls, args, dest: str = ""):
-        if dest:
-            args = getattr(args, dest)
+    def from_argparse_args(cls, args: Namespace):
         hparams: ExampleA2CMethod.HParams = args.hparams
         return cls(hparams=hparams)
 

@@ -182,7 +182,6 @@ class GymDataLoader(
         assert not isinstance(
             self.env, GymDataLoader
         ), "Something very wrong is happening."
-
         # self.max_epochs: int = max_epochs
         self.observation_space: gym.Space = self.env.observation_space
         self.action_space: gym.Space = self.env.action_space
