@@ -56,6 +56,7 @@ class SmoothTransitions(MultiTaskEnvironment):
         add_task_dict_to_info: bool = False,
         add_task_id_to_obs: bool = False,
         only_update_on_episode_end: bool = False,
+        nb_tasks: int = None,
         **kwargs
     ):
         """ Wraps the environment, allowing for smooth task transitions.
@@ -88,6 +89,7 @@ class SmoothTransitions(MultiTaskEnvironment):
             env,
             add_task_dict_to_info=add_task_dict_to_info,
             add_task_id_to_obs=add_task_id_to_obs,
+            nb_tasks=nb_tasks,
             **kwargs
         )
         self.only_update_on_episode_end: bool = only_update_on_episode_end
@@ -103,10 +105,10 @@ class SmoothTransitions(MultiTaskEnvironment):
             )
 
         if self.add_task_id_to_obs:
-            n_tasks = len(self.task_schedule)
+            nb_tasks = nb_tasks if nb_tasks is not None else len(self.task_schedule)
             self.observation_space = add_task_labels(
                 self.env.observation_space,
-                Sparse(spaces.Discrete(n=n_tasks), sparsity=1.0),
+                Sparse(spaces.Discrete(n=nb_tasks), sparsity=1.0),
             )
 
     def step(self, *args, **kwargs):

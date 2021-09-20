@@ -510,6 +510,7 @@ class ContinualRLSetting(RLSetting, ContinualAssumption):
                     f"`test_max_steps` ({self.test_max_steps}). "
                 )
 
+        # Close the temporary environments.
         if self._temp_train_env:
             self._temp_train_env.close()
         if self._temp_val_env and self._temp_val_env is not self._temp_train_env:
@@ -1382,17 +1383,21 @@ class ContinualRLSetting(RLSetting, ContinualAssumption):
             # observations, and the dicts containing the task information (e.g. the
             # current values of the env attributes from the task schedule) get added
             # to the 'info' dicts.
+            nb_tasks = None
             if self.smooth_task_boundaries:
                 # Add a wrapper that creates smooth tasks.
                 cl_wrapper = SmoothTransitions
             else:
                 assert self.nb_tasks >= 1
                 # Add a wrapper that creates sharp tasks.
+                # NOTE: The naming here is less than ideal! This isn't "multi-task" as-in stationary
+                # by default. It just means an env which can do multiple tasks. However, when the
+                # `new_random_task_on_reset` argument is set, then it does sample tasks IID. 
                 cl_wrapper = MultiTaskEnvironment
+                nb_tasks = self.nb_tasks
 
             assert starting_step is not None
             assert max_steps is not None
-
             wrappers.append(
                 partial(
                     cl_wrapper,
@@ -1401,6 +1406,7 @@ class ContinualRLSetting(RLSetting, ContinualAssumption):
                     add_task_id_to_obs=True,
                     add_task_dict_to_info=False,
                     starting_step=starting_step,
+                    nb_tasks=nb_tasks,
                     new_random_task_on_reset=new_random_task_on_reset,
                     max_steps=max_steps,
                 )
