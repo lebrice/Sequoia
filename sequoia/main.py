@@ -2,7 +2,7 @@
 
 Used to run experiments, which consist in applying a Method to a Setting.
 """
-import textwrap
+from argparse import _SubParsersAction
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Optional, Type, Union
@@ -17,8 +17,6 @@ from sequoia.methods import get_all_methods
 from sequoia.settings import all_settings
 from sequoia.settings.base import Method, Results, Setting
 from sequoia.utils import get_logger
-from argparse import _SubParsersAction
-
 
 # TODO: Fix all the `get_logger` to use __name__ instead of __file__.
 logger = get_logger(__file__)
@@ -84,10 +82,15 @@ def add_run_command(command_subparsers: _SubParsersAction) -> None:
 def run(setting: Setting, method: Method, config: Config) -> Results:
     """Performs a single run, applying a method to a setting, and returns the results."""
     logger.debug("Setting:")
-    logger.debug(setting.dumps_yaml())
+    # BUG: TypeError: __reduce_ex__() takes exactly one argument (0 given)
+    try:
+        logger.debug(setting.dumps_yaml())
+    except TypeError:
+        logger.debug(setting)
     logger.debug("Config:")
     logger.debug(config.dumps_yaml())
-    logger.debug(f"Method: {method}")
+    logger.debug("Method")
+    logger.debug(str(method))
     results = setting.apply(method, config=config)
     logger.debug("Results:")
     logger.debug(results.summary())
@@ -257,7 +260,7 @@ def get_help(component: Type[Setting]) -> str:
 
 
 def add_args_for_settings_and_methods(command_subparser: ArgumentParser):
-    """ Adds a subparser for each Setting class and method subparsers for each of those.
+    """Adds a subparser for each Setting class and method subparsers for each of those.
 
     NOTE: Only adds subparsers for setting classes that have a non-empty 'available_datasets'
     attribute, so that choosing `Setting`, `SLSetting` or `RLSetting` isn't an option.
@@ -299,7 +302,7 @@ def add_args_for_settings_and_methods(command_subparser: ArgumentParser):
         setting_parser.set_defaults(**{"setting_type": setting})
         # NOTE: By removing the `dest` argument to `add_argparse_args, we're moving the place where
         # the setting's values are stored from 'setting' to `camel_case(setting_class.__name__).
-        # Alternative would be to just assume that the settings are dataclasses and add arguments 
+        # Alternative would be to just assume that the settings are dataclasses and add arguments
         # for the setting at destination 'setting' as before.
         setting.add_argparse_args(parser=setting_parser)
         # setting_parser.add_arguments(setting, dest="setting")
