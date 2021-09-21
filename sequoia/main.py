@@ -5,6 +5,7 @@ Used to run experiments, which consist in applying a Method to a Setting.
 from argparse import _SubParsersAction
 from dataclasses import dataclass
 from pathlib import Path
+from sequoia.common.config.wandb_config import WandbConfig
 from typing import Optional, Type, Union
 
 from simple_parsing import ArgumentParser
@@ -52,16 +53,24 @@ def main():
     if command == "run":
         method_type: Type[Method] = args.method_type
         setting_type: Type[Setting] = args.setting_type
-        # NOTE: There will most likely not be any conflict between these arguments here and those of
-        # the setting, since they now each have their own subparser!
-        # Therefore we don't really need the `dest` argument and all the associated messy prefixes.
         method: Method = method_type.from_argparse_args(args)
         setting: Setting = setting_type.from_argparse_args(args)
         config: Config = args.config
+        # TODO: Make this a bit cleaner, current need to set this `wandb` config as a property on
+        # the setting. Could either subclass Config and add an Optional[WandbConfig] field, or just
+        # add it directly to the existing Config class.
+        wandb_config: WandbConfig = args.wandb
+        setting.wandb = wandb_config
         return run(setting=setting, method=method, config=config)
     if command == "sweep":
         method_type: Type[Method] = args.method_type
+        setting_type: Type[Setting] = args.setting_type
         method: Method = method_type.from_argparse_args(args)
+        setting: Setting = setting_type.from_argparse_args(args)
+        config: Config = args.config
+        # TODO: Fix this up a bit: Currently need to set this on the setting
+        wandb_config: WandbConfig = args.wandb
+        setting.wandb = wandb_config
         return sweep(setting=args.setting, method=method, config=args.config)
     if command == "info":
         return info(component=args.component)
@@ -76,6 +85,7 @@ def add_run_command(command_subparsers: _SubParsersAction) -> None:
         formatter_class=SimpleHelpFormatter,
     )
     run_parser.add_arguments(Config, dest="config")
+    run_parser.add_arguments(WandbConfig, dest="wandb")
     add_args_for_settings_and_methods(run_parser)
 
 
@@ -300,6 +310,7 @@ def add_args_for_settings_and_methods(command_subparser: ArgumentParser):
             formatter_class=SimpleHelpFormatter,
         )
         setting_parser.set_defaults(**{"setting_type": setting})
+
         # NOTE: By removing the `dest` argument to `add_argparse_args, we're moving the place where
         # the setting's values are stored from 'setting' to `camel_case(setting_class.__name__).
         # Alternative would be to just assume that the settings are dataclasses and add arguments
