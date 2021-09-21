@@ -1,28 +1,22 @@
 from setuptools import setup, find_packages
 import os
 import versioneer
+from typing import Dict, Union, List
+
 
 with open(os.path.join(os.path.dirname(__file__), "requirements.txt"), "r") as file:
     lines = [ln.strip() for ln in file.readlines()]
 
-packages_to_export = find_packages(
-    where=".", exclude=["tests*", "examples*"], include="sequoia*"
-)
+packages_to_export = find_packages(where=".", exclude=["tests*", "examples*"], include="sequoia*")
 
-required_packages = [
-    line for line in lines if line and not line.startswith("#")
-]
+required_packages = [line for line in lines if line and not line.startswith("#")]
 
-extras_require = {
+extras_require: Dict[str, Union[str, List[str]]] = {
     "monsterkong": [
         "meta_monsterkong @ git+https://github.com/lebrice/MetaMonsterkong.git#egg=meta_monsterkong"
     ],
-    "atari": [
-        "gym[atari] @ git+https://www.github.com/lebrice/gym@easier_custom_spaces#egg=gym"
-    ],
-    "hpo": [
-        "orion>=0.1.15", "orion.algo.skopt>=0.1.6"
-    ],
+    "atari": ["gym[atari] @ git+https://www.github.com/lebrice/gym@easier_custom_spaces#egg=gym"],
+    "hpo": ["orion>=0.1.15", "orion.algo.skopt>=0.1.6"],
     "avalanche": [
         "gdown",  # BUG: Avalanche needs this to download cub200 dataset.
         "avalanche-lib @ git+https://github.com/ContinualAI/avalanche.git#egg=avalanche-lib",
@@ -41,19 +35,24 @@ extras_require = {
     ],
 }
 # Add-up all the optional requirements, and then remove any duplicates.
-extras_require["all"] = list(
-    set(
-        sum(
-            [
-                [extra_requirements]
-                if isinstance(extra_requirements, str)
-                else extra_requirements
-                for extra_requirements in extras_require.values()
-            ],
-            [],
-        )
-    )
+extras_require["all"] = sum(
+    [
+        extra_requirements if isinstance(extra_requirements, list) else [extra_requirements]
+        for extra_requirements in extras_require.values()
+    ],
+    [],
 )
+extras_require["all"] = list(set(extras_require["all"]))
+
+extras_require["no_mujoco"] = sum(
+    [
+        extra_dependencies if isinstance(extra_dependencies, list) else [extra_dependencies]
+        for extra_name, extra_dependencies in extras_require.items()
+        if extra_name not in ["all", "mujoco", "metaworld"]
+    ],
+    [],
+)
+extras_require["no_mujoco"] = list(set(extras_require["no_mujoco"]))
 
 setup(
     name="sequoia",
