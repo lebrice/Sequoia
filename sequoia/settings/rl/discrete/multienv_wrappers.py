@@ -15,11 +15,16 @@ from sequoia.common.gym_wrappers.utils import MayCloseEarly
 from sequoia.utils.generic_functions import concatenate
 from sequoia.utils.logging_utils import get_logger
 
+from stable_baselines3.common.vec_env.base_vec_env import VecEnv
+
 logger = get_logger(__file__)
 
 
 def instantiate_env(env: Union[str, gym.Env, Callable[[], gym.Env]]) -> gym.Env:
     if isinstance(env, gym.Env):
+        return env
+    # Environment can also be Stable-baselines3 vectorized environment
+    elif isinstance(env, VecEnv):
         return env
     if isinstance(env, str):
         return gym.make(env)

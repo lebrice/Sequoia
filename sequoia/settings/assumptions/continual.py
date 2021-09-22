@@ -423,7 +423,11 @@ class TestEnvironment(gym.wrappers.Monitor, IterableWrapper[EnvType], ABC):
         else:
             done = bool(done)
 
-        done = self._after_step(observation_for_stats, reward_for_stats, done, info)
+        # TODO: Do i have to sum all the agents' reward together to get one scalar reward for logging?
+        # TODO: Have 20 pistons per game, and 8 envs parallelized - so reward_for_stats is size-160 numpy array
+        # For now, just going to take first reward, but this isn't correct
+        # done = self._after_step(observation_for_stats, reward_for_stats, done, info)
+        done = self._after_step(observation_for_stats, reward_for_stats[0], done, info)
 
         if self.get_total_steps() >= self.step_limit:
             done = True

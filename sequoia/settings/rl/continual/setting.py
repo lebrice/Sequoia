@@ -23,6 +23,7 @@ from gym.wrappers import TimeLimit
 from simple_parsing import choice, field, list_field
 from simple_parsing.helpers import dict_field
 from stable_baselines3.common.atari_wrappers import AtariWrapper
+from stable_baselines3.common.vec_env.base_vec_env import VecEnv
 
 from sequoia.common import Config
 from sequoia.common.gym_wrappers import (
@@ -510,12 +511,15 @@ class ContinualRLSetting(RLSetting, ContinualAssumption):
                     f"`test_max_steps` ({self.test_max_steps}). "
                 )
 
-        if self._temp_train_env:
-            self._temp_train_env.close()
-        if self._temp_val_env and self._temp_val_env is not self._temp_train_env:
-            self._temp_val_env.close()
-        if self._temp_test_env and self._temp_test_env is not self._temp_train_env:
-            self._temp_test_env.close()
+        # TODO: This is closing the environment in the setting because _temp_train_env is set to the self.train_dataset env that is passed in
+        # TODO: So when this is wrapped with a gym wrapper, it has the close() method on it and closes
+        # TODO: Which means that when reset is called, an error is hit b/c env is already closed
+        # if self._temp_train_env:
+        #     self._temp_train_env.close()
+        # if self._temp_val_env and self._temp_val_env is not self._temp_train_env:
+        #     self._temp_val_env.close()
+        # if self._temp_test_env and self._temp_test_env is not self._temp_train_env:
+        #     self._temp_test_env.close()
 
         train_task_lengths: List[int] = [
             task_b_step - task_a_step
@@ -650,6 +654,9 @@ class ContinualRLSetting(RLSetting, ContinualAssumption):
             self.test_steps_per_task,
             self.test_task_schedule.keys(),
         )
+
+        # TODO: Not sure this is best place to put this: Sequoia test requires spec attribute
+        self.test_dataset.spec = self.test_dataset.venv.spec
         
 
     def create_train_task_schedule(self) -> TaskSchedule:
@@ -1155,6 +1162,9 @@ class ContinualRLSetting(RLSetting, ContinualAssumption):
         if isinstance(base_env, str):
             env = gym.make(base_env, **base_env_kwargs)
         elif isinstance(base_env, gym.Env):
+            env = base_env
+        # Environment can also be Stable-baselines3 vectorized environment
+        elif isinstance(base_env, VecEnv):
             env = base_env
         elif callable(base_env):
             env = base_env(**base_env_kwargs)

@@ -15,6 +15,8 @@ from simple_parsing import list_field
 from simple_parsing.helpers import choice
 from typing_extensions import Final
 
+from stable_baselines3.common.vec_env.base_vec_env import VecEnv
+
 from sequoia.common.gym_wrappers import MultiTaskEnvironment, TransformObservation
 from sequoia.common.gym_wrappers.utils import is_monsterkong_env
 from sequoia.common.metrics import EpisodeMetrics
@@ -539,6 +541,10 @@ class IncrementalRLSetting(IncrementalAssumption, DiscreteTaskAgnosticRLSetting)
                 for i, env in enumerate(envs):
                     live_env: gym.Env
                     if isinstance(env, gym.Env):
+                        live_env = env
+                        live_envs.append(env)
+                    # Environment can also be Stable-baselines3 vectorized environment
+                    elif isinstance(env, VecEnv):
                         live_env = env
                         live_envs.append(env)
                     elif isinstance(env, str):
