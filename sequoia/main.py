@@ -138,7 +138,11 @@ def sweep(setting: Setting, method: Method, config: SweepConfig) -> Setting.Resu
     """
     print("Sweep!")
     logger.debug("Setting:")
-    logger.debug(setting.dumps_yaml())
+    # BUG: TypeError: __reduce_ex__() takes exactly one argument (0 given)
+    try:
+        logger.debug(setting.dumps_yaml())
+    except TypeError:
+        logger.debug(setting)
     logger.debug("Config:")
     logger.debug(config.dumps_yaml())
     logger.debug(f"Method: {method}")
