@@ -1,44 +1,35 @@
 """ TODO: Tests for the 'modified size' mujoco envs. """
-import random
-from typing import ClassVar, Dict, Generic, List, Type, TypeVar
-
-from sequoia.conftest import mujoco_required
-pytestmark = mujoco_required
+from typing import ClassVar, List, Type
 
 import numpy as np
-import pytest
-from gym.envs.mujoco import MujocoEnv
 from gym.wrappers import TimeLimit
-from sequoia.common.gym_wrappers import RenderEnvWrapper
-from sequoia.methods import RandomBaselineMethod
-from sequoia.settings.rl.incremental import IncrementalRLSetting
+from sequoia.conftest import mujoco_required
 
-from .modified_size import ModifiedSizeEnv
+pytestmark = mujoco_required
 
-
-EnvType = TypeVar("EnvType", bound=ModifiedSizeEnv)
+from .modified_size import ModifiedSizeEnv, get_geom_sizes
 
 
 class ModifiedSizeEnvTests:
-    Environment: ClassVar[Type[EnvType]]
+    Environment: ClassVar[Type[ModifiedSizeEnv]]
 
-    @pytest.mark.xfail(reason="This feature isn't implemented yet.")
     def test_change_size_per_task(self):
         body_part = self.Environment.BODY_NAMES[0]
 
-        nb_tasks = 3
-        max_episode_steps = 1000
-        n_episodes = 10
+        nb_tasks = 2
+        max_episode_steps = 200
+        n_episodes = 2
 
         scale_factors: List[float] = [
             (0.5 + 2 * (task_id / nb_tasks)) for task_id in range(nb_tasks)
         ]
-        default_sizes: Dict[str, float] = self.Environment().get_size_dict()
+        default_tree = self.Environment().default_tree
+        default_sizes: List[str] = get_geom_sizes(default_tree, body_part)
 
         task_envs: List[EnvType] = [
             # RenderEnvWrapper(
             TimeLimit(
-                self.Environment(body_parts=[body_part], size_scales=[scale_factor],),
+                self.Environment(body_name_to_size_scale={body_part: scale_factor}),
                 max_episode_steps=max_episode_steps,
             )
             # )
@@ -46,15 +37,16 @@ class ModifiedSizeEnvTests:
         ]
 
         for task_id, task_env in enumerate(task_envs):
+            task_scale_factor = scale_factors[task_id]
+
             for episode in range(n_episodes):
-                size = task_env.get_size(body_part)
-
-                default_size = default_sizes[body_part]
-                task_scale_factor = scale_factors[task_id]
-
-                expected_size = default_size * task_scale_factor
+                size = get_geom_sizes(task_env.tree, body_part)
+                expected_size = [
+                    default_size * task_scale_factor for default_size in default_sizes
+                ]
                 print(
-                    f"default size: {default_size}, Size: {size}, task_scale_factor: {task_scale_factor}"
+                    f"default sizes: {default_sizes}, Size: {size}, "
+                    f"task_scale_factor: {task_scale_factor}"
                 )
 
                 assert np.allclose(size, expected_size)
@@ -67,30 +59,6 @@ class ModifiedSizeEnvTests:
                         task_env.action_space.sample()
                     )
                     steps += 1
+                    # NOTE: Uncomment to visually inspect.
                     task_env.render("human")
             task_env.close()
-
-
-@pytest.mark.xfail(reason="WIP")
-def test_modify_size():
-    """ TODO: Use actual strings or files to check that things make sense.
-    <body name="torso" pos="0 0 1.25">
-      <camera name="track" mode="trackcom" pos="0 -3 1" xyaxes="1 0 0 0 0 1" />
-      <joint armature="0" axis="1 0 0" damping="0" limited="false" name="rootx" pos="0 0 0" stiffness="0" type="slide" />
-      <joint armature="0" axis="0 0 1" damping="0" limited="false" name="rootz" pos="0 0 0" ref="1.25" stiffness="0" type="slide" />
-      <joint armature="0" axis="0 1 0" damping="0" limited="false" name="rooty" pos="0 0 1.25" stiffness="0" type="hinge" />
-      <geom friction="0.9" fromto="0 0 2.9 0 0 2.1" name="torso_geom" size="0.1" type="capsule" />
-      <body name="thigh" pos="0 0 2.1">
-        <joint axis="0 -1 0" name="thigh_joint" pos="0 0 1.05" range="-150 0" type="hinge" />
-        <geom friction="0.9" fromto="0 0 1.05 0 0 0.6" name="thigh_geom" size="0.05" type="capsule" />
-        <body name="leg" pos="0 0 0.35">
-          <joint axis="0 -1 0" name="leg_joint" pos="0 0 0.6" range="-150 0" type="hinge" />
-          <geom friction="0.9" fromto="0 0 0.6 0 0 0.1" name="leg_geom" size="0.04" type="capsule" />
-          <body name="foot" pos="0.13/2 0 0.1">
-            <joint axis="0 -1 0" name="foot_joint" pos="0 0 0.1" range="-45 45" type="hinge" />
-            <geom friction="2.0" fromto="-0.13 0 0.1 0.26 0 0.1" name="foot_geom" size="0.06" type="capsule" />
-          </body>
-        </body>
-      </body>
-    </body>
-    """
