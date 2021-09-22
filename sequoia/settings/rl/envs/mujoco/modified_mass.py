@@ -2,6 +2,7 @@ from gym.envs.mujoco import MujocoEnv
 import numpy as np
 from typing import Union, List, Dict, ClassVar, TypeVar, Mapping
 from functools import partial
+
 V = TypeVar("V")
 
 
@@ -11,6 +12,7 @@ class ModifiedMassEnv(MujocoEnv):
 
     NOTE: Haven't yet checked how this affects the physics simulation! Might not be 100% working.
     """
+
     # IDEA: Use somethign like this to tell appart modifications which can be applied
     # on-the-fly on a given env to get multiple tasks, vs those that require creating a
     # new environment for each task.
@@ -25,7 +27,9 @@ class ModifiedMassEnv(MujocoEnv):
         **kwargs,
     ):
         super().__init__(
-            model_path=model_path, frame_skip=frame_skip, **kwargs,
+            model_path=model_path,
+            frame_skip=frame_skip,
+            **kwargs,
         )
         body_name_to_mass_scale = body_name_to_mass_scale or {}
         self.default_masses_dict: Dict[str, float] = {
@@ -61,16 +65,14 @@ class ModifiedMassEnv(MujocoEnv):
         # self.model.forward()
 
     def reset_masses(self) -> None:
-        """Resets the masses to their default values.
-        """
+        """Resets the masses to their default values."""
         # NOTE: Use [:] to modify in-place, just in case there are any
         # pointer-shenanigans going on on the C side.
         self.model.body_mass[:] = self.default_masses
         # self.model._compute_subtree() #TODO: Not sure about this call
         # self.model.forward()
 
-
-    def get_masses_dict(self) -> Dict[str, float]:  
+    def get_masses_dict(self) -> Dict[str, float]:
         return {
             body_name: self.model.body_masses[i]
             for i, body_name in enumerate(self.model.body_names)
@@ -92,9 +94,9 @@ class ModifiedMassEnv(MujocoEnv):
         self,
         body_parts: List[str] = None,
         mass_scales: List[float] = None,
-        **body_name_to_mass_scale
+        **body_name_to_mass_scale,
     ) -> Dict[str, float]:
-        """ Scale the (original) mass of body parts of the Mujoco model.
+        """Scale the (original) mass of body parts of the Mujoco model.
 
         Returns a dictionary with the new masses.
         """
@@ -126,12 +128,13 @@ class ModifiedMassEnv(MujocoEnv):
 
     @staticmethod
     def _mass_setter(body_part: str, env: MujocoEnv, mass: float) -> None:
-        """ Function used to set the mass of a body part. This is used as the setter of the
+        """Function used to set the mass of a body part. This is used as the setter of the
         generated `<body_part>_mass` properties.
         """
         # Will raise an IndexError if the body part isnt found.
         idx = env.model.body_names.index(body_part)
         env.model.body_mass[idx] = mass
+
 
 # def _get_mass(env: MujocoEnv, /, body_part: str) -> float:
 #     # Will raise an IndexError if the body part isnt found.

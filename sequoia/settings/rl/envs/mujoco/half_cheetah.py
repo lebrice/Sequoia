@@ -80,7 +80,7 @@ class HalfCheetahV3Env(_HalfCheetahV3Env):
 
 
 class HalfCheetahWithSensorEnv(HalfCheetahV2Env):
-    """ NOTE: unused for now.
+    """NOTE: unused for now.
     Adds empty sensor readouts, this is to be used when transfering to WallEnvs where we
     get sensor readouts with distances to the wall
     """

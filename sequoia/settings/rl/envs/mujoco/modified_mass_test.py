@@ -10,6 +10,7 @@ from gym.envs.mujoco import MujocoEnv
 
 from .modified_mass import ModifiedMassEnv
 
+
 class ModifiedMassEnvTests:
     Environment: ClassVar[Type[ModifiedMassEnv]]
 

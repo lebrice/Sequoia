@@ -41,7 +41,9 @@ class ModifiedSizeEnvTests:
 
             for episode in range(n_episodes):
                 size = get_geom_sizes(task_env.tree, body_part)
-                expected_size = [default_size * task_scale_factor for default_size in default_sizes]
+                expected_size = [
+                    default_size * task_scale_factor for default_size in default_sizes
+                ]
                 print(
                     f"default sizes: {default_sizes}, Size: {size}, "
                     f"task_scale_factor: {task_scale_factor}"
@@ -53,7 +55,9 @@ class ModifiedSizeEnvTests:
                 done = False
                 steps = 0
                 while not done:
-                    obs, reward, done, info = task_env.step(task_env.action_space.sample())
+                    obs, reward, done, info = task_env.step(
+                        task_env.action_space.sample()
+                    )
                     steps += 1
                     # NOTE: Uncomment to visually inspect.
                     task_env.render("human")

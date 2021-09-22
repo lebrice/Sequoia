@@ -87,7 +87,7 @@ class ModifiedSizeEnv(MujocoEnv):
 
         if any(scale_factor == 0 for scale_factor in size_scales):
             raise RuntimeError("Can't use a scale_factor of 0!")
-        
+
         print(f"Default XML path: {full_path}")
         self.default_tree = ET.parse(full_path)
         self.tree = self.default_tree
@@ -97,7 +97,9 @@ class ModifiedSizeEnv(MujocoEnv):
             self.tree = change_size_in_xml(self.default_tree, **body_name_to_size_scale)
             # create new xml
             # IDEA: Create an XML file with a unique name somewhere, and then write the
-            hash_str = hashlib.md5((str(self) + str(body_name_to_size_scale)).encode()).hexdigest()
+            hash_str = hashlib.md5(
+                (str(self) + str(body_name_to_size_scale)).encode()
+            ).hexdigest()
             temp_dir = Path(tempfile.gettempdir())
             new_xml_path = temp_dir / f"{hash_str}.xml"
             if not new_xml_path.parent.exists():

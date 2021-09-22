@@ -72,7 +72,9 @@ class HopperV2GravityEnv(ModifiedGravityEnv, HopperV2Env):
         super().__init__(model_path=model_path, frame_skip=frame_skip, gravity=gravity)
 
 
-class ContinualHopperV2Env(ModifiedGravityEnv, ModifiedSizeEnv, ModifiedMassEnv, HopperV2Env):
+class ContinualHopperV2Env(
+    ModifiedGravityEnv, ModifiedSizeEnv, ModifiedMassEnv, HopperV2Env
+):
     def __init__(
         self,
         model_path: str = "hopper.xml",
@@ -90,7 +92,9 @@ class ContinualHopperV2Env(ModifiedGravityEnv, ModifiedSizeEnv, ModifiedMassEnv,
         )
 
 
-class ContinualHopperV3Env(ModifiedGravityEnv, ModifiedSizeEnv, ModifiedMassEnv, HopperV3Env):
+class ContinualHopperV3Env(
+    ModifiedGravityEnv, ModifiedSizeEnv, ModifiedMassEnv, HopperV3Env
+):
     def __init__(
         self,
         model_path="hopper.xml",
@@ -314,4 +318,3 @@ class ContinualHopperV3Env(ModifiedGravityEnv, ModifiedSizeEnv, ModifiedMassEnv,
 #     if body_name == "torso":
 #         update_torso(tree, torso_body=target_body, size_scaling_factor=scale)
 #     raise NotImplementedError(f"WIP")
-
