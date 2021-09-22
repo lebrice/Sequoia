@@ -29,7 +29,7 @@ class ModifiedMassEnvTests:
             model_value = env.model.body_mass[env.model.body_names.index(body_name)]
             assert model_value == new_value
 
-    def test_change_gravity_each_step(self):
+    def test_change_mass_each_step(self):
         env: ModifiedMassEnv = self.Environment()
         max_episode_steps = 500
         n_episodes = 5
@@ -63,33 +63,18 @@ class ModifiedMassEnvTests:
                 
                 env.set_mass(body_part=body_part, mass=start_mass + 5 * total_steps / max_episode_steps)
                 
-                moved_up += (state[1] > previous_state[1])
-                
-                # print(f"Moving upward? {obs[1] > state[1]}")
-            
-            print(f"Gravity at end of episode: {env.gravity}")
-            # TODO: Check that the position (in the observation) is obeying gravity?
-            # if env.gravity <= 0:
-            #     # Downward force, so should not have any significant preference for
-            #     # moving up vs moving down.
-            #     assert 0.4 <= (moved_up / max_episode_steps) <= 0.6, env.gravity
-            # # if env.gravity == 0:
-            # #     assert 0.5 <= (moved_up / max_episode_steps) <= 1.0
-            # if env.gravity > 0:
-            #     assert 0.5 <= (moved_up / max_episode_steps) <= 1.0, env.gravity
+                moved_up += (state[1] > previous_state[1])    
+                print(f"Moving upward? {moved_up}")
                 
         assert total_steps == n_episodes * max_episode_steps
         initial_z = env.init_qpos[1]
         final_z = env.sim.data.qpos[1]
         assert initial_z == 0
-        # Check that the robot is high up in the sky! :D
-        assert final_z > 20
 
-        # assert False, (env.init_qpos, env.sim.data.qpos)
-
-    def test_task_schedule(self):
+    def test_set_mass_with_task_schedule(self):
         # TODO: Reuse this test (and perhaps others from multi_task_environment_test.py)
-        # but with this continual_half_cheetah instead of cartpole. 
+        # but with this continual_half_cheetah instead of cartpole.
+        body_part = "torso"
         original = self.Environment()
         starting_mass = original.gravity
         import operator

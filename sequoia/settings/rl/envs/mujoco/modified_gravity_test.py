@@ -1,12 +1,14 @@
 """ TODO: Tests for the 'modified gravity' mujoco envs. """
+from typing import ClassVar, Dict, Generic, Type, TypeVar
+
+import pytest
+from gym.wrappers import TimeLimit
 from sequoia.conftest import mujoco_required
 
 pytestmark = mujoco_required
-from .modified_gravity import ModifiedGravityEnv
 from gym.envs.mujoco import MujocoEnv
-from typing import ClassVar, Type, Generic, TypeVar, Dict
-from gym.wrappers import TimeLimit
 
+from .modified_gravity import ModifiedGravityEnv
 
 EnvType = TypeVar("EnvType", bound=ModifiedGravityEnv)
 
@@ -14,6 +16,7 @@ EnvType = TypeVar("EnvType", bound=ModifiedGravityEnv)
 class ModifiedGravityEnvTests:
     Environment: ClassVar[Type[EnvType]]
 
+    # @pytest.mark.xfail(reason="The condition doesn't always work.")
     def test_change_gravity_each_step(self):
         env: ModifiedGravityEnv = self.Environment()
         max_episode_steps = 50

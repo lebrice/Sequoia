@@ -8,6 +8,8 @@ V = TypeVar("V")
 class ModifiedMassEnv(MujocoEnv):
     """
     Allows the mass of body parts to be changed.
+
+    NOTE: Haven't yet checked how this affects the physics simulation! Might not be 100% working.
     """
     # IDEA: Use somethign like this to tell appart modifications which can be applied
     # on-the-fly on a given env to get multiple tasks, vs those that require creating a
@@ -19,20 +21,13 @@ class ModifiedMassEnv(MujocoEnv):
         self,
         model_path: str,
         frame_skip: int,
-        body_parts: Union[str, List[str]] = None,
-        mass_scales: Union[float, List[float]] = None,
+        body_name_to_mass_scale: Dict[str, float] = None,
         **kwargs,
     ):
         super().__init__(
             model_path=model_path, frame_skip=frame_skip, **kwargs,
         )
-        body_parts = body_parts or []
-        mass_scales = mass_scales if mass_scales is not None else []
-
-        # utils.EzPickle.__init__(self)
-        body_parts = [body_parts] if isinstance(body_parts, str) else body_parts
-        mass_scales = [mass_scales] if isinstance(mass_scales, float) else mass_scales
-
+        body_name_to_mass_scale = body_name_to_mass_scale or {}
         self.default_masses_dict: Dict[str, float] = {
             body_name: self.model.body_mass[i]
             for i, body_name in enumerate(self.model.body_names)
@@ -40,7 +35,7 @@ class ModifiedMassEnv(MujocoEnv):
         self.default_masses: np.ndarray = np.copy(self.model.body_mass)
 
         # dict(zip(body_parts, mass_scales))
-        self.scale_masses(**dict(zip(body_parts, mass_scales)))
+        self.scale_masses(**body_name_to_mass_scale)
         # self.model.body_mass = self.get_and_modify_bodymass(body_part, mass_scale)
         # self.model._compute_subtree()
         # self.model.forward()

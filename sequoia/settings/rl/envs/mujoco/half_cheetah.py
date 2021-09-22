@@ -113,17 +113,15 @@ class ContinualHalfCheetahV2Env(
         model_path: str = "half_cheetah.xml",
         frame_skip: int = 5,
         gravity=-9.81,
-        body_parts=None,  # ("torso", "fthigh", "fshin", "ffoot"),
-        size_scales=None,  # (1.0, 1.0, 1.0, 1.0),
         body_name_to_size_scale: Dict[str, float] = None,
+        body_name_to_mass_scale: Dict[str, float] = None,
     ):
         super().__init__(
             model_path=model_path,
             frame_skip=frame_skip,
             gravity=gravity,
-            body_parts=body_parts,
-            size_scales=size_scales,
             body_name_to_size_scale=body_name_to_size_scale,
+            body_name_to_mass_scale=body_name_to_mass_scale,
         )
 
 
@@ -139,9 +137,8 @@ class ContinualHalfCheetahV3Env(
         reset_noise_scale: float = 0.1,
         exclude_current_positions_from_observation: bool = True,
         gravity=-9.81,
-        body_parts=None,  # ("torso", "fthigh", "fshin", "ffoot"),
-        size_scales=None,  # (1.0, 1.0, 1.0, 1.0),
         body_name_to_size_scale: Dict[str, float] = None,
+        body_name_to_mass_scale: Dict[str, float] = None,
         xml_file: str = None,
     ):
         super().__init__(
@@ -152,7 +149,6 @@ class ContinualHalfCheetahV3Env(
             reset_noise_scale=reset_noise_scale,
             exclude_current_positions_from_observation=exclude_current_positions_from_observation,
             gravity=gravity,
-            body_parts=body_parts,
-            size_scales=size_scales,
             body_name_to_size_scale=body_name_to_size_scale,
+            body_name_to_mass_scale=body_name_to_mass_scale,
         )
