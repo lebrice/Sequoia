@@ -1,5 +1,5 @@
 """ TODO: Tests for the 'modified size' mujoco envs. """
-from typing import ClassVar, List, Type, TypeVar
+from typing import ClassVar, List, Type
 
 import numpy as np
 from gym.wrappers import TimeLimit
@@ -9,13 +9,10 @@ pytestmark = mujoco_required
 
 from .modified_size import ModifiedSizeEnv, get_geom_sizes
 
-EnvType = TypeVar("EnvType", bound=ModifiedSizeEnv)
-
 
 class ModifiedSizeEnvTests:
-    Environment: ClassVar[Type[EnvType]]
+    Environment: ClassVar[Type[ModifiedSizeEnv]]
 
-    # @pytest.mark.xfail(reason="This feature isn't implemented yet.")
     def test_change_size_per_task(self):
         body_part = self.Environment.BODY_NAMES[0]
 

@@ -1,18 +1,17 @@
 """ TODO: Tests for the 'modified gravity' mujoco envs. """
+import operator
+from typing import ClassVar, List, Type
+from gym.wrappers import TimeLimit
 from sequoia.conftest import mujoco_required
+
 pytestmark = mujoco_required
 
-from .modified_mass import ModifiedMassEnv
 from gym.envs.mujoco import MujocoEnv
-from typing import ClassVar, Type, Generic, TypeVar, Dict, List
-from gym.wrappers import TimeLimit
 
-
-EnvType = TypeVar("EnvType", bound=ModifiedMassEnv)
-
+from .modified_mass import ModifiedMassEnv
 
 class ModifiedMassEnvTests:
-    Environment: ClassVar[Type[EnvType]]
+    Environment: ClassVar[Type[ModifiedMassEnv]]
 
     # names of the parts of the model which can be changed.
     body_names: ClassVar[List[str]]
@@ -25,14 +24,14 @@ class ModifiedMassEnvTests:
             assert getattr(env, f"{body_name}_mass") == model_value
             new_value = model_value * 2
             setattr(env, f"{body_name}_mass", new_value)
-            
+
             model_value = env.model.body_mass[env.model.body_names.index(body_name)]
             assert model_value == new_value
 
     def test_change_mass_each_step(self):
         env: ModifiedMassEnv = self.Environment()
-        max_episode_steps = 500
-        n_episodes = 5
+        max_episode_steps = 200
+        n_episodes = 3
 
         # NOTE: Interestingly, the renderer will show
         # `env.frame_skip * max_episode_steps` frames per episode, even when
@@ -51,37 +50,37 @@ class ModifiedMassEnvTests:
             previous_state = initial_state
             state = initial_state
 
-            body_part = self.body_names[0]
+            body_part = self.Environment.BODY_NAMES[0]
             start_mass = env.get_mass(body_part)
 
             while not done:
                 previous_state = state
                 state, reward, done, info = env.step(env.action_space.sample())
+
                 env.render("human")
+
                 episode_steps += 1
                 total_steps += 1
-                
-                env.set_mass(body_part=body_part, mass=start_mass + 5 * total_steps / max_episode_steps)
-                
-                moved_up += (state[1] > previous_state[1])    
+
+                env.set_mass(
+                    **{body_part: start_mass + 5 * total_steps / max_episode_steps}
+                )
+
+                moved_up += state[1] > previous_state[1]
                 print(f"Moving upward? {moved_up}")
-                
-        assert total_steps == n_episodes * max_episode_steps
+
         initial_z = env.init_qpos[1]
         final_z = env.sim.data.qpos[1]
-        assert initial_z == 0
+        # TODO: Check that the change in mass had an impact
 
     def test_set_mass_with_task_schedule(self):
-        # TODO: Reuse this test (and perhaps others from multi_task_environment_test.py)
-        # but with this continual_half_cheetah instead of cartpole.
         body_part = "torso"
         original = self.Environment()
-        starting_mass = original.gravity
-        import operator
+        starting_mass = original.get_mass("torso")
         task_schedule = {
             10: dict(),
-            20: operator.methodcaller("set_mass", torso=-12.0),
-            30: operator.methodcaller("set_mass", torso=0.9),
+            20: operator.methodcaller("set_mass", torso=starting_mass * 2),
+            30: operator.methodcaller("set_mass", torso=starting_mass * 4),
         }
         from sequoia.common.gym_wrappers import MultiTaskEnvironment
 
@@ -95,11 +94,11 @@ class ModifiedMassEnvTests:
                 env.reset()
 
             if 0 <= step < 10:
-                assert env.get_mass(body_part) == starting_mass
+                assert env.get_mass(body_part) == starting_mass, step
             elif 10 <= step < 20:
-                assert env.get_mass(body_part) == starting_mass
+                assert env.get_mass(body_part) == starting_mass, step
             elif 20 <= step < 30:
-                assert env.get_mass(body_part) == -12.0
+                assert env.get_mass(body_part) == starting_mass * 2, step
             elif step >= 30:
-                assert env.get_mass(body_part) == 0.9
+                assert env.get_mass(body_part) == starting_mass * 4, step
         env.close()

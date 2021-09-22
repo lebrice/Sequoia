@@ -76,11 +76,12 @@ class ModifiedMassEnv(MujocoEnv):
             for i, body_name in enumerate(self.model.body_names)
         }
 
-    def set_mass(self, body_part: str, mass: float) -> None:
+    def set_mass(self, **body_name_to_mass: Dict[str, Union[int, float]]) -> None:
         # Will raise an IndexError if the body part isnt found.
         # _set_mass(self, body_part=body_part, mass=mass)
-        idx = self.model.body_names.index(body_part)
-        self.model.body_mass[idx] = mass
+        for body_part, mass in body_name_to_mass.items():
+            idx = self.model.body_names.index(body_part)
+            self.model.body_mass[idx] = mass
 
     def get_mass(self, body_part: str) -> float:
         # Will raise an IndexError if the body part isnt found.
@@ -109,7 +110,7 @@ class ModifiedMassEnv(MujocoEnv):
         for body_name, mass_scale in body_name_to_mass_scale.items():
             current_mass = self.get_mass(body_name)
             new_mass = mass_scale * current_mass
-            self.set_mass(body_name, new_mass)
+            self.set_mass(**{body_name: new_mass})
 
             new_masses[body_name] = new_mass
 
