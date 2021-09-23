@@ -1,3 +1,4 @@
+import math
 import random
 from dataclasses import replace
 from functools import partial
@@ -9,6 +10,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 import pytest
 from gym import spaces
+from gym.envs.classic_control.cartpole import CartPoleEnv
 from gym.vector.utils import batch_space
 from sequoia.common.config import Config
 from sequoia.common.gym_wrappers import IterableWrapper, TransformObservation
@@ -50,10 +52,6 @@ def test_passing_unsupported_dataset_raises_error(dataset: Any):
         _ = ContinualRLSetting(dataset=dataset)
 
 
-import math
-
-from gym.envs.classic_control.cartpole import CartPoleEnv
-
 theta_threshold_radians = 12 * 2 * math.pi / 360
 x_threshold = 2.4
 high = np.array(
@@ -69,12 +67,13 @@ expected_cartpole_obs_space = spaces.Box(-high, high, dtype=np.float32)
 
 
 def make_dataset_fixture(setting_type) -> pytest.fixture:
-    """ Create a parametrized fixture that will go through all the available datasets
-    for a given setting. """
+    """Create a parametrized fixture that will go through all the available datasets
+    for a given setting."""
 
     def dataset(self, request):
         dataset = request.param
         return dataset
+
     datasets = set(setting_type.available_datasets.values())
     # FIXME: Temporarily removing these datasets because they take quite a long time to
     # run. Also: not sure if we can use a `slow_param` on these only, because we're
@@ -85,7 +84,8 @@ def make_dataset_fixture(setting_type) -> pytest.fixture:
     datasets = sorted(list(datasets - datasets_to_remove))
 
     return pytest.fixture(
-        params=datasets, scope="module",
+        params=datasets,
+        scope="module",
     )(dataset)
 
 
@@ -103,7 +103,7 @@ class TestContinualRLSetting:
 
     @pytest.fixture()
     def setting_kwargs(self, dataset: str, config: Config):
-        """ Fixture used to pass keyword arguments when creating a Setting. """
+        """Fixture used to pass keyword arguments when creating a Setting."""
         return {"dataset": dataset, "config": config}
 
     def test_passing_supported_dataset(self, setting_kwargs: Dict):
@@ -111,6 +111,14 @@ class TestContinualRLSetting:
         assert setting.train_task_schedule
         assert all(setting.train_task_schedule.values()), "Should have non-empty tasks."
         # assert isinstance(setting._temp_train_env, expected_type)
+
+    @pytest.mark.parametrize("seed", [123, 456])
+    def test_task_schedule_is_reproducible(self, dataset: str, seed: Optional[int]):
+        setting_a = self.Setting(dataset=dataset, config=Config(seed=seed))
+        setting_b = self.Setting(dataset=dataset, config=Config(seed=seed))
+        assert setting_a.train_task_schedule == setting_b.train_task_schedule
+        assert setting_a.val_task_schedule == setting_b.val_task_schedule
+        assert setting_a.test_task_schedule == setting_b.test_task_schedule
 
     @pytest.mark.xfail(
         reason="Reworking/removing this mechanism, makes things a bit too complicated."
@@ -136,52 +144,39 @@ class TestContinualRLSetting:
             setting.test_steps = 456
         assert setting.test_max_steps == 456
 
-    def test_task_creation_seeding(
-        self, setting_kwargs: Dict[str, Any], config: Config
-    ):
-        """ Make sure that the tasks are 'reproducible' given a seed. """
+    def test_task_creation_seeding(self, setting_kwargs: Dict[str, Any], config: Config):
+        """Make sure that the tasks are 'reproducible' given a seed."""
         config = setting_kwargs.pop("config", config)
         assert config.seed is not None
 
         setting_1 = self.Setting(**setting_kwargs, config=config)
         assert setting_1.train_task_schedule
-        assert all(
-            setting_1.train_task_schedule.values()
-        ), "Should have non-empty tasks."
+        assert all(setting_1.train_task_schedule.values()), "Should have non-empty tasks."
 
         # Make sure that each task is unique:
         assert all(
-            task_a != task_b
-            for task_a, task_b in pairwise(setting_1.train_task_schedule.values())
+            task_a != task_b for task_a, task_b in pairwise(setting_1.train_task_schedule.values())
         )
         assert all(
-            task_a != task_b
-            for task_a, task_b in pairwise(setting_1.val_task_schedule.values())
+            task_a != task_b for task_a, task_b in pairwise(setting_1.val_task_schedule.values())
         )
         assert all(
-            task_a != task_b
-            for task_a, task_b in pairwise(setting_1.test_task_schedule.values())
+            task_a != task_b for task_a, task_b in pairwise(setting_1.test_task_schedule.values())
         )
 
         # Uses the same config:
         setting_2 = self.Setting(**setting_kwargs, config=config)
         assert setting_2.train_task_schedule
-        assert all(
-            setting_2.train_task_schedule.values()
-        ), "Should have non-empty tasks."
+        assert all(setting_2.train_task_schedule.values()), "Should have non-empty tasks."
 
         assert setting_1.train_task_schedule == setting_2.train_task_schedule
         assert setting_1.val_task_schedule == setting_2.val_task_schedule
         assert setting_1.test_task_schedule == setting_2.test_task_schedule
 
         # Create another setting, with a different seed:
-        setting_3 = self.Setting(
-            **setting_kwargs, config=replace(config, seed=config.seed + 123)
-        )
+        setting_3 = self.Setting(**setting_kwargs, config=replace(config, seed=config.seed + 123))
         assert setting_3.train_task_schedule
-        assert all(
-            setting_3.train_task_schedule.values()
-        ), "Should have non-empty tasks."
+        assert all(setting_3.train_task_schedule.values()), "Should have non-empty tasks."
 
         # NOTE: This isn't ideal: in the case where a "nb_tasks" kwarg was passed
         # to the setting constructor (i.e., when this is test is being run while testing
@@ -216,10 +211,8 @@ class TestContinualRLSetting:
             else:
                 assert not setting_3_schedule
 
-    def test_env_attributes_change(
-        self, setting_kwargs: Dict[str, Any], config: Config
-    ):
-        """ Check that the values of the given attributes do change at each step during
+    def test_env_attributes_change(self, setting_kwargs: Dict[str, Any], config: Config):
+        """Check that the values of the given attributes do change at each step during
         training.
         """
         setting_kwargs.setdefault("nb_tasks", 2)
@@ -235,12 +228,11 @@ class TestContinualRLSetting:
 
         # task_for_dataset = make_task_for_env(dataset, step=0, change_steps=[0, 1000])
         # attributes = task_for_dataset.keys()
-        attributes = set().union(
-            *[task.keys() for task in setting.train_task_schedule.values()]
-        )
+        attributes = set().union(*[task.keys() for task in setting.train_task_schedule.values()])
 
         method = DummyMethod()
         from gym.wrappers import TimeLimit
+
         results = setting.apply(method, config=config)
 
         assert results
@@ -259,8 +251,7 @@ class TestContinualRLSetting:
             assert train_values
             train_steps = setting.train_max_steps
             task_schedule_values: List[float] = {
-                step: task[attribute]
-                for step, task in setting.train_task_schedule.items()
+                step: task[attribute] for step, task in setting.train_task_schedule.items()
             }
             self.validate_env_value_changes(
                 setting=setting,
@@ -276,7 +267,7 @@ class TestContinualRLSetting:
         task_schedule_for_attr: Dict[str, float],
         train_values: List[float],
     ):
-        """ Given an attribute name, and the values of that attribute in the
+        """Given an attribute name, and the values of that attribute in the
         task schedule, check that the actual values for that attribute
         encountered during training make sense, based on the type of
         non-stationarity present in this Setting.
@@ -361,13 +352,16 @@ class TestContinualRLSetting:
         #         assert len(unique_attribute_values) == train_tasks, (attribute, unique_attribute_values, setting.train_task_schedule)
 
     @pytest.mark.parametrize(
-        "batch_size", [None, 1, 3],
+        "batch_size",
+        [None, 1, 3],
     )
     @pytest.mark.timeout(60)
     def test_check_iterate_and_step(
-        self, setting_kwargs: Dict[str, Any], batch_size: Optional[int],
+        self,
+        setting_kwargs: Dict[str, Any],
+        batch_size: Optional[int],
     ):
-        """ Test that the observations are of the right type and shape, regardless
+        """Test that the observations are of the right type and shape, regardless
         of wether we iterate on the env by calling 'step' or by using it as a
         DataLoader.
         """
@@ -379,9 +373,7 @@ class TestContinualRLSetting:
 
         if batch_size is not None:
             expected_batched_x_space = batch_space(expected_x_space, batch_size)
-            expected_batched_action_space = batch_space(
-                setting.action_space, batch_size
-            )
+            expected_batched_action_space = batch_space(setting.action_space, batch_size)
         else:
             expected_batched_x_space = expected_x_space
             expected_batched_action_space = expected_action_space
@@ -400,7 +392,10 @@ class TestContinualRLSetting:
                 # single_observation_space, AFAIR.
                 assert env.single_observation_space.x == expected_x_space
                 assert env.single_action_space == expected_action_space
-                assert isinstance(env.observation_space, TypedDictSpace), (env, env.observation_space)
+                assert isinstance(env.observation_space, TypedDictSpace), (
+                    env,
+                    env.observation_space,
+                )
                 assert env.observation_space.x == expected_batched_x_space
                 assert env.action_space == expected_batched_action_space
             else:
@@ -449,9 +444,7 @@ class TestContinualRLSetting:
                 else:
                     assert obs.task_labels[0] in setting.task_label_space
                     assert obs.task_labels in env.observation_space.task_labels
-                    assert (
-                        np.array(obs.task_labels) in env.observation_space.task_labels
-                    )
+                    assert np.array(obs.task_labels) in env.observation_space.task_labels
             else:
                 assert obs.task_labels in env.observation_space.task_labels
 
@@ -697,8 +690,6 @@ if MUJOCO_INSTALLED:
     def test_mujoco_env_name_maps_to_continual_variant(
         dataset: str, expected_env_type: Type[gym.Env]
     ):
-        setting = ContinualRLSetting(
-            dataset=dataset, train_max_steps=10_000, test_max_steps=10_000
-        )
+        setting = ContinualRLSetting(dataset=dataset, train_max_steps=10_000, test_max_steps=10_000)
         train_env = setting.train_dataloader()
         assert isinstance(train_env.unwrapped, expected_env_type)
