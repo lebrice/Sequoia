@@ -95,7 +95,7 @@ class ModifiedSizeEnv(MujocoEnv):
         self.tree = self.default_tree
 
         if body_name_to_size_scale:
-            logger.info(f"Changing parts: {body_name_to_size_scale}")
+            logger.debug(f"Changing parts: {body_name_to_size_scale}")
             self.tree = change_size_in_xml(self.default_tree, **body_name_to_size_scale)
             # create new xml
             # IDEA: Create an XML file with a unique name somewhere, and then write the
@@ -107,7 +107,7 @@ class ModifiedSizeEnv(MujocoEnv):
             if not new_xml_path.parent.exists():
                 new_xml_path.parent.mkdir(exist_ok=False, parents=True)
             self.tree.write(str(new_xml_path))
-            logger.info(f"Generated XML path: {new_xml_path}")
+            logger.debug(f"Generated XML path: {new_xml_path}")
 
             # Update the value to be passed to the constructor:
             full_path = str(new_xml_path)
