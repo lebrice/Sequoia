@@ -22,6 +22,7 @@ except ImportError:
     from typing_extensions import Literal
 
 
+# This creates a vectorized environment that has multiple pistonball environments concatenated together
 def make_pistonball_env(
         vector_env_type: Literal["gym", "stable_baselines3", "stable_baselines"] = "stable_baselines3"
 ) -> VectorEnv:
@@ -48,6 +49,36 @@ def make_pistonball_env(
         env.reward_range = (-np.inf, np.inf)
         env.single_action_space = env.venv.action_space
     return env
+
+# TODO: Condense this into one method with above method that will take num_vec_envs as a parameter
+# For testing, this creates a single pistonball environment (vectorized across agents)
+def make_test_pistonball_env(
+        vector_env_type: Literal["gym", "stable_baselines3", "stable_baselines"] = "stable_baselines3"
+) -> VectorEnv:
+    env = pistonball_v4.parallel_env(
+        n_pistons=20,
+        local_ratio=0,
+        time_penalty=-0.1,
+        continuous=True,
+        random_drop=True,
+        random_rotate=True,
+        ball_mass=0.75,
+        ball_friction=0.3,
+        ball_elasticity=1.5,
+        max_cycles=125,
+    )
+    env = ss.color_reduction_v0(env, mode="B")
+    env = ss.resize_v0(env, x_size=84, y_size=84)
+    env = ss.frame_stack_v1(env, 3)
+    vector_env: VectorEnv = ss.pettingzoo_env_to_vec_env_v0(env)
+    env = ss.concat_vec_envs_v0(vector_env, 1, num_cpus=4, base_class=vector_env_type)
+    env.spec = EnvSpec("Sequoia_PistonBall-v4", entry_point=make_test_pistonball_env)
+    if vector_env_type == "stable_baselines3":
+        # Patch missing attributes
+        env.reward_range = (-np.inf, np.inf)
+        env.single_action_space = env.venv.action_space
+    return env
+
 
 
 gym.register("Sequoia_PistonBall-v4", entry_point=make_pistonball_env)
@@ -101,7 +132,8 @@ from sequoia.settings.rl import TaskIncrementalRLSetting
 def main():
     pistonball_env = make_pistonball_env()  # gym.make("Sequoia_PistonBall-v4")
     pistonball_val_env = make_pistonball_env()  # gym.make("Sequoia_PistonBall-v4")
-    pistonball_test_env = make_pistonball_env()  # gym.make("Sequoia_PistonBall-v4")
+    # pistonball_test_env = make_pistonball_env()  # gym.make("Sequoia_PistonBall-v4")
+    pistonball_test_env = make_test_pistonball_env()  # gym.make("Sequoia_PistonBall-v4")
 
     model = PPO(
         CnnPolicy,

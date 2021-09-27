@@ -1,6 +1,7 @@
 import itertools
 import json
 import time
+import numpy as np
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from io import StringIO
@@ -423,11 +424,12 @@ class TestEnvironment(gym.wrappers.Monitor, IterableWrapper[EnvType], ABC):
         else:
             done = bool(done)
 
-        # TODO: Do i have to sum all the agents' reward together to get one scalar reward for logging?
-        # TODO: Have 20 pistons per game, and 8 envs parallelized - so reward_for_stats is size-160 numpy array
-        # For now, just going to take first reward, but this isn't correct
-        # done = self._after_step(observation_for_stats, reward_for_stats, done, info)
-        done = self._after_step(observation_for_stats, reward_for_stats[0], done, info)
+        # If the environment is a multi-agent environment, the reward_for_stats will be a vector of agent rewards,
+        # which must be condensed to a single scalar reward
+        if reward_for_stats.size > 1:
+            # Have n agents per game (i.e. 20 pistons) in 1 vectorized environment
+            # To get reward to evaluate on, we take the average of rewards of all n agents
+            done = self._after_step(observation_for_stats, np.mean(reward_for_stats), done, info)
 
         if self.get_total_steps() >= self.step_limit:
             done = True
