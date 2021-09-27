@@ -1143,12 +1143,8 @@ def make_lpg_ftw_datasets(
         )
     assert isinstance(nb_tasks, int)
 
-    # NOTE: All envs in LPG-FTW use max_episode_steps of 1000.
-    max_episode_steps = 1000
-    wrappers = [partial(TimeLimit, max_episode_steps=max_episode_steps)]
-
     task_params: List[Dict] = []
-    factors = []
+    values = []
     for task_id in range(nb_tasks):
         # NOTE: Could also support a different type of modification per task, by passing a list of
         # types of modifications to use!
@@ -1156,14 +1152,16 @@ def make_lpg_ftw_datasets(
             # This is a function that will be called for each task, and must produce a set of
             # (distinct, reproducible) keyword arguments for the given task.
             original_gravity = -9.81
-            task_kwargs = {"gravity": (rng.random() + 0.5) * original_gravity}
+            task_gravity = round(((rng.random() + 0.5) * original_gravity), 4)
+            task_kwargs = {"gravity": task_gravity}
+            values.append(task_gravity)
 
         elif modification_type == "bodyparts":
 
             body_names = bodyparts_for_env[env_name]
-            size_factors = (rng.random(len(body_names)) + 0.5).round(4)
-            factors.append(size_factors)
-            body_name_to_size_scale = dict(zip(body_names, size_factors))
+            scale_factors = (rng.random(len(body_names)) + 0.5).round(4)
+            values.append(scale_factors)
+            body_name_to_size_scale = dict(zip(body_names, scale_factors))
 
             # between 0.5 and 1.5, with 4 digits of precision.
             # NOTE: Scale the mass by the same factor as the size.
@@ -1179,11 +1177,14 @@ def make_lpg_ftw_datasets(
         logger.info(f"Arguments for task {task_id}: {task_kwargs}")
         task_params.append(task_kwargs)
 
-    size_factors = np.array(factors)
-    print("Size factors: ")
-    print(size_factors)
+    values = np.array(values)
+    logger.debug(values.tolist())
+    # assert False
     # logger.info("Task parameters:")
     # logger.info(json.dumps(task_params, indent="\t"))
+    # NOTE: All envs in LPG-FTW use max_episode_steps of 1000.
+    # max_episode_steps = 1000
+    # wrappers = [partial(TimeLimit, max_episode_steps=max_episode_steps)]
 
     for task_id, task_kwargs in enumerate(task_params):
         # Function that will create the env with the given task.

@@ -188,12 +188,17 @@ class TestIncrementalRLSetting(DiscreteTaskAgnosticRLSettingTests):
         self.validate_results(setting, method, results)
 
     @mujoco_required
+    @pytest.mark.parametrize("seed", [None, 123, 456])
+    @pytest.mark.parametrize("version", ["v2", "v3"])
     @pytest.mark.parametrize("env_name", ["HalfCheetah", "Hopper", "Walker2d"])
     @pytest.mark.parametrize("modification", ["bodyparts", "gravity"])
-    @pytest.mark.parametrize("version", ["v2", "v3"])
-    @pytest.mark.parametrize("seed", [None, 123, 456])
     def test_LPG_FTW_datasets(
-        self, env_name: str, modification: str, version: str, config: Config, seed: int
+        self,
+        env_name: str,
+        modification: str,
+        version: str,
+        config: Config,
+        seed: int,
     ):
         """Test using a dataset from the LPG-FTW paper / repo (continual mujoco variants).
 
@@ -210,8 +215,11 @@ class TestIncrementalRLSetting(DiscreteTaskAgnosticRLSettingTests):
         config = dataclasses.replace(config, seed=seed)
         nb_tasks: Optional[int] = None
         setting: TaskIncrementalRLSetting = self.Setting(
-            dataset=dataset, nb_tasks=nb_tasks, config=config
+            dataset=dataset,
+            nb_tasks=nb_tasks,
+            config=config,
         )
+
         if nb_tasks is not None:
             assert setting.nb_tasks == nb_tasks
         else:
@@ -223,8 +231,8 @@ class TestIncrementalRLSetting(DiscreteTaskAgnosticRLSettingTests):
         assert setting.test_max_steps == setting.test_steps_per_task * setting.nb_tasks
         assert setting.config == config
 
-        if modification == "bodyparts":
-            expected_factors = {
+        expected_values = {
+            "bodyparts": {
                 "HalfCheetah": np.array(
                     [
                         [1.0667, 1.354, 1.1454, 0.9112],
@@ -327,8 +335,121 @@ class TestIncrementalRLSetting(DiscreteTaskAgnosticRLSettingTests):
                         [1.1542, 1.3616, 0.7465, 0.8679],
                     ]
                 ),
-            }
-            expected_factors_for_env = expected_factors[env_name]
+            },
+            "gravity": {
+                "HalfCheetah": np.array(
+                    [
+                        -10.4648,
+                        -13.2825,
+                        -11.236,
+                        -8.9384,
+                        -9.4964,
+                        -12.9626,
+                        -7.9709,
+                        -12.6178,
+                        -9.1777,
+                        -7.3343,
+                        -9.2424,
+                        -13.7041,
+                        -10.3694,
+                        -10.091,
+                        -7.6124,
+                        -13.4874,
+                        -7.4477,
+                        -12.8111,
+                        -6.0907,
+                        -9.1363,
+                    ]
+                ),
+                "Hopper": np.array(
+                    [
+                        -6.999,
+                        -4.9579,
+                        -12.9078,
+                        -13.5543,
+                        -12.2405,
+                        -14.3439,
+                        -8.6606,
+                        -7.3419,
+                        -5.6488,
+                        -13.7555,
+                        -9.8317,
+                        -12.2801,
+                        -13.9059,
+                        -5.2266,
+                        -8.5266,
+                        -6.8638,
+                        -6.83,
+                        -12.8763,
+                        -12.104,
+                        -13.7512,
+                    ]
+                ),
+                "Walker2d": np.array(
+                    [
+                        -7.4229,
+                        -7.4163,
+                        -14.006,
+                        -9.3835,
+                        -13.8414,
+                        -5.8243,
+                        -7.461,
+                        -6.7093,
+                        -10.0807,
+                        -11.8119,
+                        -14.1762,
+                        -8.2791,
+                        -9.57,
+                        -8.031,
+                        -5.7979,
+                        -5.7189,
+                        -11.9495,
+                        -8.3575,
+                        -5.7666,
+                        -9.7467,
+                        -8.7165,
+                        -12.6623,
+                        -12.7656,
+                        -11.2362,
+                        -9.9544,
+                        -7.3011,
+                        -12.1249,
+                        -5.1366,
+                        -11.7508,
+                        -5.2058,
+                        -13.8,
+                        -11.4139,
+                        -9.3481,
+                        -8.4107,
+                        -6.5289,
+                        -5.1934,
+                        -7.898,
+                        -11.4647,
+                        -8.3374,
+                        -13.6001,
+                        -12.6038,
+                        -8.6978,
+                        -5.1157,
+                        -10.0563,
+                        -12.0081,
+                        -7.3568,
+                        -11.2612,
+                        -5.6351,
+                        -12.1197,
+                        -5.7417,
+                    ]
+                ),
+            },
+        }
+
+        if modification == "bodyparts":
+            expected_factors_for_env = expected_values["bodyparts"][env_name]
+
+            def check_env_fn_matches_expected(task_id: int, env_fn: functools.partial):
+                kwargs = env_fn.keywords
+                for argument_name in ["body_name_to_size_scale", "body_name_to_mass_scale"]:
+                    argument_values = np.array(list(kwargs[argument_name].values()))
+                    assert (argument_values == expected_factors_for_env[task_id]).all()
 
             env_fn: functools.partial
 
@@ -338,11 +459,19 @@ class TestIncrementalRLSetting(DiscreteTaskAgnosticRLSettingTests):
             # but I think that inspecting the attributes on the multi-env wrappers used by the
             # Traditional and MultiTask RL settings might not work. This is ok for now.
 
+            for task_id, env_fn in enumerate(setting.train_envs):
+                check_env_fn_matches_expected(task_id, env_fn)
+            for task_id, env_fn in enumerate(setting.val_envs):
+                check_env_fn_matches_expected(task_id, env_fn)
+            for task_id, env_fn in enumerate(setting.test_envs):
+                check_env_fn_matches_expected(task_id, env_fn)
+        elif modification == "gravity":
+            expected_gravities_for_env = expected_values["gravity"][env_name]
+
             def check_env_fn_matches_expected(task_id: int, env_fn: functools.partial):
                 kwargs = env_fn.keywords
-                for argument_name in ["body_name_to_size_scale", "body_name_to_mass_scale"]:
-                    argument_values = np.array(list(kwargs[argument_name].values()))
-                    assert (argument_values == expected_factors_for_env[task_id]).all()
+                gravity_value: float = kwargs["gravity"]
+                assert np.isclose(gravity_value, expected_gravities_for_env[task_id])
 
             for task_id, env_fn in enumerate(setting.train_envs):
                 check_env_fn_matches_expected(task_id, env_fn)
@@ -350,6 +479,50 @@ class TestIncrementalRLSetting(DiscreteTaskAgnosticRLSettingTests):
                 check_env_fn_matches_expected(task_id, env_fn)
             for task_id, env_fn in enumerate(setting.test_envs):
                 check_env_fn_matches_expected(task_id, env_fn)
+
+        # TODO: Not sure if this check will also work with the stationary settings, so skipping it
+        # for now.
+        if setting.stationary_context:
+            return
+
+        # Check that the max episode length is really respected.
+        with setting.train_dataloader() as temp_env:
+            steps = 0
+            obs = temp_env.reset()
+            done = False
+            while not done:
+                action = temp_env.action_space.sample()
+                obs, reward, done, info = temp_env.step(action)
+                assert obs in temp_env.observation_space
+                steps += 1
+                assert steps <= 1000
+            assert steps <= 1000
+
+        # NOTE: Testing the 'live' envs is much slower, since we have to actually isntantiate the
+        # envs. Skipping the rest for now.
+        return
+
+        def _check_env_attributes_match(task_id: int, env: gym.Env):
+            if modification == "bodyparts":
+                size_scales = env.body_name_to_size_scale
+                mass_scales = env.body_name_to_mass_scale
+                assert size_scales == mass_scales
+                assert list(size_scales.values()) == expected_factors_for_env[task_id].tolist()
+            elif modification == "gravity":
+                gravity = env.gravity
+                assert gravity == expected_gravities_for_env[task_id]
+
+        setting.prepare_data()
+        for task_id in range(setting.nb_tasks):
+            print(f"Testing the 'live' envs for task {task_id}.")
+            setting.current_task_id = task_id
+
+            with setting.train_dataloader() as env:
+                _check_env_attributes_match(task_id, env)
+            with setting.val_dataloader() as env:
+                _check_env_attributes_match(task_id, env)
+            with setting.test_dataloader() as env:
+                _check_env_attributes_match(task_id, env)
 
 
 @pytest.mark.timeout(120)
