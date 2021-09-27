@@ -1,7 +1,9 @@
+import dataclasses
+import functools
 import math
 import operator
 import random
-from typing import ClassVar, Tuple, Type
+from typing import ClassVar, Optional, Tuple, Type
 
 import gym
 import numpy as np
@@ -41,11 +43,9 @@ class TestIncrementalRLSetting(DiscreteTaskAgnosticRLSettingTests):
 
     @pytest.fixture()
     def setting_kwargs(self, dataset: str, nb_tasks: int, config: Config):
-        """ Fixture used to pass keyword arguments when creating a Setting. """
+        """Fixture used to pass keyword arguments when creating a Setting."""
         kwargs = {"dataset": dataset, "nb_tasks": nb_tasks, "max_episode_steps": 100}
-        if dataset.lower().startswith(
-            ("walker2d", "hopper", "halfcheetah", "continual")
-        ):
+        if dataset.lower().startswith(("walker2d", "hopper", "halfcheetah", "continual")):
             # kwargs["train_max_steps"] = 5_000
             # kwargs["max_episode_steps"] = 100
             pass
@@ -60,7 +60,7 @@ class TestIncrementalRLSetting(DiscreteTaskAgnosticRLSettingTests):
         method: DummyMethod,
         results: IncrementalRLSetting.Results,
     ) -> None:
-        """ Check that the results make sense.
+        """Check that the results make sense.
         The Dummy Method used also keeps useful attributes, which we check here.
         """
         assert results
@@ -82,11 +82,7 @@ class TestIncrementalRLSetting(DiscreteTaskAgnosticRLSettingTests):
         else:
             assert method.received_task_ids == sum(
                 [
-                    [t_i]
-                    + [
-                        t_j if setting.task_labels_at_test_time else None
-                        for t_j in range(t)
-                    ]
+                    [t_i] + [t_j if setting.task_labels_at_test_time else None for t_j in range(t)]
                     for t_i in range(t)
                 ],
                 [],
@@ -132,9 +128,7 @@ class TestIncrementalRLSetting(DiscreteTaskAgnosticRLSettingTests):
                             )
                         return
                     else:
-                        obs, reward, done, info = train_env.step(
-                            train_env.action_space.sample()
-                        )
+                        obs, reward, done, info = train_env.step(train_env.action_space.sample())
                     total_steps += 1
 
             assert total_steps == setting.steps_per_phase
@@ -149,8 +143,7 @@ class TestIncrementalRLSetting(DiscreteTaskAgnosticRLSettingTests):
         [False, xfail_param(True, reason="TODO: MonsterkongState doesn't work?")],
     )
     def test_monsterkong(self, state: bool):
-        """ Checks that the MonsterKong env works fine with pixel and state input.
-        """
+        """Checks that the MonsterKong env works fine with pixel and state input."""
         setting = self.Setting(
             dataset="StateMetaMonsterKong-v0" if state else "PixelMetaMonsterKong-v0",
             # force_state_observations=state,
@@ -193,6 +186,170 @@ class TestIncrementalRLSetting(DiscreteTaskAgnosticRLSettingTests):
         results = setting.apply(method)
 
         self.validate_results(setting, method, results)
+
+    @mujoco_required
+    @pytest.mark.parametrize("env_name", ["HalfCheetah", "Hopper", "Walker2d"])
+    @pytest.mark.parametrize("modification", ["bodyparts", "gravity"])
+    @pytest.mark.parametrize("version", ["v2", "v3"])
+    @pytest.mark.parametrize("seed", [None, 123, 456])
+    def test_LPG_FTW_datasets(
+        self, env_name: str, modification: str, version: str, config: Config, seed: int
+    ):
+        """Test using a dataset from the LPG-FTW paper / repo (continual mujoco variants).
+
+        TODO: Check that:
+        - the task sequence is always the same (uses the same seed), regardless of what seed is
+          passed;
+        - The envs are created correctly;
+        - The number of tasks / train steps / test steps / etc is set to the right values.
+        """
+        # LPG-FTW-{bodysize|gravity}-{HalfCheetah|Hopper|Walker2d}-{v2|v3}
+        dataset = f"LPG-FTW-{modification}-{env_name}-{version}"
+
+        # NOTE: Set the seed in the config, preserving the other values:
+        config = dataclasses.replace(config, seed=seed)
+        nb_tasks: Optional[int] = None
+        setting: TaskIncrementalRLSetting = self.Setting(
+            dataset=dataset, nb_tasks=nb_tasks, config=config
+        )
+        if nb_tasks is not None:
+            assert setting.nb_tasks == nb_tasks
+        else:
+            assert setting.nb_tasks == 20 if env_name in ["HalfCheetah", "Hopper"] else 50
+
+        assert setting.train_steps_per_task == 100_000
+        assert setting.train_max_steps == setting.train_steps_per_task * setting.nb_tasks
+        assert setting.test_steps_per_task == 10_000
+        assert setting.test_max_steps == setting.test_steps_per_task * setting.nb_tasks
+        assert setting.config == config
+
+        if modification == "bodyparts":
+            expected_factors = {
+                "HalfCheetah": np.array(
+                    [
+                        [1.0667, 1.354, 1.1454, 0.9112],
+                        [0.968, 1.3214, 0.8125, 1.2862],
+                        [0.9356, 0.7476, 0.9421, 1.397],
+                        [1.057, 1.0286, 0.776, 1.3749],
+                        [0.7592, 1.3059, 0.6209, 0.9313],
+                        [0.8497, 1.016, 0.869, 0.9722],
+                        [0.6936, 0.7496, 0.9946, 0.7713],
+                        [0.9878, 1.1394, 1.438, 1.3296],
+                        [1.1359, 1.1118, 1.4415, 1.3868],
+                        [0.5468, 0.9953, 1.3474, 1.3668],
+                        [0.7779, 0.5924, 0.8996, 0.8196],
+                        [0.9775, 0.7775, 1.3211, 1.1515],
+                        [0.6026, 0.833, 0.9688, 1.4437],
+                        [0.6035, 1.161, 1.0771, 0.7065],
+                        [1.0629, 1.4446, 0.9937, 0.5573],
+                        [1.2337, 0.522, 1.0446, 0.86],
+                        [0.7313, 1.35, 1.2919, 0.6101],
+                        [1.0026, 0.5937, 0.6216, 1.3764],
+                        [0.6369, 0.8332, 1.0068, 1.1956],
+                        [1.1337, 0.8872, 1.0393, 1.4391],
+                    ]
+                ),
+                "Hopper": np.array(
+                    [
+                        [0.7135, 0.5054, 1.3158, 1.3817],
+                        [1.2478, 1.4622, 0.8828, 0.7484],
+                        [0.5758, 1.4022, 1.0022, 1.2518],
+                        [1.4175, 0.5328, 0.8692, 0.6997],
+                        [0.6962, 1.3126, 1.2338, 1.4018],
+                        [1.4837, 1.0798, 0.7868, 0.8489],
+                        [1.3545, 0.7424, 1.2719, 1.0976],
+                        [0.6088, 0.516, 0.8584, 1.0396],
+                        [1.19, 0.6938, 0.5663, 0.8589],
+                        [0.8211, 1.3241, 0.9745, 1.345],
+                        [0.6572, 1.0763, 1.3601, 0.659],
+                        [0.7739, 0.7299, 0.6518, 1.469],
+                        [1.0556, 0.7345, 0.532, 1.0279],
+                        [1.2296, 0.6701, 1.4398, 1.0611],
+                        [0.6225, 1.0743, 0.827, 0.6753],
+                        [0.7325, 0.809, 1.2254, 0.9415],
+                        [1.4439, 0.9964, 1.4649, 1.333],
+                        [0.5189, 0.9123, 1.1166, 1.3882],
+                        [1.0468, 1.4162, 1.4152, 1.4333],
+                        [1.1143, 1.2726, 1.0209, 1.0729],
+                    ]
+                ),
+                "Walker2d": np.array(
+                    [
+                        [0.7567, 0.756, 1.4277, 0.9565],
+                        [1.4109, 0.5937, 0.7606, 0.6839],
+                        [1.0276, 1.2041, 1.4451, 0.8439],
+                        [0.9755, 0.8187, 0.591, 0.583],
+                        [1.2181, 0.8519, 0.5878, 0.9935],
+                        [0.8885, 1.2908, 1.3013, 1.1454],
+                        [1.0147, 0.7442, 1.236, 0.5236],
+                        [1.1978, 0.5307, 1.4067, 1.1635],
+                        [0.9529, 0.8574, 0.6655, 0.5294],
+                        [0.8051, 1.1687, 0.8499, 1.3864],
+                        [1.2848, 0.8866, 0.5215, 1.0251],
+                        [1.2241, 0.7499, 1.1479, 0.5744],
+                        [1.2354, 0.5853, 1.1212, 0.5174],
+                        [0.7968, 0.7717, 1.2285, 0.8687],
+                        [1.0544, 0.5814, 0.8588, 0.687],
+                        [1.0695, 0.6469, 0.8567, 0.6682],
+                        [1.2904, 0.8367, 1.228, 0.8606],
+                        [1.0343, 0.7646, 0.515, 1.3386],
+                        [1.1157, 1.2064, 1.0026, 0.9877],
+                        [0.6621, 0.809, 1.0466, 0.5361],
+                        [0.9291, 0.6168, 0.9013, 1.4358],
+                        [1.048, 0.8483, 0.8586, 1.1867],
+                        [1.327, 1.0487, 1.4479, 0.9426],
+                        [1.2382, 0.8678, 1.0034, 1.2412],
+                        [0.5863, 1.4389, 0.934, 1.3923],
+                        [1.1379, 1.154, 0.5595, 0.5955],
+                        [1.3881, 1.3309, 0.5342, 1.1085],
+                        [0.8394, 1.0508, 0.9655, 0.7755],
+                        [0.7494, 0.6891, 0.6979, 1.3249],
+                        [1.1108, 1.3998, 0.7783, 0.599],
+                        [0.8687, 0.5902, 1.212, 0.6375],
+                        [0.5668, 0.981, 0.5026, 1.0739],
+                        [0.9416, 1.4424, 1.0721, 0.9112],
+                        [1.2981, 1.0119, 1.2722, 0.9808],
+                        [1.4171, 1.1066, 0.6053, 1.2302],
+                        [1.1096, 1.0246, 1.3117, 0.5727],
+                        [0.8082, 0.875, 0.9299, 1.2194],
+                        [1.0526, 0.961, 1.0492, 1.2552],
+                        [1.46, 0.8331, 0.934, 0.5725],
+                        [1.3832, 1.4736, 1.2651, 0.7956],
+                        [0.68, 1.2663, 1.4183, 0.9284],
+                        [1.2713, 0.6865, 0.8331, 1.0081],
+                        [1.4115, 0.5781, 0.9823, 0.8094],
+                        [1.4614, 0.5998, 1.2237, 1.3794],
+                        [1.2385, 1.2489, 0.7521, 0.818],
+                        [1.077, 1.2589, 0.748, 1.1483],
+                        [0.7855, 1.1619, 0.5537, 1.2367],
+                        [1.4765, 1.1728, 0.9052, 1.3113],
+                        [1.1144, 0.9986, 1.3052, 0.9948],
+                        [1.1542, 1.3616, 0.7465, 0.8679],
+                    ]
+                ),
+            }
+            expected_factors_for_env = expected_factors[env_name]
+
+            env_fn: functools.partial
+
+            # Inspect the env functions and check that the arguments that would be passed to the
+            # constructor make sense.
+            # NOTE: Could also create the envs using the setting and inspect these attributes,
+            # but I think that inspecting the attributes on the multi-env wrappers used by the
+            # Traditional and MultiTask RL settings might not work. This is ok for now.
+
+            def check_env_fn_matches_expected(task_id: int, env_fn: functools.partial):
+                kwargs = env_fn.keywords
+                for argument_name in ["body_name_to_size_scale", "body_name_to_mass_scale"]:
+                    argument_values = np.array(list(kwargs[argument_name].values()))
+                    assert (argument_values == expected_factors_for_env[task_id]).all()
+
+            for task_id, env_fn in enumerate(setting.train_envs):
+                check_env_fn_matches_expected(task_id, env_fn)
+            for task_id, env_fn in enumerate(setting.val_envs):
+                check_env_fn_matches_expected(task_id, env_fn)
+            for task_id, env_fn in enumerate(setting.test_envs):
+                check_env_fn_matches_expected(task_id, env_fn)
 
 
 @pytest.mark.timeout(120)
@@ -290,7 +447,7 @@ def test_mtenv_meta_world_support():
 @metaworld_required
 @pytest.mark.timeout(60)
 def test_metaworld_support(config: Config):
-    """ Test using metaworld benchmarks as the dataset of an RL Setting.
+    """Test using metaworld benchmarks as the dataset of an RL Setting.
 
     NOTE: Uses either a MetaWorldEnv instance as the `dataset`, or the env id.
     TODO: Need to rethink this, we should instead use one env class per task (where each
@@ -313,7 +470,7 @@ def test_metaworld_support(config: Config):
     assert setting.test_max_steps == 500
     assert setting.train_steps_per_task == 50
     assert setting.test_steps_per_task == 50
-    
+
     method = DummyMethod()
     results = setting.apply(method, config=config)
     assert results.summary()
@@ -324,14 +481,17 @@ def test_metaworld_support(config: Config):
 @pytest.mark.timeout(180)
 @pytest.mark.parametrize("dataset", ["CW10", "CW20"])
 def test_continual_world_support(dataset: str, config: Config):
-    """ Test using CW10 and CW20 benchmarks as the dataset of an RL Setting.
+    """Test using CW10 and CW20 benchmarks as the dataset of an RL Setting.
 
     TODO: This test is quite long to run, in part because metaworld takes like 20
     seconds to load, and there being 20 tasks in CW20
     """
     # TODO: Add option of passing a benchmark instance? That might make it quicker to
     # run tests?
-    setting = IncrementalRLSetting(dataset=dataset, config=config,)
+    setting = IncrementalRLSetting(
+        dataset=dataset,
+        config=config,
+    )
     assert setting.nb_tasks == 10 if dataset == "CW10" else 20
     assert setting.train_steps_per_task == 1_000_000
     assert setting.train_max_steps == 1_000_000 * setting.nb_tasks
@@ -369,7 +529,7 @@ def test_continual_world_support(dataset: str, config: Config):
 @pytest.mark.timeout(120)
 @pytest.mark.parametrize("pass_env_id_instead_of_env_instance", [True, False])
 def test_metaworld_auto_task_schedule(pass_env_id_instead_of_env_instance: bool):
-    """ Test that when passing just an env id from metaworld and a number of tasks,
+    """Test that when passing just an env id from metaworld and a number of tasks,
     the task schedule is created automatically.
     """
     import metaworld
@@ -437,9 +597,7 @@ def test_dm_control_support():
     action_spec = env.action_spec()
     time_step = env.reset()
     while not time_step.last():
-        action = np.random.uniform(
-            action_spec.minimum, action_spec.maximum, size=action_spec.shape
-        )
+        action = np.random.uniform(action_spec.minimum, action_spec.maximum, size=action_spec.shape)
         time_step = env.step(action)
         print(time_step.reward, time_step.discount, time_step.observation)
 
@@ -482,15 +640,13 @@ from sequoia.methods.random_baseline import RandomBaselineMethod
 
 
 class TestPassingEnvsForEachTask:
-    """ Tests that have to do with the feature of passing the list of environments to
+    """Tests that have to do with the feature of passing the list of environments to
     use for each task.
     """
 
     def test_raises_warning_when_envs_have_different_obs_spaces(self):
         task_envs = ["CartPole-v0", "Pendulum-v0"]
-        with pytest.warns(
-            RuntimeWarning, match="doesn't have the same observation space"
-        ):
+        with pytest.warns(RuntimeWarning, match="doesn't have the same observation space"):
             setting = IncrementalRLSetting(train_envs=task_envs)
             setting.train_dataloader()
 
@@ -542,29 +698,22 @@ class TestPassingEnvsForEachTask:
             # TODO: Either add a `__getattr__` proxy on the Sparse space, or create
             # dedicated `SparseDiscrete`, `SparseBox` etc spaces so that we eventually
             # get to use `space.n` on a Sparse space.
-            assert train_env.observation_space.task_labels == spaces.Discrete(
-                setting.nb_tasks
-            )
+            assert train_env.observation_space.task_labels == spaces.Discrete(setting.nb_tasks)
             assert (
-                setting.observation_space.task_labels.n
-                == train_env.observation_space.task_labels.n
+                setting.observation_space.task_labels.n == train_env.observation_space.task_labels.n
             )
 
     def test_command_line(self):
         # TODO: If someone passes the same env ids from the command-line, then shouldn't
         # we somehow vary the tasks by changing the level or something?
 
-        setting = IncrementalRLSetting.from_args(
-            argv="--train_envs CartPole-v0 Pendulum-v0"
-        )
+        setting = IncrementalRLSetting.from_args(argv="--train_envs CartPole-v0 Pendulum-v0")
         assert setting.train_envs == ["CartPole-v0", "Pendulum-v0"]
         # TODO: Not using this:
 
     def test_raises_warning_when_envs_have_different_obs_spaces(self):
         task_envs = ["CartPole-v0", "Pendulum-v0"]
-        with pytest.warns(
-            RuntimeWarning, match="doesn't have the same observation space"
-        ):
+        with pytest.warns(RuntimeWarning, match="doesn't have the same observation space"):
             setting = IncrementalRLSetting(train_envs=task_envs)
             setting.train_dataloader()
 
@@ -597,7 +746,7 @@ class TestPassingEnvsForEachTask:
 @pytest.mark.xfail(reason=f"Don't yet fully changing the size of the body parts.")
 @mujoco_required
 def test_incremental_mujoco_like_LPG_FTW():
-    """ Trying to get the same-ish setup as the "LPG_FTW" experiments
+    """Trying to get the same-ish setup as the "LPG_FTW" experiments
 
     See https://github.com/Lifelong-ML/LPG-FTW/tree/master/experiments
     """
@@ -638,4 +787,3 @@ def test_incremental_mujoco_like_LPG_FTW():
     # TODO: Using `render=True` causes a silent crash for some reason!
     results = setting.apply(method)
     assert results.objective > 0
-

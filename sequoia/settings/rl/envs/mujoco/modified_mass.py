@@ -87,6 +87,11 @@ class ModifiedMassEnv(MujocoEnv):
 
     def get_mass(self, body_part: str) -> float:
         # Will raise an IndexError if the body part isnt found.
+        if body_part not in self.model.body_names:
+            raise ValueError(
+                f"No body named {body_part} in this mujoco model! (body names: "
+                f"{self.model.body_names})."
+            )
         idx = self.model.body_names.index(body_part)
         return self.model.body_mass[idx]
 
