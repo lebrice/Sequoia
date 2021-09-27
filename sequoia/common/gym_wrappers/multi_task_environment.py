@@ -1,4 +1,5 @@
 import bisect
+import dataclasses
 from functools import singledispatch
 from typing import (
     Any,
@@ -92,6 +93,10 @@ def _add_task_labels_to_single_obs(observation: X, task_labels: T) -> Tuple[X, T
     }
     # return ObservationsAndTaskLabels(observation, task_labels)
 
+from sequoia.common.batch import Batch
+@add_task_labels.register(Batch)
+def _add_task_labels_to_batch(observation: Batch, task_labels: T) -> Batch:
+    return dataclasses.replace(observation, task_labels=task_labels)
 
 from sequoia.common.spaces import TypedDictSpace
 
