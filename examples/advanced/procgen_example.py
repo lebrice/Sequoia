@@ -196,26 +196,28 @@ def make_procgen_setting(
     task #4: levels: [9, 10, 11, 12, 13]
     task #5: levels: [12, 13, 14, 15, 16]
 
+    NOTE: (lebrice): Maybe this (and other benchmark-creating functions) could be classmethods on
+    the settings, instead of passing the setting_type as a parameter!
+
     Returns
     -------
     SettingType
         A Setting of type `setting_type` (`TaskIncrementalRLSetting`) by default, where each task
         uses environments from ProcGen.
     """
-    # NOTE: These parameters above could be new options.
-
     assert overlapping_levels_between_tasks < num_levels_per_task
 
-    # `base_options` is the options common to all envs.
+    # Create the options common to every task.
     if common_options is None:
         common_options = ProcGenConfig(env_name=env_name)
     else:
         common_options = dataclasses.replace(common_options, env_name=env_name)
 
-    interval = num_levels_per_task - overlapping_levels_between_tasks
-    first_level = common_options.start_level
-    last_level = common_options.start_level + interval * nb_tasks
-    start_levels: List[int] = list(range(first_level, last_level, interval))
+    # Get the starting levels for each task, as shown in the docstring above.
+    offset = num_levels_per_task - overlapping_levels_between_tasks
+    first_task_start_level = common_options.start_level
+    last_task_start_level = common_options.start_level + offset * nb_tasks
+    start_levels: List[int] = list(range(first_task_start_level, last_task_start_level, offset))
 
     # Create the configurations that will be used to create the train/valid/test environments for
     # each task by starting from the common options, and overwriting the values of `start_level`.
