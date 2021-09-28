@@ -196,7 +196,7 @@ class GymDataLoader(
 
         if not hasattr(self.env, "reward_space"):
             self.reward_space = spaces.Box(
-                low=self.env.reward_range[0], high=self.env.reward_range[1], shape=(),
+                low=self.env.reward_range[0], high=self.env.reward_range[1], shape=(), dtype=np.float64,
             )
             if isinstance(self.env.unwrapped, VectorEnv):
                 # Same here, we use a 'batched' space rather than Tuple.

@@ -43,7 +43,6 @@ from .setting import ContinualRLSetting, TaskSchedule, make_continuous_task
         "CartPole-v8",
         "Breakout-v9",
         param_requires_mujoco("Ant-v0"),
-        param_requires_mujoco("Hopper-v3"),
         param_requires_monsterkong("MetaMonsterKong-v0"),
     ],
 )
