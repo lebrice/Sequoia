@@ -10,7 +10,8 @@ ORG_NAME=$(eai organization get --field name)
 ACCOUNT_NAME=$(eai account get --field name)
 ACCOUNT_ID=$ORG_NAME.$ACCOUNT_NAME
 
-EAI_Registry=registry.console.elementai.com/$ACCOUNT_ID
+EAI_Registry=${EAI_Registry:-"registry.console.elementai.com/$ACCOUNT_ID"}
+echo "Using registry $EAI_Registry"
 
 CURRENT_BRANCH="`git branch --show-current`"
 BRANCH=${BRANCH:-$CURRENT_BRANCH}
