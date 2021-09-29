@@ -9,22 +9,20 @@ from typing import Any, Dict, Mapping, Optional, Union
 import gym
 import numpy as np
 import tqdm
-from simple_parsing import ArgumentParser
-from torch import Tensor
-
-from sequoia.common.metrics import ClassificationMetrics
 from sequoia.methods import register_method
-from sequoia.settings import ClassIncrementalSetting, Setting
+from sequoia.settings import Setting
 from sequoia.settings.base import Actions, Environment, Method, Observations
 from sequoia.settings.sl import SLSetting
-from sequoia.utils import get_logger, singledispatchmethod
+from sequoia.utils import get_logger
+from simple_parsing import ArgumentParser
+from torch import Tensor
 
 logger = get_logger(__file__)
 
 
 @register_method
 class RandomBaselineMethod(Method, target_setting=Setting):
-    """ Baseline method that gives random predictions for any given setting.
+    """Baseline method that gives random predictions for any given setting.
 
     This method doesn't have a model or any parameters. It just returns a random
     action for every observation.
@@ -34,7 +32,7 @@ class RandomBaselineMethod(Method, target_setting=Setting):
         self.max_train_episodes: Optional[int] = None
 
     def configure(self, setting: Setting):
-        """ Called before the method is applied on a setting (before training).
+        """Called before the method is applied on a setting (before training).
 
         You can use this to instantiate your model, for instance, since this is
         where you get access to the observation & action spaces.
@@ -44,11 +42,12 @@ class RandomBaselineMethod(Method, target_setting=Setting):
             self.max_train_episodes = 1
 
     def fit(
-        self, train_env: Environment, valid_env: Environment,
+        self,
+        train_env: Environment,
+        valid_env: Environment,
     ):
         episodes = 0
         with tqdm.tqdm(desc="training") as train_pbar:
-
             while not train_env.is_closed():
                 for i, batch in enumerate(train_env):
                     if isinstance(batch, Observations):
@@ -69,6 +68,7 @@ class RandomBaselineMethod(Method, target_setting=Setting):
                         rewards = train_env.send(y_pred)
 
                     train_pbar.set_postfix({"Episode": episodes, "Step": i})
+                    train_pbar.update()
                     # train as you usually would.
 
                     if train_env.is_closed():
@@ -79,9 +79,7 @@ class RandomBaselineMethod(Method, target_setting=Setting):
                     train_env.close()
                     break
 
-    def get_actions(
-        self, observations: Observations, action_space: gym.Space
-    ) -> Actions:
+    def get_actions(self, observations: Observations, action_space: gym.Space) -> Actions:
         return action_space.sample()
 
     def get_search_space(self, setting: Setting) -> Mapping[str, Union[str, Dict]]:
@@ -129,7 +127,6 @@ class RandomBaselineMethod(Method, target_setting=Setting):
     @classmethod
     def from_argparse_args(cls, args: Namespace):
         return cls()
-
 
 
 if __name__ == "__main__":

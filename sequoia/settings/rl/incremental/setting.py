@@ -9,8 +9,10 @@ from typing import Callable, ClassVar, Dict, List, Optional, Tuple, Type, Union
 
 import gym
 import numpy as np
+
 from gym import spaces
 from gym.utils import colorize
+from gym.vector.utils import batch_space
 from gym.wrappers import TimeLimit
 from sequoia.common.spaces.typed_dict import TypedDictSpace
 from simple_parsing import list_field
@@ -344,6 +346,8 @@ class IncrementalRLSetting(IncrementalAssumption, DiscreteTaskAgnosticRLSetting)
             self.train_dataset: Union[str, Callable[[], gym.Env]] = self.train_envs[0]
             self.val_dataset: Union[str, Callable[[], gym.Env]] = self.val_envs[0]
             self.test_dataset: Union[str, Callable[[], gym.Env]] = self.test_envs[0]
+
+            # TODO: Add wrappers with the fixed task id for each env, if necessary, right?
         else:
             if self.val_envs or self.test_envs:
                 raise RuntimeError(
@@ -534,7 +538,8 @@ class IncrementalRLSetting(IncrementalAssumption, DiscreteTaskAgnosticRLSetting)
                     # because the task labels are available anyway, so it doesn't matter
                     # if the Method figures out the pattern in the task IDs.
                     # A RoundRobinWrapper is also used during testing, because it
-                    # makes it easier to check that things are working correctly.
+                    # makes it easier to check that things are working correctly: for example that
+                    # each task is visited equally, even when the number of total steps is small.
                     wrapper_type = RoundRobinWrapper
 
                 self.train_dataset = wrapper_type(
@@ -627,12 +632,39 @@ class IncrementalRLSetting(IncrementalAssumption, DiscreteTaskAgnosticRLSetting)
             # per test task (current hard-set to self.test_max_steps).
             task_test_env = self.test_dataloader()
             test_envs.append(task_test_env)
+
+        # TODO: Move these wrappers to sequoia/common/gym_wrappers/multienv_wrappers or something,
+        # and then import them correctly at the top of this file. 
         from ..discrete.multienv_wrappers import ConcatEnvsWrapper
 
-        on_task_switch_callback = getattr(method, "on_task_switch", None)
+
+        task_label_space = spaces.Discrete(self.nb_tasks)
+        if self.batch_size is not None:
+            task_label_space = batch_space(task_label_space, self.batch_size)
+        if not self.task_labels_at_test_time:
+            task_label_space = Sparse(task_label_space, sparsity=1)
+
+        test_envs_with_task_ids = [
+            FixedTaskLabelWrapper(
+                env=test_env,
+                task_label=(i if self.task_labels_at_test_time else None),
+                task_label_space=task_label_space,
+            )
+            for i, test_env in enumerate(test_envs)
+        ]
+
+        # NOTE: This check is a bit redundant here, since IncrementalRLSetting always has task
+        # boundaries, but this might be useful if moving this to DiscreteTaskIncrementalRL
+
+        on_task_switch_callback: Optional[Callable[[Optional[int]], None]]
+        if self.known_task_boundaries_at_test_time:
+            on_task_switch_callback = getattr(method, "on_task_switch", None)
+
+        # NOTE: Not adding a task id here, since we instead add the fixed task id for each test env.
+        # NOTE: Not adding task ids with this, doing it instead with a dedicated wrapper for each env above.
         joined_test_env = ConcatEnvsWrapper(
-            test_envs,
-            add_task_ids=self.task_labels_at_test_time,
+            test_envs_with_task_ids,
+            add_task_ids=False,
             on_task_switch_callback=on_task_switch_callback,
         )
         # TODO: Use this 'joined' test environment in this test loop somehow.

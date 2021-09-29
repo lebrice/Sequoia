@@ -774,18 +774,6 @@ class ContinualRLSetting(RLSetting, ContinualAssumption):
         if self.prefer_tensors:
             observation_space = add_tensor_support(observation_space)
         assert isinstance(observation_space, TypedDictSpace)
-
-        if self.train_env is not None:
-            # FIXME: Remove this perhaps. Just making sure that the Setting's
-            # observation space is consistent with that of its environments.
-            # NOTE: This check is a bit too strict, the task label space's sparsity for
-            # instance isn't exactly the same.
-            # assert observation_space == self.train_env.observation_space
-            assert observation_space.x == self.train_env.observation_space.x, (
-                observation_space,
-                self.train_env.observation_space,
-            )
-            # assert observation_space.task_labels.n == self.train_env.observation_space.task_labels.n
         return observation_space
 
     @property

@@ -3,7 +3,7 @@ import functools
 import math
 import operator
 import random
-from typing import ClassVar, Optional, Tuple, Type
+from typing import Any, ClassVar, Dict, Optional, Tuple, Type
 
 import gym
 import numpy as np
@@ -32,14 +32,13 @@ from ..discrete.setting_test import (
 from sequoia.settings.rl.setting_test import DummyMethod
 from sequoia.settings.assumptions.incremental_test import OtherDummyMethod
 from sequoia.utils.utils import take
-
+from sequoia.settings.rl.continual.setting_test import all_different_from_next, _equal
 from .setting import IncrementalRLSetting
-from ..discrete.setting_test import make_dataset_fixture
 
 
 class TestIncrementalRLSetting(DiscreteTaskAgnosticRLSettingTests):
     Setting: ClassVar[Type[Setting]] = IncrementalRLSetting
-    dataset: pytest.fixture = make_dataset_fixture(IncrementalRLSetting)
+    dataset: pytest.fixture
 
     @pytest.fixture()
     def setting_kwargs(self, dataset: str, nb_tasks: int, config: Config):
@@ -53,6 +52,19 @@ class TestIncrementalRLSetting(DiscreteTaskAgnosticRLSettingTests):
         config.num_workers = 0
         kwargs["config"] = config
         return kwargs
+
+    def test_passing_supported_dataset(self, setting_kwargs: Dict):
+        # Override this test because envs can be passed for each task.
+        setting = self.Setting(**setting_kwargs)
+        assert setting.train_task_schedule
+        if setting.train_envs:
+            # Passing the dataset created custom envs for each task (e.g. MT10, CW10, LPG-FTW-(...).
+            # The task schedule should have keys for the task boundary steps, but values should be
+            # empty dictionaries.
+            assert not any(setting.train_task_schedule.values())
+        else:
+            # Passing the dataset created a task schedule.
+            assert all(setting.train_task_schedule.values()), "Should have non-empty tasks."
 
     def validate_results(
         self,
@@ -90,6 +102,32 @@ class TestIncrementalRLSetting(DiscreteTaskAgnosticRLSettingTests):
             assert method.received_while_training == sum(
                 [[True] + [False for _ in range(t)] for t_i in range(t)], []
             )
+
+    def test_tasks_are_different(self, setting_kwargs: Dict[str, Any], config: Config):
+        """Check that the tasks different from the next.
+        
+        NOTE: Overriding this test because task schedules are empty when using custom envs for each
+        task.
+        """
+        config = setting_kwargs.pop("config", config)
+        assert config.seed is not None
+        setting = self.Setting(**setting_kwargs, config=config)
+
+        # Check that each task is different from the next.
+        # NOTE: When custom datasets are used for each task then the task schedules' values are
+        # empty, we have to change the test condition a little bit here.
+        if setting.train_envs:
+            # The dataset being used resulted in creating an env per task, rather than just using
+            # one env with a task schedule.
+            # Make sure that the fn for creating the env of each task is unique.
+            assert all_different_from_next(setting.train_envs)
+            assert all_different_from_next(setting.val_envs)
+            assert all_different_from_next(setting.test_envs)
+        else:
+            # Check that each task is different from the next.
+            assert all_different_from_next(setting.train_task_schedule.values())
+            assert all_different_from_next(setting.val_task_schedule.values())
+            assert all_different_from_next(setting.test_task_schedule.values())
 
     def test_number_of_tasks(self):
         setting = self.Setting(

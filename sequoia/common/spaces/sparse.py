@@ -18,10 +18,9 @@ from .space import Space, T
 
 
 class Sparse(Space[Optional[T]]):
-    """ 'Wrapper' around a gym Space, which produces either samples from that space or
-    `None`, based on the value of `sparsity`.
+    """ Space which returns a value of `None` `sparsity`% of the time when sampled.
 
-    As a result, `None` is always a valid sample from any Sparse space.
+    `None` is also a valid sample of this space in addition to those of the wrapped space.
 
     TODO: Maybe refactor this into a mixin class, a bit like `TensorSpace`? If so,
     then make sure that we don't suddenly need to create SparseTensorBox and the like.

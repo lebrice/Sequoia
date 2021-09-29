@@ -9,7 +9,7 @@ from sequoia.common.gym_wrappers.episode_limit import EpisodeLimit
 from sequoia.common.gym_wrappers.action_limit import ActionLimit
 from sequoia.common.spaces import TypedDictSpace
 from sequoia.common.gym_wrappers.env_dataset import EnvDataset
-
+from sequoia.common.spaces import Sparse
 from typing import List, Optional
 import pytest
 from gym import spaces

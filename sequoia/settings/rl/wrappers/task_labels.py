@@ -221,6 +221,9 @@ class FixedTaskLabelWrapper(IterableWrapper):
     def observation(self, observation: Union[ObservationType, Any]) -> ObservationType:
         return add_task_labels(observation, self.task_label)
 
+    def reset(self):
+        return self.observation(super().reset())
+
     def step(self, action):
         obs, reward, done, info = super().step(action)
         return self.observation(obs), reward, done, info
