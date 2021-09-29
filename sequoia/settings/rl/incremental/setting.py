@@ -434,6 +434,21 @@ class IncrementalRLSetting(IncrementalAssumption, DiscreteTaskAgnosticRLSetting)
         # FIXME: Really annoying little bugs with these three arguments!
         # self.nb_tasks = self.max_steps // self.steps_per_task
 
+    # TODO: What is the correct way to do this?
+    def reset(self):
+        self.num_envs = self.train_env.num_envs
+        reset_data = self.train_env.reset()
+        return reset_data.x
+
+    # TODO: What is the correct way to do this?
+    def step(self, actions):
+        new_obs, rewards, dones, infos = self.train_env.step(actions)
+        # TODO: Doing rewards and observation transform inline here because some SB3 code that is hit downstream of this expects rewards/obs that are non-wrapped
+        # But other parts of code expect it to be wrapped (Sequoia code?)
+        rewards = rewards.y if isinstance(rewards, Rewards) else rewards
+        new_obs = new_obs.x if isinstance(new_obs, Observations) else new_obs
+        return new_obs, rewards, dones, infos
+
     @property
     def current_task_id(self) -> int:
         return self._current_task_id

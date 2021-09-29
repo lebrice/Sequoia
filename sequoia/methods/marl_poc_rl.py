@@ -97,7 +97,7 @@ class DebugMARLMethod(Method, target_setting=MARLSetting):
         return action_space.sample()
 
 
-from sequoia.settings.rl import TaskIncrementalRLSetting
+from sequoia.settings.rl import IncrementalRLSetting
 
 
 def main():
@@ -186,8 +186,11 @@ def main():
         pistonball_test_env = wrapper(pistonball_test_env)
 
     # Not using TraditionalRLSetting b/c there is existing bug where it tries to create two tasks when there should be just one
-    setting = TaskIncrementalRLSetting(train_envs=[pistonball_env], val_envs=[pistonball_val_env],
-                                       test_envs=[pistonball_test_env])
+    setting = IncrementalRLSetting(
+        train_envs=[pistonball_env],
+        val_envs=[pistonball_val_env],
+        test_envs=[pistonball_test_env],
+    )
     model.env = setting
     # model.eval_env = setting
 

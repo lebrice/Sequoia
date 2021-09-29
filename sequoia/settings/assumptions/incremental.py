@@ -99,8 +99,6 @@ class IncrementalAssumption(ContinualAssumption):
     def __post_init__(self):
         super().__post_init__()
 
-        self.task_labels_at_test_time = False
-
         self.train_env: Environment = None  # type: ignore
         self.val_env: Environment = None  # type: ignore
         self.test_env: TestEnvironment = None  # type: ignore
