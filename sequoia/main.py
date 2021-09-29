@@ -49,8 +49,8 @@ def main():
 
     command: str = getattr(args, "command", None)
     if command is None:
-        return parser.print_help()
-    if command == "run":
+        parser.print_help()
+    elif command == "run":
         method_type: Type[Method] = args.method_type
         setting_type: Type[Setting] = args.setting_type
         method: Method = method_type.from_argparse_args(args)
@@ -61,8 +61,8 @@ def main():
         # add it directly to the existing Config class.
         wandb_config: WandbConfig = args.wandb
         setting.wandb = wandb_config
-        return run(setting=setting, method=method, config=config)
-    if command == "sweep":
+        run(setting=setting, method=method, config=config)
+    elif command == "sweep":
         method_type: Type[Method] = args.method_type
         setting_type: Type[Setting] = args.setting_type
         method: Method = method_type.from_argparse_args(args)
@@ -71,9 +71,9 @@ def main():
         # TODO: Fix this up a bit: Currently need to set this on the setting
         wandb_config: WandbConfig = args.wandb
         setting.wandb = wandb_config
-        return sweep(setting=args.setting, method=method, config=args.config)
-    if command == "info":
-        return info(component=args.component)
+        sweep(setting=args.setting, method=method, config=args.config)
+    elif command == "info":
+        info(component=args.component)
 
 
 def add_run_command(command_subparsers: _SubParsersAction) -> None:
