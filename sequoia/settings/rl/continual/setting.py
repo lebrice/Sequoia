@@ -511,15 +511,12 @@ class ContinualRLSetting(RLSetting, ContinualAssumption):
                     f"`test_max_steps` ({self.test_max_steps}). "
                 )
 
-        # TODO: This is closing the environment in the setting because _temp_train_env is set to the self.train_dataset env that is passed in
-        # TODO: So when this is wrapped with a gym wrapper, it has the close() method on it and closes
-        # TODO: Which means that when reset is called, an error is hit b/c env is already closed
-        # if self._temp_train_env:
-        #     self._temp_train_env.close()
-        # if self._temp_val_env and self._temp_val_env is not self._temp_train_env:
-        #     self._temp_val_env.close()
-        # if self._temp_test_env and self._temp_test_env is not self._temp_train_env:
-        #     self._temp_test_env.close()
+        if self._temp_train_env:
+            self._temp_train_env.close()
+        if self._temp_val_env and self._temp_val_env is not self._temp_train_env:
+            self._temp_val_env.close()
+        if self._temp_test_env and self._temp_test_env is not self._temp_train_env:
+            self._temp_test_env.close()
 
         train_task_lengths: List[int] = [
             task_b_step - task_a_step
