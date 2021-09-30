@@ -1,7 +1,7 @@
 """ 'Classical' RL setting.
 """
 from dataclasses import dataclass
-from typing import Callable, ClassVar, Dict, List, Any
+from typing import Callable, ClassVar, Dict, List
 
 import gym
 from sequoia.utils.utils import constant
@@ -59,30 +59,3 @@ class TraditionalRLSetting(IncrementalRLSetting):
         Multi-Task Settings, this is set to 1.
         """
         return 1
-
-    # TODO: Double check whether actually need this method
-    def getattr_recursive(self, name: str) -> Any:
-        """Recursively check wrappers to find attribute.
-
-        :param name: name of attribute to look for
-        :return: attribute
-        """
-        all_attributes = self._get_all_attributes()
-        if name in all_attributes:  # attribute is present in this wrapper
-            attr = getattr(self, name)
-        elif hasattr(self.venv, "getattr_recursive"):
-            # Attribute not present, child is wrapper. Call getattr_recursive rather than getattr
-            # to avoid a duplicate call to getattr_depth_check.
-            attr = self.venv.getattr_recursive(name)
-        else:  # attribute not present, child is an unwrapped VecEnv
-            attr = getattr(self.venv, name)
-
-        return attr
-
-    # TODO: What is the correct way to do this?
-    def reset(self):
-        self.num_envs = self.train_env.num_envs
-        reset_data = self.train_env.reset()
-        return reset_data.x
-
-
