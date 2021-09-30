@@ -1,14 +1,12 @@
 import inspect
 from abc import ABC
-from collections.abc import Sized
-from functools import partial, singledispatch
+from functools import partial
 from typing import (
     Any,
     Callable,
     Dict,
     Generic,
     Iterator,
-    List,
     NamedTuple,
     Optional,
     Sequence,
@@ -20,7 +18,6 @@ from typing import (
 
 import gym
 import numpy as np
-from gym import spaces
 from gym.envs import registry
 
 from gym.envs.classic_control import (
@@ -30,10 +27,9 @@ from gym.envs.classic_control import (
     MountainCarEnv,
     PendulumEnv,
 )
-from gym.envs.registration import load, EnvSpec
-from gym.vector.utils import batch_space
+from gym.envs.registration import load
 from gym.vector import VectorEnv
-from torch.utils.data import DataLoader, IterableDataset
+from torch.utils.data import IterableDataset
 
 from sequoia.utils.logging_utils import get_logger
 
@@ -303,7 +299,6 @@ class MayCloseEarly(gym.Wrapper, ABC):
 
 
 from .env_dataset import EnvDataset
-from .policy_env import PolicyEnv
 
 
 class IterableWrapper(MayCloseEarly, IterableDataset, Generic[EnvType], ABC):

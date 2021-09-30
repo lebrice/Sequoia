@@ -5,15 +5,14 @@ import itertools
 import math
 import multiprocessing as mp
 from functools import partial
-from typing import (Any, Callable, Iterable, List, Optional, Sequence, Tuple,
-                    TypeVar, Union, Dict)
+from typing import (Callable, List, Optional, Sequence, Tuple, TypeVar, Union,
+                    Dict)
 import gym
 import numpy as np
 from gym import spaces
-from gym.vector.utils import batch_space
 from gym.vector.vector_env import VectorEnv
 
-from sequoia.utils.utils import n_consecutive, zip_dicts
+from sequoia.utils.utils import n_consecutive
 from .async_vector_env import AsyncVectorEnv
 from .sync_vector_env import SyncVectorEnv
 from .tile_images import tile_images
@@ -21,8 +20,7 @@ from .tile_images import tile_images
 T = TypeVar("T")
 K = TypeVar("K")
 V = TypeVar("V")
-from gym.vector.utils import concatenate, create_empty_array, batch_space
-from gym.spaces.utils import flatten, unflatten
+from gym.vector.utils import concatenate, create_empty_array
 
 class BatchedVectorEnv(VectorEnv):
     """ Batched environment.
