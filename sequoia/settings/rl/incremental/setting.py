@@ -439,19 +439,25 @@ class IncrementalRLSetting(IncrementalAssumption, DiscreteTaskAgnosticRLSetting)
         if not hasattr(self.test_dataset, "spec") and hasattr(self.test_dataset, "venv") and hasattr(self.test_dataset.venv, "spec"):
             self.test_dataset.spec = self.test_dataset.venv.spec
 
-    # TODO: What is the correct way to do this?
     def reset(self):
-        self.num_envs = self.train_env.num_envs
-        reset_data = self.train_env.reset()
-        return reset_data.x
+        # Set num_envs attribute on setting if it is missing
+        if not hasattr(self, "num_envs"):
+            self.num_envs = self.train_env.num_envs
 
-    # TODO: What is the correct way to do this?
+        reset_data = self.train_env.reset()
+
+        # Transform observation if necessary
+        if hasattr(reset_data, "x"):
+            reset_data = reset_data.x
+
+        return reset_data
+
     def step(self, actions):
         new_obs, rewards, dones, infos = self.train_env.step(actions)
-        # TODO: Doing rewards and observation transform inline here because some SB3 code that is hit downstream of this expects rewards/obs that are non-wrapped
-        # But other parts of code expect it to be wrapped (Sequoia code?)
+
         rewards = rewards.y if isinstance(rewards, Rewards) else rewards
         new_obs = new_obs.x if isinstance(new_obs, Observations) else new_obs
+
         return new_obs, rewards, dones, infos
 
     @property

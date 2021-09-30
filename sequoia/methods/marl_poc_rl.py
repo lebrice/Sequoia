@@ -68,7 +68,9 @@ class DebugMARLMethod(Method, target_setting=MARLSetting):
         wrappers = [
             # partial(TransformObservation, f=operator.itemgetter("x")),
             # # partial(TransformAction, f=operator.itemgetter("y_pred"),
-            partial(TransformReward, f=operator.itemgetter("y")),
+
+            # partial(TransformReward, f=operator.itemgetter("y")),
+
             # RemoveInfoWrapper,
         ]
         for wrapper in wrappers:
