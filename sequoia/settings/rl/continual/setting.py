@@ -651,9 +651,6 @@ class ContinualRLSetting(RLSetting, ContinualAssumption):
             self.test_steps_per_task,
             self.test_task_schedule.keys(),
         )
-
-        # TODO: Not sure this is best place to put this: Sequoia test requires spec attribute
-        self.test_dataset.spec = self.test_dataset.venv.spec
         
 
     def create_train_task_schedule(self) -> TaskSchedule:
