@@ -86,9 +86,9 @@ class DebugMARLMethod(Method, target_setting=MARLSetting):
         # self.model.learn(10000, eval_env=valid_env, n_eval_episodes=10)
         # self.model.learn(10000, n_eval_episodes=10)
 
-        # self.model.learn(total_timesteps=200000)
+        self.model.learn(total_timesteps=200_000)
         # Smaller timestep amount for debugging
-        self.model.learn(total_timesteps=1000)
+        # self.model.learn(total_timesteps=1000)
 
 
     def get_actions(
@@ -190,6 +190,7 @@ def main():
         train_envs=[pistonball_env],
         val_envs=[pistonball_val_env],
         test_envs=[pistonball_test_env],
+        train_max_steps=250_000
     )
     model.env = setting
     # model.eval_env = setting
