@@ -297,6 +297,8 @@ class TypedDictSpace(spaces.Dict, Mapping[str, Space], Generic[M]):
         if is_dataclass(x):
             if is_dataclass(self.dtype):
                 if not isinstance(x, self.dtype):
+                    # NOTE: This could be a bit controversial, since it departs a bit how Dict
+                    # does things.
                     return False
             # NOTE: We don't use dataclasses.asdict as it doesn't work with Tensor
             # items with grad attributes.
@@ -304,7 +306,7 @@ class TypedDictSpace(spaces.Dict, Mapping[str, Space], Generic[M]):
 
         # NOTE: Modifying this so that we allow samples with more values, as long as it
         # has all the required keys.
-        if not isinstance(x, dict) or not all(k in x for k in self.spaces):
+        if not isinstance(x, (dict, MappingABC)) or not all(k in x for k in self.spaces):            
             return False
         for k, space in self.spaces.items():
             if k not in x:

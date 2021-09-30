@@ -3,8 +3,14 @@ import numpy as np
 from gym import Space, spaces
 from gym.spaces import Box, Discrete
 from gym.vector.utils import batch_space
+import pytest
 
 from .named_tuple import NamedTuple, NamedTupleSpace
+
+
+pytestmark = pytest.mark.skip(
+    reason="Removing the NamedTuple space and NamedTuple class in favour of TypedDict.",
+)
 
 
 def test_basic():
@@ -53,7 +59,7 @@ def test_basic_with_dtype():
     assert normal_tuple_space.sample() in named_tuple_space
     assert named_tuple_space.sample() in normal_tuple_space
 
-
+@pytest.mark.xfail()
 def test_isinstance_namedtuple():
     named_tuple_space = NamedTupleSpace(
         current_state=Box(0, 1, (2,2)),
