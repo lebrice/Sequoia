@@ -210,9 +210,6 @@ class IncrementalAssumption(ContinualAssumption):
             # the datamodule):
             task_train_env = self.train_dataloader()
             task_valid_env = self.val_dataloader()
-            # TODO: Fix this hack: Figure out how to handle this given sb3 code - need to pass in sb3 wrapper, not sequoia-wrapped env
-            # Starting to wonder whether it would be worth it to fork sb3 or something to be able to change what is under the hood to be more compatible with sequoia?
-            task_valid_env = self.val_env.env.env.env.env.env.env
 
             method.fit(
                 train_env=task_train_env, valid_env=task_valid_env,
