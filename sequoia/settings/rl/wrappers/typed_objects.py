@@ -68,6 +68,7 @@ class TypedObjectsWrapper(IterableWrapper, Environment[ObservationType, ActionTy
             )
 
         simple_spaces = (spaces.Box, spaces.Discrete, spaces.MultiDiscrete, spaces.MultiBinary)
+        num_envs = getattr(self.env, "num_envs", None)
 
         # Set the observation space.
         if observation_space:
@@ -100,22 +101,23 @@ class TypedObjectsWrapper(IterableWrapper, Environment[ObservationType, ActionTy
                 spaces=self.env.action_space.spaces,
                 dtype=self.Actions,
             )
-        elif isinstance(self.env.action_space, simple_spaces) and len(action_fields) == 1:
+        elif (isinstance(self.env.action_space, simple_spaces) and len(action_fields) == 1) or (
+            isinstance(self.env.action_space, spaces.Tuple) and num_envs):
             field_name = action_fields[0].name
             self.action_space = TypedDictSpace(
                 spaces={field_name: self.env.action_space}, dtype=self.Actions
-            )
+            ) 
         else:
             raise NotImplementedError(
                 "Need to pass the action space to the TypedObjectsWrapper constructor when "
                 "the wrapped env's action space isn't already a Dict or TypedDictSpace and "
                 "the Actions class doesn't have just one field."
+                f"(wrapped action space: {self.env.action_space}, Actions: {self.Actions})"
             )
 
         # Set / construct the reward space.
 
         # Get the default reward space in case the wrapped env doesn't have a `reward_space` attr.
-        num_envs = getattr(self.env, "num_envs", None)
         default_reward_space = spaces.Box(
             low=self.env.reward_range[0],
             high=self.env.reward_range[1],
