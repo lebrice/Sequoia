@@ -10,7 +10,7 @@ logger = get_logger(__file__)
 class ModifiedGravityEnv(MujocoEnv):
     """
     Allows the gravity to be changed.
-
+    
     Adapted from https://github.com/Breakend/gym-extensions/blob/master/gym_extensions/continuous/mujoco/gravity_envs.py
     """
 
@@ -19,9 +19,7 @@ class ModifiedGravityEnv(MujocoEnv):
     # new environment for each task.
     CAN_BE_UPDATED_IN_PLACE: ClassVar[bool] = True
 
-    def __init__(
-        self, model_path: str, frame_skip: int, gravity: float = -9.81, **kwargs
-    ):
+    def __init__(self, model_path: str, frame_skip: int, gravity: float = -9.81, **kwargs):
         super().__init__(model_path=model_path, frame_skip=frame_skip, **kwargs)
         # self.model.opt.gravity = (mujoco_py.mjtypes.c_double * 3)(*[0., 0., gravity])
         if gravity != -9.81:
@@ -31,7 +29,7 @@ class ModifiedGravityEnv(MujocoEnv):
             self.sim.forward()
             # self.sim: MjSim
             logger.info(f"Setting initial gravity to {self.gravity}")
-
+        
     @property
     def gravity(self) -> float:
         return self.model.opt.gravity[2]
@@ -44,11 +42,9 @@ class ModifiedGravityEnv(MujocoEnv):
 
     def set_gravity(self, value: float) -> None:
         if value >= 0:
-            warnings.warn(
-                RuntimeWarning(
-                    "Not a good idea to use a positive value! (things will start to float)"
-                )
-            )
+            warnings.warn(RuntimeWarning(
+                "Not a good idea to use a positive value! (things will start to float)"
+            ))
             # IDEA: always convert to negative value in the setter?
             pass
         self.gravity = value

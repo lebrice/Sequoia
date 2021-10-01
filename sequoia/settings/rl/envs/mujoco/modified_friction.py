@@ -6,7 +6,7 @@ from gym.envs.mujoco import MujocoEnv
 class ModifiedFrictionEnv(MujocoEnv):
     """
     Allows the gravity to be changed.
-
+    
     Adapted from https://github.com/Breakend/gym-extensions/blob/master/gym_extensions/continuous/mujoco/gravity_envs.py
     """
 
