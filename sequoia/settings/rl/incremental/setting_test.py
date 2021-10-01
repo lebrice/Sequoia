@@ -1,38 +1,37 @@
 import dataclasses
+import enum
+import inspect
 import functools
 import math
-import operator
 import random
-from typing import Any, ClassVar, Dict, Optional, Tuple, Type
+from typing import Any, ClassVar, Dict, NamedTuple, Optional, Type
 
 import gym
 import numpy as np
 import pytest
 from gym import spaces
-from sequoia.conftest import slow
-from sequoia.methods import Method
+from gym.envs.classic_control import CartPoleEnv
 from sequoia.common.config import Config
+from sequoia.common.gym_wrappers import RenderEnvWrapper
 from sequoia.common.spaces import Image, Sparse
-from sequoia.common.transforms import Transforms
 from sequoia.conftest import (
-    DummyEnvironment,
     metaworld_required,
     monsterkong_required,
     mtenv_required,
     mujoco_required,
-    param_requires_atari_py,
+    slow,
     xfail_param,
-    param_requires_mujoco,
 )
-from sequoia.settings import Setting
+from sequoia.settings.base import Setting
+from sequoia.methods.random_baseline import RandomBaselineMethod
+from sequoia.settings.assumptions.incremental_test import OtherDummyMethod
 from sequoia.settings.rl import TaskIncrementalRLSetting
+from sequoia.settings.rl.continual.setting_test import all_different_from_next
+from sequoia.settings.rl.setting_test import DummyMethod
+
 from ..discrete.setting_test import (
     TestDiscreteTaskAgnosticRLSetting as DiscreteTaskAgnosticRLSettingTests,
 )
-from sequoia.settings.rl.setting_test import DummyMethod
-from sequoia.settings.assumptions.incremental_test import OtherDummyMethod
-from sequoia.utils.utils import take
-from sequoia.settings.rl.continual.setting_test import all_different_from_next, _equal
 from .setting import IncrementalRLSetting
 
 
@@ -105,7 +104,7 @@ class TestIncrementalRLSetting(DiscreteTaskAgnosticRLSettingTests):
 
     def test_tasks_are_different(self, setting_kwargs: Dict[str, Any], config: Config):
         """Check that the tasks different from the next.
-        
+
         NOTE: Overriding this test because task schedules are empty when using custom envs for each
         task.
         """
@@ -480,11 +479,35 @@ class TestIncrementalRLSetting(DiscreteTaskAgnosticRLSettingTests):
             },
         }
 
+        def _unwrap_partials(env_fn: functools.partial) -> functools.partial:
+            from gym.envs.mujoco import MujocoEnv
+
+            # 'unwrap' the env fn:
+            while isinstance(env_fn, functools.partial):
+                # We want to recover the 'base' env factory (the function that actually creates
+                # the modified mujoco env.)
+                # NOTE `env_fn` is probably something like:
+                # `partial(create_env, base_env_factory,  wrappers=[...])
+                # or
+                # `partial(foo, env_fn=base_env_factory,  wrappers=[...])
+                print(env_fn)
+                if inspect.isclass(env_fn.func) and issubclass(env_fn.func, MujocoEnv):
+                    # Reached the lowest-level partial, the one we're looking for.
+                    break
+                if env_fn.args:
+                    env_fn = env_fn.args[0]
+                else:
+                    env_fn = list(env_fn.keywords.values())[0]
+            return env_fn
+
         if modification == "bodyparts":
             expected_factors_for_env = expected_values["bodyparts"][env_name]
 
             def check_env_fn_matches_expected(task_id: int, env_fn: functools.partial):
+                env_fn = _unwrap_partials(env_fn)
+                assert isinstance(env_fn, functools.partial)
                 kwargs = env_fn.keywords
+
                 for argument_name in ["body_name_to_size_scale", "body_name_to_mass_scale"]:
                     argument_values = np.array(list(kwargs[argument_name].values()))
                     assert (argument_values == expected_factors_for_env[task_id]).all()
@@ -507,6 +530,7 @@ class TestIncrementalRLSetting(DiscreteTaskAgnosticRLSettingTests):
             expected_gravities_for_env = expected_values["gravity"][env_name]
 
             def check_env_fn_matches_expected(task_id: int, env_fn: functools.partial):
+                env_fn = _unwrap_partials(env_fn)
                 kwargs = env_fn.keywords
                 gravity_value: float = kwargs["gravity"]
                 assert np.isclose(gravity_value, expected_gravities_for_env[task_id])
@@ -664,8 +688,6 @@ def test_metaworld_support(config: Config):
     TODO: Need to rethink this, we should instead use one env class per task (where each
     task env goes through a subset of the tasks for training)
     """
-    import metaworld
-    from metaworld import MetaWorldEnv
 
     # TODO: Add option of passing a benchmark instance?
     setting = IncrementalRLSetting(
@@ -813,12 +835,6 @@ def test_dm_control_support():
         print(time_step.reward, time_step.discount, time_step.observation)
 
 
-import enum
-from functools import partial
-from typing import NamedTuple
-
-import gym
-
 # TODO: Use the task schedule as a way to specify how long each task lasts in a
 # given env? For instance:
 
@@ -840,14 +856,6 @@ train_task_schedule = {
     steps(10): "CartPole-v0",
     episodes(1000): "Breakout-v0",
 }
-
-import random
-from functools import partial
-
-import gym
-from gym.envs.classic_control import CartPoleEnv, PendulumEnv
-from sequoia.common.gym_wrappers import RenderEnvWrapper
-from sequoia.methods.random_baseline import RandomBaselineMethod
 
 
 class TestPassingEnvsForEachTask:
