@@ -16,6 +16,8 @@ from gym import spaces
 
 from sequoia.utils.utils import unique_consecutive, unique_consecutive_with_index
 from functools import partial
+from sequoia.settings.rl.continual.make_env import wrap
+from collections import Counter
 
 
 class TestMultiEnvWrappers:
@@ -55,9 +57,9 @@ class TestMultiEnvWrappers:
             assert env.observation_space["task_labels"] == spaces.Discrete(env.nb_tasks)
         lengths = []
         for episode in range(nb_tasks * max_episodes_per_task):
-            print(f"Episode: {episode}, length: {round(env.length, 5)}")
+            print(f"Episode: {episode}, length: {round(env.unwrapped.length, 5)}")
             obs = env.reset()
-            lengths.append(env.length)
+            lengths.append(env.unwrapped.length)
 
             env_id = episode // max_episodes_per_task
             assert env._current_task_id == env_id, episode
@@ -193,7 +195,6 @@ class TestMultiEnvWrappers:
         add_task_ids = True
         nb_tasks = 5
 
-        from sequoia.settings.rl.continual.make_env import wrap
 
         def set_attributes(env: gym.Env, **attributes) -> gym.Env:
             for k, v in attributes.items():
@@ -244,10 +245,10 @@ class TestMultiEnvWrappers:
             
             for step, obs in enumerate(env):
                 assert obs in env.observation_space
-                print(f"Episode {episode}, Step {step}: obs: {obs}, length: {env.length}")
+                print(f"Episode {episode}, Step {step}: obs: {obs}, length: {env.unwrapped.length}")
                 if step == 0:
-                    lengths_at_each_episode.append(env.length)
-                lengths_at_each_step.append(env.length)
+                    lengths_at_each_episode.append(env.unwrapped.length)
+                lengths_at_each_step.append(env.unwrapped.length)
 
                 if add_task_ids:
                     assert list(obs.keys()) == ["x", "task_labels"]
@@ -270,7 +271,6 @@ class TestMultiEnvWrappers:
         assert len(actual_task_schedule) == nb_tasks
         assert env.is_closed()
 
-        from collections import Counter
 
         if add_task_ids:
             assert task_ids == sum(
