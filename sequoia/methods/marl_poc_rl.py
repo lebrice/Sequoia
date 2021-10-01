@@ -78,15 +78,7 @@ class DebugMARLMethod(Method, target_setting=MARLSetting):
         for wrapper in wrappers:
             valid_env = wrapper(valid_env)
 
-        # Allows input model; otherwise, initializes the model here
-        if self.input_model is None:
-            self.model = PPO("CnnPolicy", env=train_env, create_eval_env=False)
-        else:
-            self.model = self.input_model
-        # self.model = SAC("CnnPolicy", env=train_env, create_eval_env=False)
-
-        # self.model.learn(10000, eval_env=valid_env, n_eval_episodes=10)
-        # self.model.learn(10000, n_eval_episodes=10)
+        self.model = self.input_model
 
         self.model.learn(total_timesteps=200_000)
         # Smaller timestep amount for debugging
@@ -101,11 +93,46 @@ class DebugMARLMethod(Method, target_setting=MARLSetting):
 
 from sequoia.settings.rl import IncrementalRLSetting
 
+# @staticmethod
+# def _wrap_env(env: GymEnv, verbose: int = 0, monitor_wrapper: bool = True) -> VecEnv:
+#     """ "
+#     Wrap environment with the appropriate wrappers if needed.
+#     For instance, to have a vectorized environment
+#     or to re-order the image channels.
+#
+#     :param env:
+#     :param verbose:
+#     :param monitor_wrapper: Whether to wrap the env in a ``Monitor`` when possible.
+#     :return: The wrapped environment.
+#     """
+#     if not isinstance(env, VecEnv):
+#         if not is_wrapped(env, Monitor) and monitor_wrapper:
+#             if verbose >= 1:
+#                 print("Wrapping the env with a `Monitor` wrapper")
+#             env = Monitor(env)
+#         if verbose >= 1:
+#             print("Wrapping the env in a DummyVecEnv.")
+#         env = DummyVecEnv([lambda: env])
+#
+#     if (
+#         is_image_space(env.observation_space)
+#         and not is_vecenv_wrapped(env, VecTransposeImage)
+#         and not is_image_space_channels_first(env.observation_space)
+#     ):
+#         if verbose >= 1:
+#             print("Wrapping the env in a VecTransposeImage.")
+#         env = VecTransposeImage(env)
+#
+#     # check if wrapper for dict support is needed when using HER
+#     if isinstance(env.observation_space, gym.spaces.dict.Dict):
+#         env = ObsDictWrapper(env)
+#
+#     return env
 
 def main():
-    pistonball_env = make_pistonball_env()  # gym.make("Sequoia_PistonBall-v4")
-    pistonball_val_env = make_pistonball_env()  # gym.make("Sequoia_PistonBall-v4")
-    pistonball_test_env = make_pistonball_env(num_vector_envs=1)  # gym.make("Sequoia_PistonBall-v4")
+    pistonball_env = make_pistonball_env()
+    pistonball_val_env = make_pistonball_env()
+    pistonball_test_env = make_pistonball_env(num_vector_envs=1)
 
     model = PPO(
         CnnPolicy,
@@ -124,53 +151,12 @@ def main():
         # policy_kwargs={"monitor_wrapper": False}
     )
 
-    # For sake of changing the environments, just initialize a dummy model for validation and test env
-    model_val = PPO(
-        CnnPolicy,
-        pistonball_val_env,
-        verbose=3,
-        gamma=0.95,
-        n_steps=256,
-        ent_coef=0.0905168,
-        learning_rate=0.00062211,
-        vf_coef=0.042202,
-        max_grad_norm=0.9,
-        gae_lambda=0.99,
-        n_epochs=5,
-        clip_range=0.3,
-        batch_size=256,
-        # policy_kwargs={"monitor_wrapper": False}
-    )
-
-    model_test = PPO(
-        CnnPolicy,
-        pistonball_test_env,
-        verbose=3,
-        gamma=0.95,
-        n_steps=256,
-        ent_coef=0.0905168,
-        learning_rate=0.00062211,
-        vf_coef=0.042202,
-        max_grad_norm=0.9,
-        gae_lambda=0.99,
-        n_epochs=5,
-        clip_range=0.3,
-        batch_size=256,
-        # policy_kwargs={"monitor_wrapper": False}
-    )
-
     pistonball_env = model.env
-    pistonball_val_env = model_val.env
-    pistonball_test_env = model_test.env
 
-    # Hack: Set reward range because gym requries it
-    # pistonball_env.reward_range = pistonball_env.venv.reward_range
-    # pistonball_val_env.reward_range = pistonball_val_env.venv.reward_range
-    # pistonball_test_env.reward_range = pistonball_test_env.venv.reward_range
+    # Set reward range because gym requries it
     pistonball_env.reward_range = pistonball_env.venv.venv.reward_range
-    pistonball_val_env.reward_range = pistonball_val_env.venv.venv.reward_range
-    pistonball_test_env.reward_range = pistonball_test_env.venv.venv.reward_range
-    # Hack: Setting single_action_space manually
+
+    # Set single_action_space manually
     pistonball_env.single_action_space = pistonball_env.action_space
     pistonball_val_env.single_action_space = pistonball_val_env.action_space
     pistonball_test_env.single_action_space = pistonball_test_env.action_space
