@@ -9,7 +9,18 @@ from typing import Callable, ClassVar, Dict, List, Optional, Tuple, Type, Union
 
 import gym
 import numpy as np
-
+from sequoia.common.gym_wrappers.action_limit import ActionLimit
+from sequoia.common.gym_wrappers.episode_limit import EpisodeLimit
+from sequoia.common.gym_wrappers import (
+    TransformObservation,
+    TransformReward,
+    AddDoneToObservation,
+)
+from sequoia.common.gym_wrappers import EnvDataset
+from sequoia.settings.rl.continual.environment import GymDataLoader
+from sequoia.common.gym_wrappers.convert_tensors import ConvertToFromTensors
+from sequoia.utils.generic_functions import move
+from sequoia.settings.rl.wrappers import TypedObjectsWrapper
 from gym import spaces
 from gym.utils import colorize
 from gym.vector.utils import batch_space
@@ -167,14 +178,17 @@ class IncrementalRLSetting(IncrementalAssumption, DiscreteTaskAgnosticRLSetting)
                 f"Creating metaworld benchmark {benchmark_class}, this might take a "
                 f"while (~15 seconds)."
             )
-            self._benchmark = benchmark_class(seed=self.config.seed if self.config else None)
-
-            envs: Dict[str, Type[MetaWorldEnv]] = self._benchmark.train_classes
+            # NOTE: Saving this attribute on `self` for the time being so that it can be inspected
+            # by the tests if needed. However it would be best to move this benchmark stuff into a
+            # function, same as with LPG-FTW.
+            benchmark = benchmark_class(seed=self.config.seed if self.config else None)
+            self._benchmark = benchmark
+            envs: Dict[str, Type[MetaWorldEnv]] = benchmark.train_classes
             env_tasks: Dict[str, List[Task]] = {
                 env_name: [
-                    task for task in self._benchmark.train_tasks if task.env_name == env_name
+                    task for task in benchmark.train_tasks if task.env_name == env_name
                 ]
-                for env_name, env_class in self._benchmark.train_classes.items()
+                for env_name, env_class in benchmark.train_classes.items()
             }
             train_env_tasks: Dict[str, List[Task]] = {}
             val_env_tasks: Dict[str, List[Task]] = {}
@@ -229,6 +243,7 @@ class IncrementalRLSetting(IncrementalAssumption, DiscreteTaskAgnosticRLSetting)
                 # NOTE: The default value for this field is 10_000 currently, so this
                 # check doesn't do anything.
                 if self.dataset == "CW20":
+                    # CW20 does tasks [0 -> 10] and then [0 -> 10] again.
                     env_names = env_names * 2
                 train_env_names = env_names
                 val_env_names = env_names
@@ -426,31 +441,6 @@ class IncrementalRLSetting(IncrementalAssumption, DiscreteTaskAgnosticRLSetting)
         if self.stationary_context:
             return sum(self.train_task_lengths)
         return self.train_task_lengths[self.current_task_id]
-
-    # steps_per_task: int = deprecated_property(
-    #     "steps_per_task", "current_train_task_length"
-    # )
-    # @property
-    # def steps_per_task(self) -> int:
-    #     # unique_task_lengths = list(set(self.train_task_lengths))
-    #     warning = DeprecationWarning(
-    #         "The 'steps_per_task' attribute is deprecated, use "
-    #         "`current_train_task_length` instead, which gives the length of the "
-    #         "current task."
-    #     )
-    #     warnings.warn(warning)
-    #     logger.warning(warning)
-    #     return self.current_train_task_length
-
-    # @property
-    # def steps_per_phase(self) -> int:
-    #     # return unique_task_lengths
-    #     test_task_lengths: List[int] = [
-    #         task_b_step - task_a_step
-    #         for task_a_step, task_b_step in pairwise(
-    #             sorted(self.test_task_schedule.keys())
-    #         )
-    #     ]
 
     @property
     def task_label_space(self) -> gym.Space:
@@ -803,7 +793,11 @@ class IncrementalRLSetting(IncrementalAssumption, DiscreteTaskAgnosticRLSetting)
 
         return task_schedule
 
-    def create_train_wrappers(self):
+    def create_train_wrappers(self) -> List[Callable[[gym.Env], gym.Env]]:
+        """ Create and return the wrappers to apply to the train environment of the current task.
+        """
+        wrappers: List[Callable[[gym.Env], gym.Env]] = []
+
         # TODO: Clean this up a bit?
         if self._using_custom_envs_foreach_task:
             # TODO: Maybe do something different here, since we don't actually want to
