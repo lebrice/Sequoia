@@ -68,7 +68,12 @@ class DebugMARLMethod(Method, target_setting=MARLSetting):
     def get_actions(
             self, observations: MARLSetting.Observations, action_space: gym.Space
     ) -> MARLSetting.Actions:
-        return action_space.sample()
+        obs = observations.x
+        predictions = self.model.predict(obs)
+        action, _ = predictions
+        assert action in action_space, (observations, action, action_space)
+
+        return action
 
 
 def main():
@@ -99,8 +104,6 @@ def main():
 
     # Set single_action_space manually
     pistonball_env.single_action_space = pistonball_env.action_space
-    pistonball_val_env.single_action_space = pistonball_val_env.action_space
-    pistonball_test_env.single_action_space = pistonball_test_env.action_space
 
     setting = IncrementalRLSetting(
         train_envs=[pistonball_env],
