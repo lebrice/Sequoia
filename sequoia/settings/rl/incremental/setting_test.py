@@ -250,7 +250,7 @@ class TestIncrementalRLSetting(DiscreteTaskAgnosticRLSettingTests):
 
         # NOTE: Set the seed in the config, preserving the other values:
         config = dataclasses.replace(config, seed=seed)
-        nb_tasks: Optional[int] = None
+        nb_tasks: Optional[int] = None  # Using the default number of tasks for that setting for now
         setting: TaskIncrementalRLSetting = self.Setting(
             dataset=dataset,
             nb_tasks=nb_tasks,

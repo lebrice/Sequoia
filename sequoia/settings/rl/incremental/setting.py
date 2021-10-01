@@ -152,9 +152,18 @@ class IncrementalRLSetting(IncrementalAssumption, DiscreteTaskAgnosticRLSetting)
         # NOTE: These benchmark functions don't just create the datasets, they actually set most of
         # the fields too!
         if isinstance(self.dataset, str) and self.dataset.startswith("LPG-FTW"):
-            self.train_envs, self.val_envs, self.test_envs = make_lpg_ftw_datasets(
-                self.dataset, nb_tasks=self.nb_tasks
-            )
+            self.train_envs, self.val_envs, self.test_envs = make_lpg_ftw_datasets(self.dataset)
+            # Use fewer tasks, if a custom number was passed. (NOTE: This is not ideal, same as
+            # everywhere else that has to check against the default value)
+            if self.nb_tasks not in {None, defaults["nb_tasks"]}:
+                logger.info(
+                    f"Using a custom number of tasks ({self.nb_tasks}) instead of the default "
+                    f"({len(self.train_envs)})."
+                )
+                self.train_envs = self.train_envs[:self.nb_tasks]
+                self.val_envs = self.val_envs[:self.nb_tasks]
+                self.test_envs = self.test_envs[:self.nb_tasks]
+
             self.nb_tasks = len(self.train_envs)
             self.max_episode_steps = 1_000
             self.train_steps_per_task = 100_000
@@ -205,7 +214,7 @@ class IncrementalRLSetting(IncrementalAssumption, DiscreteTaskAgnosticRLSetting)
                         partial(
                             FixedTaskLabelWrapper,
                             task_label=(i if self.task_labels_at_train_time else None),
-                            task_label_space=train_task_label_space,
+                            task_label_space=val_task_label_space,
                         )
                     ],
                     seed=valid_seed,
@@ -455,6 +464,10 @@ class IncrementalRLSetting(IncrementalAssumption, DiscreteTaskAgnosticRLSetting)
         max_path_length: Optional[int] = getattr(self._temp_train_env, "max_path_length", None)
         if self.max_episode_steps is None and max_path_length is not None:
             assert max_path_length > 0
+            logger.info(
+                f"Setting the max episode steps to {max_path_length} because a 'max_path_length' "
+                f"attribute is present on the train env."
+            )
             self.max_episode_steps = max_path_length
 
         # if self.dataset == "MetaMonsterKong-v0":
@@ -536,42 +549,6 @@ class IncrementalRLSetting(IncrementalAssumption, DiscreteTaskAgnosticRLSetting)
                 f"Using custom environments from `self.[train/val/test]_envs` for task "
                 f"{self.current_task_id}."
             )
-
-            # TODO: Add support for batching these environments:
-            # TODO: This is probably not needed, since most of the wrappers below will
-            # instiate the envs as needed. However this is better for finding bugs, if
-            # any.
-            def instantiate_all_envs_if_needed(
-                envs: List[Union[Callable[[], gym.Env], gym.Env]]
-            ) -> List[gym.Env]:
-                live_envs: List[gym.Env] = []
-                for i, env in enumerate(envs):
-                    live_env: gym.Env
-                    if isinstance(env, gym.Env):
-                        live_env = env
-                        live_envs.append(env)
-                    elif isinstance(env, str):
-                        logger.info(f"Instantiating environment for task {i}, stage {stage}")
-                        live_env = gym.make(env)
-                        live_envs.append(live_env)
-                    elif callable(env):
-                        live_env = env()
-                        live_envs.append(live_env)
-                    else:
-                        raise ValueError(
-                            f"Expect the envs to be either gym.Env instances, strings, or "
-                            f"callables that produce gym.Env instances, but received {env} instead."
-                        )
-
-                return live_envs
-                # return [
-                #     env
-                #     if isinstance(env, gym.Env)
-                #     else gym.make(env)
-                #     if isinstance(env, str)
-                #     else env()
-                #     for env in envs
-                # ]
 
             if self.stationary_context:
                 from sequoia.settings.rl.discrete.multienv_wrappers import (
@@ -1171,9 +1148,7 @@ def create_env(
     return env
 
 
-def make_lpg_ftw_datasets(
-    dataset: str, nb_tasks: int = None
-) -> Tuple[List[EnvFactory], List[EnvFactory], List[EnvFactory]]:
+def make_lpg_ftw_datasets(dataset: str) -> Tuple[List[EnvFactory], List[EnvFactory], List[EnvFactory]]:
     # IDEA: "LPG-FTW-{bodyparts|gravity}-{HalfCheetah|Hopper|Walker2d}-{v2|v3}",
     # TODO: Instead of doing what I'm doing here, we could instead add an argument that gets
     # passed to the task creation function, for instance to get only a bodysize task, or
@@ -1226,15 +1201,7 @@ def make_lpg_ftw_datasets(
     # From the paper: "We created T_max=20 tasks for HalfCheetah and Hopper domains, and
     # T_max=50 tasks for Walker2d domains."
     # NOTE: Here if `nb_tasks` is None, we use the default number of tasks from the paper.
-    default_nb_tasks = 20 if env_name in ["HalfCheetah", "Hopper"] else 50
-    if nb_tasks is None:
-        nb_tasks = default_nb_tasks
-    elif nb_tasks != default_nb_tasks:
-        logger.info(
-            f"Using a custom number of tasks ({nb_tasks}) instead of the default "
-            f"({default_nb_tasks})."
-        )
-    assert isinstance(nb_tasks, int)
+    nb_tasks = 20 if env_name in ["HalfCheetah", "Hopper"] else 50
 
     task_params: List[Dict] = []
     values = []

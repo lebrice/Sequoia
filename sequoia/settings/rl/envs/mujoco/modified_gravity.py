@@ -30,7 +30,7 @@ class ModifiedGravityEnv(MujocoEnv):
             # self.model.forward()
             self.sim.forward()
             # self.sim: MjSim
-            logger.info(f"Setting initial gravity to {self.gravity}")
+            logger.debug(f"Setting initial gravity to {self.gravity}")
 
     @property
     def gravity(self) -> float:
