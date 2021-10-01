@@ -511,12 +511,17 @@ class ContinualRLSetting(RLSetting, ContinualAssumption):
                 )
 
         # Close the temporary environments.
+        # NOTE: Avoid closing the envs for now in case 'live' envs were passed to the Setting.
+
         if self._temp_train_env:
-            self._temp_train_env.close()
+            # self._temp_train_env.close()
+            pass
         if self._temp_val_env and self._temp_val_env is not self._temp_train_env:
-            self._temp_val_env.close()
+            # self._temp_val_env.close()
+            pass
         if self._temp_test_env and self._temp_test_env is not self._temp_train_env:
-            self._temp_test_env.close()
+            # self._temp_test_env.close()
+            pass
 
         train_task_lengths: List[int] = [
             task_b_step - task_a_step
@@ -752,13 +757,15 @@ class ContinualRLSetting(RLSetting, ContinualAssumption):
         # if self.train_env is not None:
         #     # assert self._observation_space == self.train_env.observation_space
         #     return self.train_env.observation_space
-
-        x_space = self._temp_train_env.observation_space
-        # apply the transforms to the observation space.
-        for transform in self.transforms:
-            x_space = transform(x_space)
-
-        task_label_space = self.task_label_space
+        if isinstance(self._temp_train_env.observation_space, TypedDictSpace):
+            x_space = self._temp_train_env.observation_space.x
+            task_label_space = self._temp_train_env.observation_space.task_labels
+        else:
+            x_space = self._temp_train_env.observation_space
+            # apply the transforms to the observation space.
+            for transform in self.transforms:
+                x_space = transform(x_space)
+            task_label_space = self.task_label_space
 
         done_space = spaces.Box(0, 1, shape=(), dtype=bool)
         if not self.add_done_to_observations:

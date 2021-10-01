@@ -516,6 +516,7 @@ class TestContinualRLSetting(SettingTests):
             #     _ = env.send(env.action_space.sample())
 
         with setting.test_dataloader(batch_size=batch_size) as env:
+            assert not env.is_closed()
             # NOTE: Can't do this here, unless the episode is over, because the Monitor
             # doesn't want us to end an episode early!
             for iter_obs in take(env, 3):

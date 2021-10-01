@@ -514,11 +514,6 @@ class IncrementalRLSetting(IncrementalAssumption, DiscreteTaskAgnosticRLSetting)
                     RandomMultiEnvWrapper,
                     RoundRobinWrapper,
                 )
-
-                self.train_envs = instantiate_all_envs_if_needed(self.train_envs)
-                self.val_envs = instantiate_all_envs_if_needed(self.val_envs)
-                self.test_envs = instantiate_all_envs_if_needed(self.test_envs)
-
                 # NOTE: Here is how this supports passing custom envs for each task: We
                 # just switch out the value of these properties, and let the
                 # `train/val/test_dataloader` methods work as usual!
@@ -532,6 +527,11 @@ class IncrementalRLSetting(IncrementalAssumption, DiscreteTaskAgnosticRLSetting)
                     # each task is visited equally, even when the number of total steps is small.
                     wrapper_type = RoundRobinWrapper
 
+                # NOTE: Not instantiating all the train/val/test envs here. Instead, the multienv
+                # wrapper will lazily instantiate the envs as needed.
+                # self.train_envs = instantiate_all_envs_if_needed(self.train_envs)
+                # self.val_envs = instantiate_all_envs_if_needed(self.val_envs)
+                # self.test_envs = instantiate_all_envs_if_needed(self.test_envs)
                 self.train_dataset = wrapper_type(
                     self.train_envs, add_task_ids=self.task_labels_at_train_time
                 )
@@ -917,7 +917,9 @@ class IncrementalRLSetting(IncrementalAssumption, DiscreteTaskAgnosticRLSetting)
             base_env=envs_or_env_functions[0], wrappers=wrappers, **self.base_env_kwargs
         )
         if not isinstance(envs_or_env_functions[0], gym.Env):
-            first_env.close()
+            # NOTE: Avoid closing the envs for now in case 'live' envs were passed to the Setting.
+            # first_env.close()
+            pass
 
         for task_id, task_env_id_or_function in zip(
             range(1, len(envs_or_env_functions)), envs_or_env_functions[1:]
@@ -928,7 +930,9 @@ class IncrementalRLSetting(IncrementalAssumption, DiscreteTaskAgnosticRLSetting)
                 **self.base_env_kwargs,
             )
             if not isinstance(task_env_id_or_function, gym.Env):
-                task_env.close()
+                # NOTE: Avoid closing the envs for now in case 'live' envs were passed to the Setting.
+                # task_env.close()
+                pass
 
             def warn_spaces_are_different(
                 task_id: int, kind: str, first_env: gym.Env, task_env: gym.Env
