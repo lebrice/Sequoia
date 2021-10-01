@@ -49,7 +49,7 @@ def make_pistonball_env(
 gym.register("Sequoia_PistonBall-v4", entry_point=make_pistonball_env)
 
 
-class DebugMARLMethod(Method, target_setting=MARLSetting):
+class MARLMethod(Method, target_setting=MARLSetting):
     def __init__(self, input_model=None):
         super().__init__()
         self.input_model = input_model
@@ -113,7 +113,7 @@ def main():
     )
     model.env = setting
 
-    method = DebugMARLMethod(input_model=model)
+    method = MARLMethod(input_model=model)
     results = setting.apply(method)
     print(results)
 
