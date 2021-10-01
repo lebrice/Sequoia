@@ -1,17 +1,17 @@
-import hashlib
+from copy import deepcopy
 import inspect
 import os
 import tempfile
 import xml.etree.ElementTree as ET
-from copy import deepcopy
-from pathlib import Path
 from typing import ClassVar, Dict, List
 
+import numpy as np
 from gym.envs.mujoco import MujocoEnv
 
 
 def change_size_in_xml(
-    tree: ET.ElementTree, **body_name_to_size_scale: Dict[str, float]
+    tree: ET.ElementTree,
+    **body_name_to_size_scale: Dict[str, float]
 ) -> ET.ElementTree:
     tree = deepcopy(tree)
     for body_name, size_scale in body_name_to_size_scale.items():
@@ -28,19 +28,6 @@ def change_size_in_xml(
         geom.attrib["size"] = " ".join(map(str, new_sizes))
         # print("New size: ", geom.attrib['size'])
     return tree
-
-
-def get_geom_sizes(tree: ET.ElementTree, body_name: str) -> List[float]:
-    # body = tree.find(f".//body[@name='{body_name}']")
-    geom = tree.find(f".//geom[@name='{body_name}']")
-    if geom is None:
-        geom = tree.find(f".//geom[@name='{body_name}_geom']")
-    assert geom is not None
-    assert "size" in geom.attrib
-    # print(body_name)
-    # print("Old size: ", geom.attrib["size"])
-    sizes: List[float] = [float(s) for s in geom.attrib["size"].split(" ")]
-    return sizes
 
 
 class ModifiedSizeEnv(MujocoEnv):
@@ -74,6 +61,8 @@ class ModifiedSizeEnv(MujocoEnv):
         body_name_to_size_scale = body_name_to_size_scale or {}
         body_name_to_size_scale.update(zip(body_parts, size_scales))
 
+        # super().__init__(model_path=model_path, frame_skip=frame_skip)
+
         if model_path.startswith("/"):
             full_path = model_path
         else:
@@ -85,31 +74,20 @@ class ModifiedSizeEnv(MujocoEnv):
 
         # find the body_part we want
 
+        tree = ET.parse(full_path)
         if any(scale_factor == 0 for scale_factor in size_scales):
-            raise RuntimeError("Can't use a scale_factor of 0!")
-
-        print(f"Default XML path: {full_path}")
-        self.default_tree = ET.parse(full_path)
-        self.tree = self.default_tree
+            raise RuntimeError(f"Can't use a scale_factor of 0!")
 
         if body_name_to_size_scale:
+            print(f"Default XML path: {full_path}")
             print(f"Changing parts: {body_name_to_size_scale}")
-            self.tree = change_size_in_xml(self.default_tree, **body_name_to_size_scale)
+            # NOTE: For now this still modifies `tree` in-place.
+            tree = change_size_in_xml(tree, **body_name_to_size_scale)
             # create new xml
-            # IDEA: Create an XML file with a unique name somewhere, and then write the
-            hash_str = hashlib.md5(
-                (str(self) + str(body_name_to_size_scale)).encode()
-            ).hexdigest()
-            temp_dir = Path(tempfile.gettempdir())
-            new_xml_path = temp_dir / f"{hash_str}.xml"
-            if not new_xml_path.parent.exists():
-                new_xml_path.parent.mkdir(exist_ok=False, parents=True)
-            self.tree.write(str(new_xml_path))
+            _, new_xml_path = tempfile.mkstemp(suffix=".xml", text=True)
+            tree.write(new_xml_path)
             print(f"Generated XML path: {new_xml_path}")
-
-            # Update the value to be passed to the constructor:
-            full_path = str(new_xml_path)
-
+            full_path = new_xml_path
         self.body_name_to_size_scale = body_name_to_size_scale
         # load the modified xml
         super().__init__(model_path=full_path, frame_skip=frame_skip, **kwargs)

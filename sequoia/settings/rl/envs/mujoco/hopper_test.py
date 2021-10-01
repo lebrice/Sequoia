@@ -25,16 +25,12 @@ from sequoia.conftest import mujoco_required
 
 
 @mujoco_required
-class TestContinualHopperV2Env(
-    ModifiedGravityEnvTests, ModifiedSizeEnvTests, ModifiedMassEnvTests
-):
+class TestContinualHopperV2Env(ModifiedGravityEnvTests, ModifiedSizeEnvTests, ModifiedMassEnvTests):
     Environment: ClassVar[Type[ContinualHopperV2Env]] = ContinualHopperV2Env
 
 
 @mujoco_required
-class TestContinualHopperV3Env(
-    ModifiedGravityEnvTests, ModifiedSizeEnvTests, ModifiedMassEnvTests
-):
+class TestContinualHopperV3Env(ModifiedGravityEnvTests, ModifiedSizeEnvTests, ModifiedMassEnvTests):
     Environment: ClassVar[Type[ContinualHopperV3Env]] = ContinualHopperV3Env
 
 

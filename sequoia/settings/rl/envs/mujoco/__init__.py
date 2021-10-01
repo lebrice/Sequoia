@@ -89,7 +89,8 @@ CURRENTLY_SUPPORTED_MUJOCO_ENVS: Dict[str, Type[MujocoEnv]] = {
 
 
 def register_mujoco_variants(env_registry: EnvRegistry = registry) -> None:
-    """Adds pixel variants for the classic-control envs to the given registry in-place."""
+    """ Adds pixel variants for the classic-control envs to the given registry in-place.
+    """
     # Dict from the env id to the original spec
     original_mujoco_env_specs: Dict[str, EnvSpec] = {
         original_env_id: env_registry.spec(original_env_id)
