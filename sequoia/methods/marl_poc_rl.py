@@ -1,18 +1,12 @@
-import operator
-from functools import partial
-
 import gym
 import numpy as np
 import supersuit as ss
-import supersuit.vector.sb3_vector_wrapper
 from gym.envs.registration import EnvSpec
 from gym.vector.vector_env import VectorEnv
 from pettingzoo.butterfly import pistonball_v4
-from sequoia.common.gym_wrappers.transform_wrappers import TransformObservation, TransformReward
-from sequoia.methods.stable_baselines3_methods.base import RemoveInfoWrapper
 from sequoia.settings.base import Method
 from sequoia.settings.base.setting import Setting as MARLSetting
-from stable_baselines3.sac.sac import SAC
+from sequoia.settings.rl import IncrementalRLSetting
 from stable_baselines3.ppo import CnnPolicy
 from stable_baselines3 import PPO
 
@@ -64,20 +58,6 @@ class DebugMARLMethod(Method, target_setting=MARLSetting):
         pass
 
     def fit(self, train_env: gym.Env, valid_env: gym.Env):
-
-        wrappers = [
-            # partial(TransformObservation, f=operator.itemgetter("x")),
-            # # partial(TransformAction, f=operator.itemgetter("y_pred"),
-
-            # partial(TransformReward, f=operator.itemgetter("y")),
-
-            # RemoveInfoWrapper,
-        ]
-        for wrapper in wrappers:
-            train_env = wrapper(train_env)
-        for wrapper in wrappers:
-            valid_env = wrapper(valid_env)
-
         self.model = self.input_model
 
         self.model.learn(total_timesteps=200_000)
@@ -90,44 +70,6 @@ class DebugMARLMethod(Method, target_setting=MARLSetting):
     ) -> MARLSetting.Actions:
         return action_space.sample()
 
-
-from sequoia.settings.rl import IncrementalRLSetting
-
-# @staticmethod
-# def _wrap_env(env: GymEnv, verbose: int = 0, monitor_wrapper: bool = True) -> VecEnv:
-#     """ "
-#     Wrap environment with the appropriate wrappers if needed.
-#     For instance, to have a vectorized environment
-#     or to re-order the image channels.
-#
-#     :param env:
-#     :param verbose:
-#     :param monitor_wrapper: Whether to wrap the env in a ``Monitor`` when possible.
-#     :return: The wrapped environment.
-#     """
-#     if not isinstance(env, VecEnv):
-#         if not is_wrapped(env, Monitor) and monitor_wrapper:
-#             if verbose >= 1:
-#                 print("Wrapping the env with a `Monitor` wrapper")
-#             env = Monitor(env)
-#         if verbose >= 1:
-#             print("Wrapping the env in a DummyVecEnv.")
-#         env = DummyVecEnv([lambda: env])
-#
-#     if (
-#         is_image_space(env.observation_space)
-#         and not is_vecenv_wrapped(env, VecTransposeImage)
-#         and not is_image_space_channels_first(env.observation_space)
-#     ):
-#         if verbose >= 1:
-#             print("Wrapping the env in a VecTransposeImage.")
-#         env = VecTransposeImage(env)
-#
-#     # check if wrapper for dict support is needed when using HER
-#     if isinstance(env.observation_space, gym.spaces.dict.Dict):
-#         env = ObsDictWrapper(env)
-#
-#     return env
 
 def main():
     pistonball_env = make_pistonball_env()
@@ -148,7 +90,6 @@ def main():
         n_epochs=5,
         clip_range=0.3,
         batch_size=256,
-        # policy_kwargs={"monitor_wrapper": False}
     )
 
     pistonball_env = model.env
@@ -161,19 +102,6 @@ def main():
     pistonball_val_env.single_action_space = pistonball_val_env.action_space
     pistonball_test_env.single_action_space = pistonball_test_env.action_space
 
-    # Apply transformation wrappers to envs
-    wrappers = [
-        # partial(TransformObservation, f=operator.itemgetter("x")),
-        # # partial(TransformAction, f=operator.itemgetter("y_pred"),
-        # partial(TransformReward, f=operator.itemgetter("y")),
-        # RemoveInfoWrapper,
-    ]
-    for wrapper in wrappers:
-        pistonball_env = wrapper(pistonball_env)
-        pistonball_val_env = wrapper(pistonball_val_env)
-        pistonball_test_env = wrapper(pistonball_test_env)
-
-    # Not using TraditionalRLSetting b/c there is existing bug where it tries to create two tasks when there should be just one
     setting = IncrementalRLSetting(
         train_envs=[pistonball_env],
         val_envs=[pistonball_val_env],
@@ -181,7 +109,6 @@ def main():
         train_max_steps=250_000
     )
     model.env = setting
-    # model.eval_env = setting
 
     method = DebugMARLMethod(input_model=model)
     results = setting.apply(method)
