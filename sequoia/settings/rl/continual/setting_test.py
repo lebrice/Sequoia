@@ -460,7 +460,7 @@ class TestContinualRLSetting(SettingTests):
             assert obs.task_labels in env.observation_space.task_labels
             if batch_size:
                 assert obs.x[0] in setting.observation_space.x
-                assert obs.task_labels[0] in setting.observation_space.task_labels
+                assert obs.task_labels is None or obs.task_labels[0] in setting.observation_space.task_labels
             else:
                 assert obs in setting.observation_space
 

@@ -162,6 +162,73 @@ class IncrementalRLSetting(IncrementalAssumption, DiscreteTaskAgnosticRLSetting)
             self.test_steps_per_task = 10_000
             self.test_max_steps = self.nb_tasks * self.test_steps_per_task
 
+            task_label_space = spaces.Discrete(self.nb_tasks)
+            train_task_label_space = task_label_space
+            if not self.task_labels_at_train_time:
+                train_task_label_space = Sparse(train_task_label_space, sparsity=1.0)
+            # This should be ok for now.
+            val_task_label_space = train_task_label_space
+
+            test_task_label_space = task_label_space
+            if not self.task_labels_at_test_time:
+                test_task_label_space = Sparse(test_task_label_space, sparsity=1.0)
+
+            train_seed: Optional[int] = None
+            valid_seed: Optional[int] = None
+            test_seed: Optional[int] = None
+            if self.config and self.config.seed is not None:
+                train_seed = self.config.seed
+                valid_seed = train_seed + 123
+                test_seed = train_seed + 456
+
+            self.train_envs = [
+                partial(
+                    create_env,
+                    env_fn=env_fn,
+                    wrappers=[
+                        partial(
+                            FixedTaskLabelWrapper,
+                            task_label=(i if self.task_labels_at_train_time else None),
+                            task_label_space=train_task_label_space,
+                        )
+                    ],
+                    seed=train_seed,
+                )
+                for i, env_fn in enumerate(self.train_envs)
+            ]
+
+            self.val_envs = [
+                partial(
+                    create_env,
+                    env_fn=env_fn,
+                    wrappers=[
+                        partial(
+                            FixedTaskLabelWrapper,
+                            task_label=(i if self.task_labels_at_train_time else None),
+                            task_label_space=train_task_label_space,
+                        )
+                    ],
+                    seed=valid_seed,
+                )
+                for i, env_fn in enumerate(self.train_envs)
+            ]
+
+            self.test_envs = [
+                partial(
+                    create_env,
+                    env_fn=env_fn,
+                    wrappers=[
+                        partial(
+                            FixedTaskLabelWrapper,
+                            task_label=(i if self.task_labels_at_test_time else None),
+                            task_label_space=test_task_label_space,
+                        )
+                    ],
+                    seed=test_seed,
+                )
+                for i, env_fn in enumerate(self.train_envs)
+            ]
+
         # Meta-World datasets:
         if self.dataset in ["MT10", "MT50", "CW10", "CW20"]:
 
@@ -185,9 +252,7 @@ class IncrementalRLSetting(IncrementalAssumption, DiscreteTaskAgnosticRLSetting)
             self._benchmark = benchmark
             envs: Dict[str, Type[MetaWorldEnv]] = benchmark.train_classes
             env_tasks: Dict[str, List[Task]] = {
-                env_name: [
-                    task for task in benchmark.train_tasks if task.env_name == env_name
-                ]
+                env_name: [task for task in benchmark.train_tasks if task.env_name == env_name]
                 for env_name, env_class in benchmark.train_classes.items()
             }
             train_env_tasks: Dict[str, List[Task]] = {}
@@ -624,9 +689,8 @@ class IncrementalRLSetting(IncrementalAssumption, DiscreteTaskAgnosticRLSetting)
             test_envs.append(task_test_env)
 
         # TODO: Move these wrappers to sequoia/common/gym_wrappers/multienv_wrappers or something,
-        # and then import them correctly at the top of this file. 
+        # and then import them correctly at the top of this file.
         from ..discrete.multienv_wrappers import ConcatEnvsWrapper
-
 
         task_label_space = spaces.Discrete(self.nb_tasks)
         if self.batch_size is not None:
@@ -794,8 +858,7 @@ class IncrementalRLSetting(IncrementalAssumption, DiscreteTaskAgnosticRLSetting)
         return task_schedule
 
     def create_train_wrappers(self) -> List[Callable[[gym.Env], gym.Env]]:
-        """ Create and return the wrappers to apply to the train environment of the current task.
-        """
+        """Create and return the wrappers to apply to the train environment of the current task."""
         wrappers: List[Callable[[gym.Env], gym.Env]] = []
 
         # TODO: Clean this up a bit?
@@ -1089,7 +1152,7 @@ def wrap(env_or_env_fn: Union[gym.Env, EnvFactory], wrappers: List[gym.Wrapper] 
 
 
 def create_env(
-    env_class: Union[Type[gym.Env], Callable[[], gym.Env]],
+    env_fn: Union[Type[gym.Env], Callable[[], gym.Env]],
     kwargs: Dict = None,
     wrappers: List[Callable[[gym.Env], gym.Env]] = None,
     seed: int = None,
@@ -1099,7 +1162,7 @@ def create_env(
     2. Wrap it with the wrappers in `wrappers`, if any;
     3. seed it with `seed` if it is not None.
     """
-    env = env_class(**(kwargs or {}))
+    env = env_fn(**(kwargs or {}))
     wrappers = wrappers or []
     for wrapper in wrappers:
         env = wrapper(env)
