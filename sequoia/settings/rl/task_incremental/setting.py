@@ -2,7 +2,6 @@ from dataclasses import dataclass
 
 from sequoia.utils import constant
 
-
 from ..incremental import IncrementalRLSetting
 
 

@@ -1162,8 +1162,6 @@ class ContinualRLSetting(RLSetting, ContinualAssumption):
             env = base_env
         elif callable(base_env):
             env = base_env(**base_env_kwargs)
-        elif isinstance(base_env, VecEnv):
-            env = base_env
         else:
             raise RuntimeError(
                 f"base_env should either be a string, a callable, or a gym "
@@ -1238,7 +1236,7 @@ class ContinualRLSetting(RLSetting, ContinualAssumption):
             # Seed each environment with its own seed (based on the base seed).
             env.seed([seed + i for i in range(env_dataloader.num_envs)])
         else:
-            env.seed(seed if seed is not None else 123) # temp fix
+            env.seed(seed if seed is not None else 123)
 
         return env_dataloader
 
