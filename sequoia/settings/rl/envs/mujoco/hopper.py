@@ -2,7 +2,7 @@
 from dataclasses import dataclass
 from gym.envs.mujoco.hopper import HopperEnv as _HopperV2Env
 from gym.envs.mujoco import MujocoEnv
-from typing import ClassVar, List, Dict, NamedTuple, Tuple
+from typing import ClassVar, List, Dict, Tuple
 from .modified_gravity import ModifiedGravityEnv
 from .modified_size import ModifiedSizeEnv
 from .modified_mass import ModifiedMassEnv
@@ -72,15 +72,29 @@ class HopperV2GravityEnv(ModifiedGravityEnv, HopperV2Env):
         super().__init__(model_path=model_path, frame_skip=frame_skip, gravity=gravity)
 
 
-import inspect
-import os
-# from .modified_size import Pos, FromTo
-from xml.etree.ElementTree import ElementTree, Element, parse
-import copy
-import tempfile
+class ContinualHopperV2Env(
+    ModifiedGravityEnv, ModifiedSizeEnv, ModifiedMassEnv, HopperV2Env
+):
+    def __init__(
+        self,
+        model_path: str = "hopper.xml",
+        frame_skip: int = 4,
+        gravity=-9.81,
+        body_name_to_size_scale: Dict[str, float] = None,
+        body_name_to_mass_scale: Dict[str, float] = None,
+    ):
+        super().__init__(
+            model_path=model_path,
+            frame_skip=frame_skip,
+            gravity=gravity,
+            body_name_to_size_scale=body_name_to_size_scale,
+            body_name_to_mass_scale=body_name_to_mass_scale,
+        )
 
 
-class ContinualHopperV2Env(ModifiedGravityEnv, ModifiedSizeEnv, ModifiedMassEnv, HopperV2Env):
+class ContinualHopperV3Env(
+    ModifiedGravityEnv, ModifiedSizeEnv, ModifiedMassEnv, HopperV3Env
+):
     def __init__(
         self,
         model_path="hopper.xml",
@@ -93,17 +107,16 @@ class ContinualHopperV2Env(ModifiedGravityEnv, ModifiedSizeEnv, ModifiedMassEnv,
         healthy_angle_range: Tuple[float, float] = (-0.2, 0.2),
         reset_noise_scale: float = 5e-3,
         exclude_current_positions_from_observation: bool = True,
-        xml_file: str = None,
+        # xml_file: str = None,
         frame_skip: int = 4,
         gravity=-9.81,
-        body_parts=None,  # 'torso_geom','thigh_geom','leg_geom','foot_geom'
-        size_scales=None,  # (1.0, 1.0, 1.0, 1.0),
         body_name_to_size_scale: Dict[str, float] = None,
+        body_name_to_mass_scale: Dict[str, float] = None,
     ):
         super().__init__(
             model_path=model_path,
             frame_skip=frame_skip,
-            xml_file=xml_file or model_path,
+            # xml_file=xml_file or model_path,
             forward_reward_weight=forward_reward_weight,
             ctrl_cost_weight=ctrl_cost_weight,
             healthy_reward=healthy_reward,
@@ -114,30 +127,10 @@ class ContinualHopperV2Env(ModifiedGravityEnv, ModifiedSizeEnv, ModifiedMassEnv,
             reset_noise_scale=reset_noise_scale,
             exclude_current_positions_from_observation=exclude_current_positions_from_observation,
             gravity=gravity,
-            body_parts=body_parts,
-            size_scales=size_scales,
             body_name_to_size_scale=body_name_to_size_scale,
+            body_name_to_mass_scale=body_name_to_mass_scale,
         )
 
-
-class ContinualHopperV3Env(ModifiedGravityEnv, ModifiedSizeEnv, ModifiedMassEnv, HopperV3Env):
-    def __init__(
-        self,
-        model_path: str = "hopper.xml",
-        frame_skip: int = 4,
-        gravity=-9.81,
-        body_parts=None,  # 'torso_geom','thigh_geom','leg_geom','foot_geom'
-        size_scales=None,  # (1.0, 1.0, 1.0, 1.0),
-        body_name_to_size_scale: Dict[str, float] = None,
-    ):
-        super().__init__(
-            model_path=model_path,
-            frame_skip=frame_skip,
-            gravity=gravity,
-            body_parts=body_parts,
-            size_scales=size_scales,
-            body_name_to_size_scale=body_name_to_size_scale,
-        )
 
 # ------------- NOTE (@lebrice) -------------------------------
 # Everything below this is unused.
@@ -325,4 +318,3 @@ class ContinualHopperV3Env(ModifiedGravityEnv, ModifiedSizeEnv, ModifiedMassEnv,
 #     if body_name == "torso":
 #         update_torso(tree, torso_body=target_body, size_scaling_factor=scale)
 #     raise NotImplementedError(f"WIP")
-

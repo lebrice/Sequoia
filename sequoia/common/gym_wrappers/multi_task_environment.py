@@ -1,4 +1,5 @@
 import bisect
+import dataclasses
 from functools import singledispatch
 from typing import (
     Any,
@@ -92,6 +93,10 @@ def _add_task_labels_to_single_obs(observation: X, task_labels: T) -> Tuple[X, T
     }
     # return ObservationsAndTaskLabels(observation, task_labels)
 
+from sequoia.common.batch import Batch
+@add_task_labels.register(Batch)
+def _add_task_labels_to_batch(observation: Batch, task_labels: T) -> Batch:
+    return dataclasses.replace(observation, task_labels=task_labels)
 
 from sequoia.common.spaces import TypedDictSpace
 
@@ -236,14 +241,15 @@ class MultiTaskEnvironment(MayCloseEarly):
             if unwrapped_type in task_param_names:
                 task_params = task_param_names[unwrapped_type]
             elif task_schedule:
-                if any(isinstance(v, dict) for v in task_schedule.values()):
-                    first_task_dict = task_schedule[min(task_schedule)]
-                    task_params = first_task_dict.keys()
-                    for task_dict in task_schedule.values():
-                        assert (
-                            task_params == task_dict.keys()
-                        ), "All tasks need to have the same keys for now."
-                    task_params = list(task_params)
+                if not any(isinstance(v, dict) for v in task_schedule.values()):
+                    task_params: List[str] = None
+                    for value in task_schedule.values():
+                        if not isinstance(value, dict):
+                            continue
+                        if task_params is None:
+                            task_params = list(value.keys())
+                        elif not task_params == list(value.keys()):
+                            raise NotImplementedError("All tasks need to have the same keys for now.")
             else:
                 logger.warning(
                     UserWarning(
