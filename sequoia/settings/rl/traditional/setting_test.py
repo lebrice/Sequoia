@@ -3,6 +3,8 @@ from typing import ClassVar, Type
 
 import pytest
 from sequoia.settings import Setting
+import numpy as np
+import torch
 
 from ..incremental.setting_test import (
     TestIncrementalRLSetting as IncrementalRLSettingTests,
@@ -82,8 +84,9 @@ class TestTraditionalRLSetting(IncrementalRLSettingTests):
             task_result.average_metrics for task_result in results.task_results
         )
         assert method.n_fit_calls == 1
-        import numpy as np
-        import torch
+
+        # BUG: Traditional/Multi-Task RL have one too many task labels:
+        assert list(set(method.observation_task_labels)) == list(range(setting.nb_tasks))
 
         train_task_labels = torch.as_tensor(method.observation_task_labels)
         new_train_task_labels = torch.unique_consecutive(train_task_labels).tolist()
