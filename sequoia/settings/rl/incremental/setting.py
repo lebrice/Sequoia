@@ -165,7 +165,7 @@ class IncrementalRLSetting(IncrementalAssumption, DiscreteTaskAgnosticRLSetting)
                 self.test_envs = self.test_envs[:self.nb_tasks]
 
             self.nb_tasks = len(self.train_envs)
-            self.max_episode_steps = 1_000
+            self.max_episode_steps = self.max_episode_steps or 1_000
             self.train_steps_per_task = 100_000
             self.train_max_steps = self.nb_tasks * self.train_steps_per_task
             self.test_steps_per_task = 10_000
