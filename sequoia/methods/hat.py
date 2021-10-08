@@ -11,6 +11,7 @@
 ```
 """
 
+from argparse import Namespace
 from dataclasses import dataclass
 from typing import Dict, NamedTuple, Optional, Tuple, Mapping, Union, Any
 
@@ -354,13 +355,13 @@ class HatMethod(Method, target_setting=TaskIncrementalSLSetting):
         self.model.current_task = task_id
 
     @classmethod
-    def add_argparse_args(cls, parser: ArgumentParser, dest: str = "") -> None:
+    def add_argparse_args(cls, parser: ArgumentParser) -> None:
         parser.add_arguments(cls.HParams, dest="hparams")
         # You can also add arguments as usual:
         # parser.add_argument("--foo", default=123)
 
     @classmethod
-    def from_argparse_args(cls, args, dest: str = "") -> "HatMethod":
+    def from_argparse_args(cls, args: Namespace) -> "HatMethod":
         hparams: HatMethod.HParams = args.hparams
         # foo: int = args.foo
         method = cls(hparams=hparams)

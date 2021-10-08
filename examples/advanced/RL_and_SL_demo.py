@@ -209,14 +209,14 @@ class CustomMethod(BaseMethod, target_setting=Setting):
         return super().fit(train_env=train_env, valid_env=valid_env)
 
     @classmethod
-    def add_argparse_args(cls, parser: ArgumentParser, dest: str = ""):
+    def add_argparse_args(cls, parser: ArgumentParser):
         """Adds command-line arguments for this Method to an argument parser.
         
         NOTE: This doesn't do anything differently than the base implementation,
         but it's included here just for illustration purposes.
         """
         # 'dest' is where the arguments will be stored on the namespace.
-        dest = dest or camel_case(cls.__qualname__)
+        dest = camel_case(cls.__qualname__)
         # Add all command-line arguments. This adds arguments for all fields of
         # this dataclass.
         parser.add_arguments(cls, dest=dest)
@@ -224,10 +224,10 @@ class CustomMethod(BaseMethod, target_setting=Setting):
         # parser.add_argument("--foo", default=1.23, help="example argument")
 
     @classmethod
-    def from_argparse_args(cls, args: Namespace, dest: str = ""):
+    def from_argparse_args(cls, args: Namespace):
         """ Create an instance of this class from the parsed arguments. """
         # Retrieve the parsed arguments:
-        dest = dest or camel_case(cls.__qualname__)
+        dest = camel_case(cls.__qualname__)
         method: CustomMethod = getattr(args, dest)
         # You could retrieve other arguments like so:
         # foo: int = args.foo

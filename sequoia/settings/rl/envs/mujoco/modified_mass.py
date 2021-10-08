@@ -31,7 +31,7 @@ class ModifiedMassEnv(MujocoEnv):
             frame_skip=frame_skip,
             **kwargs,
         )
-        body_name_to_mass_scale = body_name_to_mass_scale or {}
+        self.body_name_to_mass_scale = body_name_to_mass_scale or {}
         self.default_masses_dict: Dict[str, float] = {
             body_name: self.model.body_mass[i]
             for i, body_name in enumerate(self.model.body_names)
@@ -39,14 +39,14 @@ class ModifiedMassEnv(MujocoEnv):
         self.default_masses: np.ndarray = np.copy(self.model.body_mass)
 
         # dict(zip(body_parts, mass_scales))
-        self.scale_masses(**body_name_to_mass_scale)
+        self.scale_masses(**self.body_name_to_mass_scale)
         # self.model.body_mass = self.get_and_modify_bodymass(body_part, mass_scale)
         # self.model._compute_subtree()
         # self.model.forward()
 
     def __init_subclass__(cls):
         super().__init_subclass__()
-        # assert False, cls
+        # Add auto-generated properties for getting and setting the mass of the bodyparts.
         for body_part in cls.BODY_NAMES:
             property_name = f"{body_part}_mass"
             mass_property = property(
@@ -87,6 +87,11 @@ class ModifiedMassEnv(MujocoEnv):
 
     def get_mass(self, body_part: str) -> float:
         # Will raise an IndexError if the body part isnt found.
+        if body_part not in self.model.body_names:
+            raise ValueError(
+                f"No body named {body_part} in this mujoco model! (body names: "
+                f"{self.model.body_names})."
+            )
         idx = self.model.body_names.index(body_part)
         return self.model.body_mass[idx]
 

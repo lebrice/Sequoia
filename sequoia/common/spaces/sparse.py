@@ -9,25 +9,40 @@ argument to the AsyncVectorEnv or BatchedVectorEnv wrappers, we'd need to
 test/debug some bugs with shared memory functions below. In the interest of time
 though, I just set that `shared_memory=False`, and it works great.  
 """
-from typing import Any, Dict, Generic, Optional, Sequence, Tuple, TypeVar, Union
+import multiprocessing as mp
+from ctypes import c_bool
+# from gym.spaces.utils import flatdim, flatten
+from functools import singledispatch
+from multiprocessing import Array, Value
+from multiprocessing.context import BaseContext
+from typing import (Any, Dict, Generic, Optional, Sequence, Tuple, TypeVar,
+                    Union)
 
 import gym
+import gym.spaces.utils
+import gym.vector.utils.numpy_utils
+import gym.vector.utils.shared_memory
 import numpy as np
+import torch
 from gym import spaces
+from gym.vector.utils import (batch_space, concatenate, create_empty_array,
+                              create_shared_memory)
+from gym.vector.utils.numpy_utils import concatenate
+from torch import Tensor
+
 from .space import Space, T
 
 
 class Sparse(Space[Optional[T]]):
-    """ 'Wrapper' around a gym Space, which produces either samples from that space or
-    `None`, based on the value of `sparsity`.
+    """ Space which returns a value of `None` `sparsity`% of the time when sampled.
 
-    As a result, `None` is always a valid sample from any Sparse space.
+    `None` is also a valid sample of this space in addition to those of the wrapped space.
 
     TODO: Maybe refactor this into a mixin class, a bit like `TensorSpace`? If so,
     then make sure that we don't suddenly need to create SparseTensorBox and the like.
     """
 
-    def __init__(self, base: gym.Space, sparsity: float = 0.0):
+    def __init__(self, base: Space[T], sparsity: float = 0.0):
         self.base = base
         assert 0 <= sparsity <= 1, "invalid spasity, needs to be in [0, 1]"
         self._sparsity = sparsity
@@ -95,25 +110,6 @@ class Sparse(Space[Optional[T]]):
             ret.append(entry)
         return ret
 
-# from gym.spaces.utils import flatdim, flatten
-from functools import singledispatch
-
-import gym.spaces.utils
-import gym.vector.utils
-import gym.vector.utils.numpy_utils
-from gym.vector.utils import (
-    batch_space,
-    concatenate,
-    create_empty_array,
-    create_shared_memory,
-)
-
-import multiprocessing as mp
-from ctypes import c_bool
-from multiprocessing import Array, Value
-from multiprocessing.context import BaseContext
-
-import gym.vector.utils.shared_memory
 
 # Customize how these functions handle `Sparse` spaces by making them
 # singledispatch callables and registering a new callable.
@@ -222,9 +218,8 @@ def write_to_shared_memory(
         return gym.vector.utils.shared_memory(index, value, shared_memory, space)
 
 
-from gym.vector.utils.shared_memory import (
-    read_from_shared_memory as read_from_shared_memory_,
-)
+from gym.vector.utils.shared_memory import \
+    read_from_shared_memory as read_from_shared_memory_
 
 
 @register_sparse_variant(gym.vector.utils.shared_memory, "read_from_shared_memory")
@@ -255,23 +250,40 @@ def read_from_shared_memory(
 
 @register_sparse_variant(gym.vector.utils, "batch_space")
 def batch_sparse_space(space: Sparse, n: int = 1) -> gym.Space:
+    """Batch this sparse space.
+
+    NOTE: The sparsity of `space` currently has an important impact on the kind of space returned!
+
+    Taking a base space of type `Discrete` as an example:
+    - If `space.sparsity == 0 or space.sparsity == 1`, then the result is a Sparse[MultiDiscrete],
+    - *However*, if `0 < sparsity < 1`, then the result is a `Tuple[Sparse[Discrete], ...]`.
+    """
     # NOTE: This means we do something different depending on the sparsity.
     # Could that become an issue?
     # assert _is_singledispatch(batch_space)
 
     sparsity = space.sparsity
+    
+    # NOTE: It is tempting to just make this more consistent by always returning the same kind of
+    # result, because it's nice to avoid dealing with arrays like `np.array([None, 1, ])` 
+    # or, even worse, `np.array([None, None])` which are not fun. 
+    # *HOWEVER*, it's not a good idea! As an example, when using VectorEnvs, the spaces are just to
+    # represent what the observations of the VectorEnv will look like. Since each env has 'its own'
+    # Sparse[Discrete] space, and they are "sampled" independantly, then if 0 < sparsity < 1 we WILL
+    # have some entries be None and other not. Therefore, it's better in that case to just return
+    # the tuple of sparse spaces. 
+    # return Sparse(batch_space(space.base, n), sparsity=sparsity)
 
     # TODO: Use something like this eventually. There are still problem with to_tensor.
     # return SparseMultiDiscrete(
     #     np.full((n,), space.n, dtype=space.base.dtype), sparsity=space.sparsity
     # )
-    if sparsity == 0:  # or sparsity == 1:
+    if sparsity in {0, 1}:
         # If the space has 0 sparsity, then batch it just like you would its
         # base space.
         # TODO: This is convenient, but not very consistent, as the length of
         # the batches changes depending on the sparsity of the space..
         return Sparse(batch_space(space.base, n), sparsity=sparsity)
-    # elif sparsity == 1.:
 
     # Sticking to the default behaviour from gym for now, which is to just
     # return a tuple of length n with n copies of the space.
@@ -300,33 +312,33 @@ def batch_sparse_space(space: Sparse, n: int = 1) -> gym.Space:
 
 @register_sparse_variant(gym.vector.utils.numpy_utils, "concatenate")
 def concatenate_sparse_items(
-    space: Sparse, items: Sequence[Optional[Any]], out: Union[tuple, dict, np.ndarray]
-) -> Union[list, tuple]:
-    # if space.sparsity == 0.:
-    #     # TODO: Convert items to the right dtype maybe?
-    #     return concatenate(space.base, items, out)
-    return np.array([None if v == None else v for v in items])
+    space: Sparse, items: Sequence[Optional[T]], out: Union[tuple, dict, np.ndarray]
+) -> Optional[Sequence[T]]:
+    if space.sparsity == 0:
+        if not all(item is not None for item in items):
+            raise ValueError("Space has sparsity of 0, there shouldn't be any `None` items!")
+        # Assume that the items are samples of the individual spaces.
+        # In most cases this means they shouldn't be None, but there's the special case where the
+        # individual spaces are also Sparse, and then it's fine for them to be None.
+        return concatenate(space.base, items=items, out=out)
+    if space.sparsity == 1:
+        if not all(item is None for item in items):
+            raise ValueError("Space has sparsity of 1, all items should be None!")
+        # Assume that the items are samples of the individual spaces.
+        # In most cases this means they shouldn't be None, but there's the special case where the
+        # individual spaces are also Sparse, and then it's fine for them to be None.
+        return None
+    return tuple(items)
+    # NOTE: Avoiding returning this np.array of type `object`, simply because `np.array([None])` is
+    # not fun to have to deal with.
+    # return np.array([None if v == None else v for v in items], dtype=object)
     return np.array(items)
     # for i, item in enumerate(items):
     #     out[i] = items
     # return out
 
 
-from gym.vector.utils.numpy_utils import concatenate
-
-# @gym.vector.utils.numpy_utils.concatenate.register(spaces.Dict)
-# def concatenate_dict(space: spaces.Dict,
-#                      items: Union[list, tuple],
-#                      out: Union[tuple, dict, np.ndarray]) -> OrderedDict:
-#     return OrderedDict([(
-#         key, concatenate(subspace, [item.get(key) for item in items], out=out[key])
-#         ) for (key, subspace) in space.spaces.items()
-#     ])
-
 from sequoia.utils.generic_functions.to_from_tensor import to_tensor
-from torch import Tensor
-import torch
-
 
 @to_tensor.register(Sparse)
 def sparse_sample_to_tensor(

@@ -61,10 +61,10 @@ class TypedDictSpace(spaces.Dict, Mapping[str, Space], Generic[M]):
     >>> from gym.spaces import Box
     >>> s = TypedDictSpace(x=Box(0, 1, (4,), dtype=np.float64))
     >>> s
-    TypedDictSpace(x:Box(0.0, 1.0, (4,), float64))
-    >>> s.seed(123)
+    TypedDictSpace(x:Box([0. 0. 0. 0.], [1. 1. 1. 1.], (4,), float64))
+    >>> _ = s.seed(123)
     >>> s.sample()
-    {'x': array([0.70787616, 0.3698764 , 0.29010696, 0.10647454])}
+    {'x': array([0.66528138, 0.33239426, 0.30337907, 0.92981861])}
 
     - Using it like a TypedDict: (This equivalent to the above)
 
@@ -72,20 +72,20 @@ class TypedDictSpace(spaces.Dict, Mapping[str, Space], Generic[M]):
     ...     x: Box = Box(0, 1, (4,), dtype=np.float64)  
     >>> s = VisionSpace()
     >>> s
-    VisionSpace(x:Box(0.0, 1.0, (4,), float64))
-    >>> s.seed(123)
+    VisionSpace(x:Box([0. 0. 0. 0.], [1. 1. 1. 1.], (4,), float64))
+    >>> _ = s.seed(123)
     >>> s.sample()
-    {'x': array([0.70787616, 0.3698764 , 0.29010696, 0.10647454])}
+    {'x': array([0.66528138, 0.33239426, 0.30337907, 0.92981861])}
     
     - You can also overwrite the values from the type annotations by passing them to the
       constructor:
 
     >>> s = VisionSpace(x=spaces.Box(0, 2, (3,), dtype=np.int64))
     >>> s
-    VisionSpace(x:Box(0, 2, (3,), int64))
-    >>> s.seed(123)
+    VisionSpace(x:Box([0 0 0], [2 2 2], (3,), int64))
+    >>> _ = s.seed(123)
     >>> s.sample()
-    {'x': array([2, 1, 0])}
+    {'x': array([1, 0, 0])}
 
     ### Using custom dtypes
     
@@ -100,10 +100,10 @@ class TypedDictSpace(spaces.Dict, Mapping[str, Space], Generic[M]):
     >>> from collections import OrderedDict
     >>> s = TypedDictSpace(x=spaces.Box(0, 1, (4,), dtype=int), dtype=OrderedDict)
     >>> s
-    TypedDictSpace(x:Box(0, 1, (4,), int64), dtype=<class 'collections.OrderedDict'>)
-    >>> s.seed(123)
+    TypedDictSpace(x:Box([0 0 0 0], [1 1 1 1], (4,), int64), dtype=<class 'collections.OrderedDict'>)
+    >>> _ = s.seed(123)
     >>> s.sample()
-    OrderedDict([('x', array([1, 0, 0, 0]))])
+    OrderedDict([('x', array([1, 0, 0, 1]))])
 
     ### Required items:
     
@@ -119,19 +119,27 @@ class TypedDictSpace(spaces.Dict, Mapping[str, Space], Generic[M]):
     TypeError: Space of type <class 'sequoia.common.spaces.typed_dict.FooSpace'> requires a 'b' item!
     >>> s = FooSpace(b=spaces.Discrete(5))
     >>> s
-    FooSpace(a:Box(0, 1, (4,), int64), b:Discrete(5))
-    
+    FooSpace(a:Box([0 0 0 0], [1 1 1 1], (4,), int64), b:Discrete(5))
+
     NOTE: spaces can also inherit from each other!
-    
+
     >>> class ImageSegmentationSpace(VisionSpace):
     ...     bounding_box: Box
-    ... 
+    ...
     >>> s = ImageSegmentationSpace(
-    ...     x=spaces.Box(0, 1, (32, 32, 3), dtype=float),
-    ...     bounding_box=spaces.Box(0, 32, (4, 2), dtype=int),
+    ...     x=spaces.Box(0, 1, (2, 2), dtype=float),
+    ...     bounding_box=spaces.Box(0, 4, (4, 2), dtype=int),
     ... )
     >>> s
-    ImageSegmentationSpace(x:Box(0.0, 1.0, (32, 32, 3), float64), bounding_box:Box(0, 32, (4, 2), int64))
+    ImageSegmentationSpace(x:Box([[0. 0.]
+     [0. 0.]], [[1. 1.]
+     [1. 1.]], (2, 2), float64), bounding_box:Box([[0 0]
+     [0 0]
+     [0 0]
+     [0 0]], [[4 4]
+     [4 4]
+     [4 4]
+     [4 4]], (4, 2), int64))
     """
 
     def __init__(
@@ -289,6 +297,8 @@ class TypedDictSpace(spaces.Dict, Mapping[str, Space], Generic[M]):
         if is_dataclass(x):
             if is_dataclass(self.dtype):
                 if not isinstance(x, self.dtype):
+                    # NOTE: This could be a bit controversial, since it departs a bit how Dict
+                    # does things.
                     return False
             # NOTE: We don't use dataclasses.asdict as it doesn't work with Tensor
             # items with grad attributes.
@@ -296,7 +306,7 @@ class TypedDictSpace(spaces.Dict, Mapping[str, Space], Generic[M]):
 
         # NOTE: Modifying this so that we allow samples with more values, as long as it
         # has all the required keys.
-        if not isinstance(x, dict) or not all(k in x for k in self.spaces):
+        if not isinstance(x, (dict, MappingABC)) or not all(k in x for k in self.spaces):            
             return False
         for k, space in self.spaces.items():
             if k not in x:

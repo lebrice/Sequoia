@@ -1,15 +1,30 @@
+import itertools
 import operator
 import sys
 import warnings
 from dataclasses import dataclass, fields
 from functools import partial
 from itertools import islice
-from typing import Callable, ClassVar, Dict, List, Optional, Type, Union
+from typing import Callable, ClassVar, Dict, List, Optional, Tuple, Type, Union
 
 import gym
 import numpy as np
+from sequoia.common.gym_wrappers.action_limit import ActionLimit
+from sequoia.common.gym_wrappers.episode_limit import EpisodeLimit
+from sequoia.common.gym_wrappers import (
+    TransformObservation,
+    TransformReward,
+    AddDoneToObservation,
+)
+from sequoia.common.gym_wrappers import EnvDataset
+from sequoia.settings.rl.continual.environment import GymDataLoader
+from sequoia.common.gym_wrappers.convert_tensors import ConvertToFromTensors
+from sequoia.utils.generic_functions import move
+from sequoia.settings.rl.wrappers import TypedObjectsWrapper
 from gym import spaces
 from gym.utils import colorize
+from gym.vector.utils import batch_space
+from gym.wrappers import TimeLimit
 from sequoia.common.spaces.typed_dict import TypedDictSpace
 from simple_parsing import list_field
 from simple_parsing.helpers import choice
@@ -26,6 +41,7 @@ from sequoia.settings.rl.continual import ContinualRLSetting
 from sequoia.settings.rl.envs import (
     METAWORLD_INSTALLED,
     MTENV_INSTALLED,
+    MUJOCO_INSTALLED,
     MetaWorldEnv,
     MTEnv,
     metaworld_envs,
@@ -38,16 +54,34 @@ from sequoia.utils import constant, dict_union, pairwise
 from sequoia.utils.logging_utils import get_logger
 from ..discrete.setting import DiscreteTaskAgnosticRLSetting
 from ..discrete.setting import supported_envs as _parent_supported_envs
-from .objects import Actions, ActionType, Observations, ObservationType, Rewards, RewardType
+from .objects import (
+    Actions,
+    ActionType,
+    Observations,
+    ObservationType,
+    Rewards,
+    RewardType,
+)
 from .results import IncrementalRLResults
-from .tasks import EnvSpec, IncrementalTask, is_supported, make_incremental_task, sequoia_registry
+from .tasks import (
+    EnvSpec,
+    IncrementalTask,
+    is_supported,
+    make_incremental_task,
+    sequoia_registry,
+)
 
 logger = get_logger(__file__)
 
-# TODO: When we add a wrapper to 'concat' two environments, then we can move this
-# 'passing custom env for each task' feature up into DiscreteTaskAgnosticRL.
+# A callable that returns an env.
+EnvFactory = Callable[[], gym.Env]
 
-supported_envs: Dict[str, EnvSpec] = dict_union(
+# TODO: Move this 'passing custom env for each task' feature up into DiscreteTaskAgnosticRL.
+# TODO: Design a better mechanism for extending this task creation. Currently, this dictionary lists
+# out the 'supported envs' (envs for which we have an explicit way of creating tasks). However when
+# the dataset is set to "MT10" for example, then that does something different: It hard-sets some
+# of the values of the fields on the setting!
+supported_envs: Dict[str, Union[str, EnvSpec]] = dict_union(
     _parent_supported_envs,
     {
         spec.id: spec
@@ -60,6 +94,14 @@ if METAWORLD_INSTALLED:
     supported_envs["MT50"] = "MT50"
     supported_envs["CW10"] = "CW10"
     supported_envs["CW20"] = "CW20"
+if MUJOCO_INSTALLED:
+    for env_name, modification, version in itertools.product(
+        ["HalfCheetah", "Hopper", "Walker2d"], ["bodyparts", "gravity"], ["v2", "v3"]
+    ):
+        env_id = f"LPG-FTW-{modification}-{env_name}-{version}"
+        supported_envs[env_id] = env_id
+
+
 available_datasets: Dict[str, str] = {env_id: env_id for env_id in supported_envs}
 
 
@@ -107,109 +149,98 @@ class IncrementalRLSetting(IncrementalAssumption, DiscreteTaskAgnosticRLSetting)
 
     def __post_init__(self):
         defaults = {f.name: f.default for f in fields(self)}
+        # NOTE: These benchmark functions don't just create the datasets, they actually set most of
+        # the fields too!
         if isinstance(self.dataset, str) and self.dataset.startswith("LPG-FTW"):
-            # IDEA: "LPG-FTW-{bodypart|gravity}-{HalfCheetah|Hopper|Walker2d}-{v2|v3}",
-            # TODO: Instead of doing what I'm doing here, we could instead add an argument that gets
-            # passed to the task creation function, for instance to get only a bodysize task, or
-            # only a gravity task, etc.
-
-            name_parts = self.dataset.split("-")
-            if len(name_parts) != 5:
-                raise ValueError(
-                    "Expected the name to follow this format: \n"
-                    "\t 'LPG-FTW-{bodypart|gravity}-{HalfCheetah|Hopper|Walker2d}-{v2|v3}' \n"
-                    f"but got {self.dataset}"
+            self.train_envs, self.val_envs, self.test_envs = make_lpg_ftw_datasets(self.dataset)
+            # Use fewer tasks, if a custom number was passed. (NOTE: This is not ideal, same as
+            # everywhere else that has to check against the default value)
+            if self.nb_tasks not in {None, defaults["nb_tasks"]}:
+                logger.info(
+                    f"Using a custom number of tasks ({self.nb_tasks}) instead of the default "
+                    f"({len(self.train_envs)})."
                 )
-            _, _, modification_type, env_name, version = name_parts
+                self.train_envs = self.train_envs[:self.nb_tasks]
+                self.val_envs = self.val_envs[:self.nb_tasks]
+                self.test_envs = self.test_envs[:self.nb_tasks]
 
-            # 500 for halfcheetah, 600 for hopper, 700 for walker
-            task_creation_seeds = {"HalfCheetah": 500, "Hopper": 600, "Walker2d": 700}
+            self.nb_tasks = len(self.train_envs)
+            self.max_episode_steps = self.max_episode_steps or 1_000
+            self.train_steps_per_task = 100_000
+            self.train_max_steps = self.nb_tasks * self.train_steps_per_task
+            self.test_steps_per_task = 10_000
+            self.test_max_steps = self.nb_tasks * self.test_steps_per_task
 
-            from sequoia.settings.rl.envs.mujoco import (
-                ContinualHalfCheetahV2Env,
-                ContinualHalfCheetahV3Env,
-                ContinualHopperV2Env,
-                ContinualHopperV3Env,
-                ContinualWalker2dV2Env,
-                ContinualWalker2dV3Env,
-            )
+            task_label_space = spaces.Discrete(self.nb_tasks)
+            train_task_label_space = task_label_space
+            if not self.task_labels_at_train_time:
+                train_task_label_space = Sparse(train_task_label_space, sparsity=1.0)
+            # This should be ok for now.
+            val_task_label_space = train_task_label_space
 
-            env_classes: Dict[str, Dict[str, Type[gym.Env]]] = {
-                "HalfCheetah": {"v2": ContinualHalfCheetahV2Env, "v3": ContinualHalfCheetahV3Env},
-                "Hopper": {"v2": ContinualHopperV2Env, "v3": ContinualHopperV3Env},
-                "Walker2d": {"v2": ContinualWalker2dV2Env, "v3": ContinualWalker2dV3Env},
-            }
-            env_class = env_classes[env_name][version]
+            test_task_label_space = task_label_space
+            if not self.task_labels_at_test_time:
+                test_task_label_space = Sparse(test_task_label_space, sparsity=1.0)
 
-            # TODO: Hard-setting the number of tasks to 20 for now, but there's no reason we
-            # couldn't set a different number.
-            if self.nb_tasks in {None, defaults["nb_tasks"]}:
-                self.nb_tasks = 20
-            else:
-                warnings.warn(
-                    UserWarning(
-                        f"Ignoring passed number of tasks {self.nb_tasks} for now."
-                    )
+            train_seed: Optional[int] = None
+            valid_seed: Optional[int] = None
+            test_seed: Optional[int] = None
+            if self.config and self.config.seed is not None:
+                train_seed = self.config.seed
+                valid_seed = train_seed + 123
+                test_seed = train_seed + 456
+
+            self.train_envs = [
+                partial(
+                    create_env,
+                    env_fn=env_fn,
+                    wrappers=[
+                        partial(
+                            FixedTaskLabelWrapper,
+                            task_label=(i if self.task_labels_at_train_time else None),
+                            task_label_space=train_task_label_space,
+                        )
+                    ],
+                    seed=train_seed,
                 )
-            self.nb_tasks = 20
+                for i, env_fn in enumerate(self.train_envs)
+            ]
 
-            # NOTE: All envs in LPG-FTW use max_episode_steps of 1000.
-            self.max_episode_steps = 1000
-            task_creation_seed = task_creation_seeds[env_name]
-            # np.random.seed(task_creation_seed)
-            rng = np.random.default_rng(task_creation_seed)
+            self.val_envs = [
+                partial(
+                    create_env,
+                    env_fn=env_fn,
+                    wrappers=[
+                        partial(
+                            FixedTaskLabelWrapper,
+                            task_label=(i if self.task_labels_at_train_time else None),
+                            task_label_space=val_task_label_space,
+                        )
+                    ],
+                    seed=valid_seed,
+                )
+                for i, env_fn in enumerate(self.train_envs)
+            ]
 
-            # Function to be used to create the kwargs that will be passed to the constructors of
-            # the envs for each task.
-            get_task_kwargs: Callable[[], Dict]
+            self.test_envs = [
+                partial(
+                    create_env,
+                    env_fn=env_fn,
+                    wrappers=[
+                        partial(
+                            FixedTaskLabelWrapper,
+                            task_label=(i if self.task_labels_at_test_time else None),
+                            task_label_space=test_task_label_space,
+                        )
+                    ],
+                    seed=test_seed,
+                )
+                for i, env_fn in enumerate(self.train_envs)
+            ]
 
-            if modification_type == "gravity":
-                # This is a function that will be called for each task, and must produce a set of
-                # (distinct, reproducible) keyword arguments for the given task.
-                original_gravity = -9.81
-
-                def get_task_kwargs() -> Dict:
-                    {"gravity": (rng.random() + 0.5) * original_gravity}
-
-            elif modification_type == "bodysize":
-                bodies_to_change_for_env: Dict[str, List[str]] = {
-                    "HalfCheetah": ["torso", "fthigh", "fshin", "ffoot"],
-                    "Hopper": ["torso_geom", "thigh_geom", "leg_geom", "foot_geom"],
-                    "Walker2d": ["torso_geom", "thigh_geom", "leg_geom", "foot_geom"],
-                }
-
-                body_names = bodies_to_change_for_env[env_name]
-
-                def get_task_kwargs() -> Dict:
-                    # between 0.5 and 1.5, with 4 digits of precision.
-                    size_factors = (rng.random(len(body_names)) + 0.5).round(4)
-                    body_name_to_size_scale = dict(zip(body_names, size_factors))
-                    return {"body_name_to_size_scale": body_name_to_size_scale}
-            else:
-                raise NotImplementedError(modification_type)
-
-            # FIXME: Seeding for the train/val/test envs.
-            train_seed = 123
-            val_seed = 456
-            test_seed = 789
-
-            from gym.wrappers import TimeLimit
-
-            for task_id in range(self.nb_tasks):
-                task_kwargs = get_task_kwargs()
-                logger.info(f"Arguments for task {task_id}: {task_kwargs}")
-                # Function that will create the env with the given task.
-                base_env_fn = partial(env_class, **task_kwargs)
-                wrappers = [partial(TimeLimit, max_episode_steps=self.max_episode_steps)]
-                # Now, for training, validation, and testing, we use different seeds:
-                train_env_fn = partial(create_env, base_env_fn, wrappers=wrappers, seed=train_seed)
-                val_env_fn = partial(create_env, base_env_fn, wrappers=wrappers, seed=val_seed)
-                test_env_fn = partial(create_env, base_env_fn, wrappers=wrappers, seed=test_seed)
-                self.train_envs.append(train_env_fn)
-                self.val_envs.append(val_env_fn)
-                self.test_envs.append(test_env_fn)
-
+        # Meta-World datasets:
         if self.dataset in ["MT10", "MT50", "CW10", "CW20"]:
+
             from metaworld import MT10, MT50, MetaWorldEnv, Task
 
             benchmarks = {
@@ -223,14 +254,15 @@ class IncrementalRLSetting(IncrementalAssumption, DiscreteTaskAgnosticRLSetting)
                 f"Creating metaworld benchmark {benchmark_class}, this might take a "
                 f"while (~15 seconds)."
             )
-            self._benchmark = benchmark_class(seed=self.config.seed if self.config else None)
-
-            envs: Dict[str, Type[MetaWorldEnv]] = self._benchmark.train_classes
+            # NOTE: Saving this attribute on `self` for the time being so that it can be inspected
+            # by the tests if needed. However it would be best to move this benchmark stuff into a
+            # function, same as with LPG-FTW.
+            benchmark = benchmark_class(seed=self.config.seed if self.config else None)
+            self._benchmark = benchmark
+            envs: Dict[str, Type[MetaWorldEnv]] = benchmark.train_classes
             env_tasks: Dict[str, List[Task]] = {
-                env_name: [
-                    task for task in self._benchmark.train_tasks if task.env_name == env_name
-                ]
-                for env_name, env_class in self._benchmark.train_classes.items()
+                env_name: [task for task in benchmark.train_tasks if task.env_name == env_name]
+                for env_name, env_class in benchmark.train_classes.items()
             }
             train_env_tasks: Dict[str, List[Task]] = {}
             val_env_tasks: Dict[str, List[Task]] = {}
@@ -285,6 +317,7 @@ class IncrementalRLSetting(IncrementalAssumption, DiscreteTaskAgnosticRLSetting)
                 # NOTE: The default value for this field is 10_000 currently, so this
                 # check doesn't do anything.
                 if self.dataset == "CW20":
+                    # CW20 does tasks [0 -> 10] and then [0 -> 10] again.
                     env_names = env_names * 2
                 train_env_names = env_names
                 val_env_names = env_names
@@ -343,6 +376,12 @@ class IncrementalRLSetting(IncrementalAssumption, DiscreteTaskAgnosticRLSetting)
         self._using_custom_envs_foreach_task: bool = False
         if self.train_envs:
             self._using_custom_envs_foreach_task = True
+
+            if self.dataset == defaults["dataset"]:
+                # avoid the `dataset` key keeping the default value of "CartPole-v0" when we pass
+                # envs for each task (and no value for the `dataset` argument).
+                self.dataset = None
+
             # TODO: Raise a warning if we're going to overwrite a non-default nb_tasks?
             self.nb_tasks = len(self.train_envs)
             assert self.train_steps_per_task or self.train_max_steps
@@ -396,12 +435,16 @@ class IncrementalRLSetting(IncrementalAssumption, DiscreteTaskAgnosticRLSetting)
             self.train_dataset: Union[str, Callable[[], gym.Env]] = self.train_envs[0]
             self.val_dataset: Union[str, Callable[[], gym.Env]] = self.val_envs[0]
             self.test_dataset: Union[str, Callable[[], gym.Env]] = self.test_envs[0]
+
+            # TODO: Add wrappers with the fixed task id for each env, if necessary, right?
         else:
             if self.val_envs or self.test_envs:
                 raise RuntimeError(
                     "Can't pass `val_envs` or `test_envs` without passing `train_envs`."
                 )
 
+        # Call super().__post_init__() (delegates up the chain: IncrementalAssumption->DiscreteRL->ContinualRL)
+        # NOTE: This deep inheritance isn't ideal. Should probably use composition instead somehow.
         super().__post_init__()
 
         if self._using_custom_envs_foreach_task:
@@ -421,6 +464,10 @@ class IncrementalRLSetting(IncrementalAssumption, DiscreteTaskAgnosticRLSetting)
         max_path_length: Optional[int] = getattr(self._temp_train_env, "max_path_length", None)
         if self.max_episode_steps is None and max_path_length is not None:
             assert max_path_length > 0
+            logger.info(
+                f"Setting the max episode steps to {max_path_length} because a 'max_path_length' "
+                f"attribute is present on the train env."
+            )
             self.max_episode_steps = max_path_length
 
         # if self.dataset == "MetaMonsterKong-v0":
@@ -473,31 +520,6 @@ class IncrementalRLSetting(IncrementalAssumption, DiscreteTaskAgnosticRLSetting)
             return sum(self.train_task_lengths)
         return self.train_task_lengths[self.current_task_id]
 
-    # steps_per_task: int = deprecated_property(
-    #     "steps_per_task", "current_train_task_length"
-    # )
-    # @property
-    # def steps_per_task(self) -> int:
-    #     # unique_task_lengths = list(set(self.train_task_lengths))
-    #     warning = DeprecationWarning(
-    #         "The 'steps_per_task' attribute is deprecated, use "
-    #         "`current_train_task_length` instead, which gives the length of the "
-    #         "current task."
-    #     )
-    #     warnings.warn(warning)
-    #     logger.warning(warning)
-    #     return self.current_train_task_length
-
-    # @property
-    # def steps_per_phase(self) -> int:
-    #     # return unique_task_lengths
-    #     test_task_lengths: List[int] = [
-    #         task_b_step - task_a_step
-    #         for task_a_step, task_b_step in pairwise(
-    #             sorted(self.test_task_schedule.keys())
-    #         )
-    #     ]
-
     @property
     def task_label_space(self) -> gym.Space:
         # TODO: Explore an alternative design for the task sampling, based more around
@@ -528,53 +550,12 @@ class IncrementalRLSetting(IncrementalAssumption, DiscreteTaskAgnosticRLSetting)
                 f"{self.current_task_id}."
             )
 
-            # TODO: Add support for batching these environments:
-            # TODO: This is probably not needed, since most of the wrappers below will
-            # instiate the envs as needed. However this is better for finding bugs, if
-            # any.
-            def instantiate_all_envs_if_needed(
-                envs: List[Union[Callable[[], gym.Env], gym.Env]]
-            ) -> List[gym.Env]:
-                live_envs: List[gym.Env] = []
-                for i, env in enumerate(envs):
-                    live_env: gym.Env
-                    if isinstance(env, gym.Env):
-                        live_env = env
-                        live_envs.append(env)
-                    elif isinstance(env, str):
-                        logger.info(f"Instantiating environment for task {i}, stage {stage}")
-                        live_env = gym.make(env)
-                        live_envs.append(live_env)
-                    elif callable(env):
-                        live_env = env()
-                        live_envs.append(live_env)
-                    else:
-                        raise ValueError(
-                            f"Expect the envs to be either gym.Env instances, strings, or "
-                            f"callables that produce gym.Env instances, but received {env} instead."
-                        )
-
-                return live_envs
-                # return [
-                #     env
-                #     if isinstance(env, gym.Env)
-                #     else gym.make(env)
-                #     if isinstance(env, str)
-                #     else env()
-                #     for env in envs
-                # ]
-
             if self.stationary_context:
                 from sequoia.settings.rl.discrete.multienv_wrappers import (
                     ConcatEnvsWrapper,
                     RandomMultiEnvWrapper,
                     RoundRobinWrapper,
                 )
-
-                self.train_envs = instantiate_all_envs_if_needed(self.train_envs)
-                self.val_envs = instantiate_all_envs_if_needed(self.val_envs)
-                self.test_envs = instantiate_all_envs_if_needed(self.test_envs)
-
                 # NOTE: Here is how this supports passing custom envs for each task: We
                 # just switch out the value of these properties, and let the
                 # `train/val/test_dataloader` methods work as usual!
@@ -584,9 +565,15 @@ class IncrementalRLSetting(IncrementalAssumption, DiscreteTaskAgnosticRLSetting)
                     # because the task labels are available anyway, so it doesn't matter
                     # if the Method figures out the pattern in the task IDs.
                     # A RoundRobinWrapper is also used during testing, because it
-                    # makes it easier to check that things are working correctly.
+                    # makes it easier to check that things are working correctly: for example that
+                    # each task is visited equally, even when the number of total steps is small.
                     wrapper_type = RoundRobinWrapper
 
+                # NOTE: Not instantiating all the train/val/test envs here. Instead, the multienv
+                # wrapper will lazily instantiate the envs as needed.
+                # self.train_envs = instantiate_all_envs_if_needed(self.train_envs)
+                # self.val_envs = instantiate_all_envs_if_needed(self.val_envs)
+                # self.test_envs = instantiate_all_envs_if_needed(self.test_envs)
                 self.train_dataset = wrapper_type(
                     self.train_envs, add_task_ids=self.task_labels_at_train_time
                 )
@@ -615,14 +602,17 @@ class IncrementalRLSetting(IncrementalAssumption, DiscreteTaskAgnosticRLSetting)
             # Check that the observation/action spaces are all the same for all
             # the train/valid/test envs
             self._check_all_envs_have_same_spaces(
-                envs_or_env_functions=self.train_envs, wrappers=self.train_wrappers,
+                envs_or_env_functions=self.train_envs,
+                wrappers=self.train_wrappers,
             )
             # TODO: Inconsistent naming between `val_envs` and `valid_wrappers` etc.
             self._check_all_envs_have_same_spaces(
-                envs_or_env_functions=self.val_envs, wrappers=self.val_wrappers,
+                envs_or_env_functions=self.val_envs,
+                wrappers=self.val_wrappers,
             )
             self._check_all_envs_have_same_spaces(
-                envs_or_env_functions=self.test_envs, wrappers=self.test_wrappers,
+                envs_or_env_functions=self.test_envs,
+                wrappers=self.test_wrappers,
             )
         else:
             # TODO: Should we populate the `self.train_envs`, `self.val_envs` and
@@ -674,12 +664,38 @@ class IncrementalRLSetting(IncrementalAssumption, DiscreteTaskAgnosticRLSetting)
             # per test task (current hard-set to self.test_max_steps).
             task_test_env = self.test_dataloader()
             test_envs.append(task_test_env)
+
+        # TODO: Move these wrappers to sequoia/common/gym_wrappers/multienv_wrappers or something,
+        # and then import them correctly at the top of this file.
         from ..discrete.multienv_wrappers import ConcatEnvsWrapper
 
-        on_task_switch_callback = getattr(method, "on_task_switch", None)
+        task_label_space = spaces.Discrete(self.nb_tasks)
+        if self.batch_size is not None:
+            task_label_space = batch_space(task_label_space, self.batch_size)
+        if not self.task_labels_at_test_time:
+            task_label_space = Sparse(task_label_space, sparsity=1)
+
+        test_envs_with_task_ids = [
+            FixedTaskLabelWrapper(
+                env=test_env,
+                task_label=(i if self.task_labels_at_test_time else None),
+                task_label_space=task_label_space,
+            )
+            for i, test_env in enumerate(test_envs)
+        ]
+
+        # NOTE: This check is a bit redundant here, since IncrementalRLSetting always has task
+        # boundaries, but this might be useful if moving this to DiscreteTaskIncrementalRL
+
+        on_task_switch_callback: Optional[Callable[[Optional[int]], None]]
+        if self.known_task_boundaries_at_test_time:
+            on_task_switch_callback = getattr(method, "on_task_switch", None)
+
+        # NOTE: Not adding a task id here, since we instead add the fixed task id for each test env.
+        # NOTE: Not adding task ids with this, doing it instead with a dedicated wrapper for each env above.
         joined_test_env = ConcatEnvsWrapper(
-            test_envs,
-            add_task_ids=self.task_labels_at_test_time,
+            test_envs_with_task_ids,
+            add_task_ids=False,
             on_task_switch_callback=on_task_switch_callback,
         )
         # TODO: Use this 'joined' test environment in this test loop somehow.
@@ -775,11 +791,16 @@ class IncrementalRLSetting(IncrementalAssumption, DiscreteTaskAgnosticRLSetting)
                     )
 
         return ContinualRLSetting._make_env(
-            base_env=base_env, wrappers=wrappers, **base_env_kwargs,
+            base_env=base_env,
+            wrappers=wrappers,
+            **base_env_kwargs,
         )
 
     def create_task_schedule(
-        self, temp_env: gym.Env, change_steps: List[int], seed: int = None,
+        self,
+        temp_env: gym.Env,
+        change_steps: List[int],
+        seed: int = None,
     ) -> Dict[int, Dict]:
         task_schedule: Dict[int, Dict] = {}
         if self._using_custom_envs_foreach_task:
@@ -804,13 +825,19 @@ class IncrementalRLSetting(IncrementalAssumption, DiscreteTaskAgnosticRLSetting)
             # at train vs test time, allow the test task schedule to have different
             # ordering than train / valid.
             task = type(self)._task_sampling_function(
-                temp_env, step=step, change_steps=change_steps, seed=seed,
+                temp_env,
+                step=step,
+                change_steps=change_steps,
+                seed=seed,
             )
             task_schedule[step] = task
 
         return task_schedule
 
-    def create_train_wrappers(self):
+    def create_train_wrappers(self) -> List[Callable[[gym.Env], gym.Env]]:
+        """Create and return the wrappers to apply to the train environment of the current task."""
+        wrappers: List[Callable[[gym.Env], gym.Env]] = []
+
         # TODO: Clean this up a bit?
         if self._using_custom_envs_foreach_task:
             # TODO: Maybe do something different here, since we don't actually want to
@@ -930,16 +957,22 @@ class IncrementalRLSetting(IncrementalAssumption, DiscreteTaskAgnosticRLSetting)
             base_env=envs_or_env_functions[0], wrappers=wrappers, **self.base_env_kwargs
         )
         if not isinstance(envs_or_env_functions[0], gym.Env):
-            first_env.close()
+            # NOTE: Avoid closing the envs for now in case 'live' envs were passed to the Setting.
+            # first_env.close()
+            pass
 
         for task_id, task_env_id_or_function in zip(
             range(1, len(envs_or_env_functions)), envs_or_env_functions[1:]
         ):
             task_env = self._make_env(
-                base_env=task_env_id_or_function, wrappers=wrappers, **self.base_env_kwargs,
+                base_env=task_env_id_or_function,
+                wrappers=wrappers,
+                **self.base_env_kwargs,
             )
             if not isinstance(task_env_id_or_function, gym.Env):
-                task_env.close()
+                # NOTE: Avoid closing the envs for now in case 'live' envs were passed to the Setting.
+                # task_env.close()
+                pass
 
             def warn_spaces_are_different(
                 task_id: int, kind: str, first_env: gym.Env, task_env: gym.Env
@@ -972,7 +1005,8 @@ class IncrementalRLSetting(IncrementalAssumption, DiscreteTaskAgnosticRLSetting)
                 ) or (
                     isinstance(task_env.observation_space, TypedDictSpace)
                     and isinstance(first_env.observation_space, TypedDictSpace)
-                    and "x" in task_env.observation_space.spaces and "x" in first_env.observation_space.spaces
+                    and "x" in task_env.observation_space.spaces
+                    and "x" in first_env.observation_space.spaces
                     and task_env.observation_space.x.shape == first_env.observation_space.x.shape
                 ):
                     warnings.warn(
@@ -1086,8 +1120,16 @@ def make_metaworld_env(env_class: Type[MetaWorldEnv], tasks: List["Task"]) -> Me
     return env
 
 
+def wrap(env_or_env_fn: Union[gym.Env, EnvFactory], wrappers: List[gym.Wrapper] = None) -> gym.Env:
+    env: gym.Env = env_or_env_fn if isinstance(env_or_env_fn, gym.Env) else env_or_env_fn()
+    wrappers = wrappers or []
+    for wrapper in wrappers:
+        env = wrapper(env)
+    return env
+
+
 def create_env(
-    env_class: Union[Type[gym.Env], Callable[[], gym.Env]],
+    env_fn: Union[Type[gym.Env], Callable[[], gym.Env]],
     kwargs: Dict = None,
     wrappers: List[Callable[[gym.Env], gym.Env]] = None,
     seed: int = None,
@@ -1097,10 +1139,118 @@ def create_env(
     2. Wrap it with the wrappers in `wrappers`, if any;
     3. seed it with `seed` if it is not None.
     """
-    env = env_class(**(kwargs or {}))
+    env = env_fn(**(kwargs or {}))
     wrappers = wrappers or []
     for wrapper in wrappers:
         env = wrapper(env)
     if seed is not None:
         env.seed(seed)
     return env
+
+
+def make_lpg_ftw_datasets(dataset: str) -> Tuple[List[EnvFactory], List[EnvFactory], List[EnvFactory]]:
+    # IDEA: "LPG-FTW-{bodyparts|gravity}-{HalfCheetah|Hopper|Walker2d}-{v2|v3}",
+    # TODO: Instead of doing what I'm doing here, we could instead add an argument that gets
+    # passed to the task creation function, for instance to get only a bodysize task, or
+    # only a gravity task, etc.
+    train_envs: List[EnvFactory] = []
+    valid_envs: List[EnvFactory] = []
+    test_envs: List[EnvFactory] = []
+
+    name_parts = dataset.split("-")
+    if len(name_parts) != 5:
+        raise ValueError(
+            "Expected the name to follow this format: \n"
+            "\t 'LPG-FTW-{bodyparts|gravity}-{HalfCheetah|Hopper|Walker2d}-{v2|v3}' \n"
+            f"but got {dataset}"
+        )
+    _, _, modification_type, env_name, version = name_parts
+
+    # NOTE: From the LPG-FTW repo:
+    # > "500 for halfcheetah, 600 for hopper, 700 for walker"
+    task_creation_seeds = {"HalfCheetah": 500, "Hopper": 600, "Walker2d": 700}
+    task_creation_seed = task_creation_seeds[env_name]
+    rng = np.random.default_rng(task_creation_seed)
+
+    from sequoia.settings.rl.envs.mujoco import (
+        ContinualHalfCheetahV2Env,
+        ContinualHalfCheetahV3Env,
+        ContinualHopperV2Env,
+        ContinualHopperV3Env,
+        ContinualWalker2dV2Env,
+        ContinualWalker2dV3Env,
+    )
+
+    env_classes: Dict[str, Dict[str, Type[gym.Env]]] = {
+        "HalfCheetah": {
+            "v2": ContinualHalfCheetahV2Env,
+            "v3": ContinualHalfCheetahV3Env,
+        },
+        "Hopper": {"v2": ContinualHopperV2Env, "v3": ContinualHopperV3Env},
+        "Walker2d": {"v2": ContinualWalker2dV2Env, "v3": ContinualWalker2dV3Env},
+    }
+    env_class = env_classes[env_name][version]
+    # NOTE: Could also get the list of all geoms from the BODY_NAMES property on the classes above,
+    # but the LPG-FTW repo actually uses a subset of those:
+    bodyparts_for_env: Dict[str, List[str]] = {
+        "HalfCheetah": ["torso", "fthigh", "fshin", "ffoot"],
+        "Hopper": ["torso", "thigh", "leg", "foot"],
+        "Walker2d": ["torso", "thigh", "leg", "foot"],
+    }
+
+    # From the paper: "We created T_max=20 tasks for HalfCheetah and Hopper domains, and
+    # T_max=50 tasks for Walker2d domains."
+    # NOTE: Here if `nb_tasks` is None, we use the default number of tasks from the paper.
+    nb_tasks = 20 if env_name in ["HalfCheetah", "Hopper"] else 50
+
+    task_params: List[Dict] = []
+    values = []
+    for task_id in range(nb_tasks):
+        # NOTE: Could also support a different type of modification per task, by passing a list of
+        # types of modifications to use!
+        if modification_type == "gravity":
+            # This is a function that will be called for each task, and must produce a set of
+            # (distinct, reproducible) keyword arguments for the given task.
+            original_gravity = -9.81
+            task_gravity = round(((rng.random() + 0.5) * original_gravity), 4)
+            task_kwargs = {"gravity": task_gravity}
+            values.append(task_gravity)
+
+        elif modification_type == "bodyparts":
+
+            body_names = bodyparts_for_env[env_name]
+            scale_factors = (rng.random(len(body_names)) + 0.5).round(4)
+            values.append(scale_factors)
+            body_name_to_size_scale = dict(zip(body_names, scale_factors))
+
+            # between 0.5 and 1.5, with 4 digits of precision.
+            # NOTE: Scale the mass by the same factor as the size.
+            task_kwargs = {
+                "body_name_to_size_scale": body_name_to_size_scale,
+                "body_name_to_mass_scale": body_name_to_size_scale.copy(),
+            }
+        else:
+            raise NotImplementedError(
+                f"Unsupported modification type: '{modification_type}'! Supported values are "
+                f"'bodyparts', 'gravity'."
+            )
+        logger.info(f"Arguments for task {task_id}: {task_kwargs}")
+        task_params.append(task_kwargs)
+
+    values = np.array(values)
+    logger.debug(values.tolist())
+    # assert False
+    # logger.info("Task parameters:")
+    # logger.info(json.dumps(task_params, indent="\t"))
+    # NOTE: All envs in LPG-FTW use max_episode_steps of 1000.
+    # max_episode_steps = 1000
+    # wrappers = [partial(TimeLimit, max_episode_steps=max_episode_steps)]
+
+    for task_id, task_kwargs in enumerate(task_params):
+        # Function that will create the env with the given task.
+        base_env_fn = partial(env_class, **task_kwargs)
+        train_envs.append(base_env_fn)
+        valid_envs.append(base_env_fn)
+        test_envs.append(base_env_fn)
+
+    return train_envs, valid_envs, test_envs

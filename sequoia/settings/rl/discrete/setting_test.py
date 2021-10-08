@@ -17,13 +17,12 @@ from sequoia.settings.rl.envs import (
 )
 
 from ..continual.setting_test import TestContinualRLSetting as ContinualRLSettingTests
-from ..continual.setting_test import make_dataset_fixture
 from .setting import DiscreteTaskAgnosticRLSetting
 
 
 class TestDiscreteTaskAgnosticRLSetting(ContinualRLSettingTests):
     Setting: ClassVar[Type[Setting]] = DiscreteTaskAgnosticRLSetting
-    dataset: pytest.fixture = make_dataset_fixture(DiscreteTaskAgnosticRLSetting)
+    dataset: pytest.fixture
 
     @pytest.fixture(params=[1, 3])
     def nb_tasks(self, request):

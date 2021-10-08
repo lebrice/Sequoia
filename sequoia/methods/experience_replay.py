@@ -208,26 +208,19 @@ class ExperienceReplayMethod(Method, target_setting=ClassIncrementalSetting):
             self.task = task_id
 
     @classmethod
-    def add_argparse_args(cls, parser: ArgumentParser, dest: str = "") -> None:
+    def add_argparse_args(cls, parser: ArgumentParser) -> None:
         """Add the command-line arguments for this Method to the given parser.
 
         Parameters
         ----------
         parser : ArgumentParser
             The ArgumentParser.
-        dest : str, optional
-            The 'base' destination where the arguments should be set on the
-            namespace, by default empty, in which case the arguments can be at
-            the "root" level on the namespace.
         """
-        prefix = f"{dest}." if dest else ""
-        parser.add_argument(f"--{prefix}learning_rate", type=float, default=1e-3)
-        parser.add_argument(f"--{prefix}weight_decay", type=float, default=1e-6)
-        parser.add_argument(f"--{prefix}buffer_capacity", type=int, default=200)
-        parser.add_argument(f"--{prefix}max_epochs_per_task", type=int, default=10)
-        parser.add_argument(
-            f"--{prefix}seed", type=int, default=None, help="Random seed"
-        )
+        parser.add_argument("--learning_rate", type=float, default=1e-3)
+        parser.add_argument("--weight_decay", type=float, default=1e-6)
+        parser.add_argument("--buffer_capacity", type=int, default=200)
+        parser.add_argument("--max_epochs_per_task", type=int, default=10)
+        parser.add_argument("--seed", type=int, default=None, help="Random seed")
 
     @classmethod
     def from_argparse_args(cls, args: Namespace, dest: str = None):

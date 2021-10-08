@@ -124,12 +124,13 @@ def test_batching_works(base_space: gym.Space, sparsity: float, n: int = 10):
         # same space.
         assert equals(base_batch, sparse_batch)
     elif sparsity == 1:
-        assert len(sparse_batch) == n
-        assert sparse_batch == tuple([None] * n)
+        assert sparse_batch is None
+        # assert len(sparse_batch) == n
+        # assert sparse_batch == tuple([None] * n)
     else:
         assert len(sparse_batch) == n
         assert isinstance(sparse_batch, tuple)
-        
+
         for i, value in enumerate(sparse_batch):
             if value is not None:
                 assert value in base_space

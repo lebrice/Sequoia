@@ -1,3 +1,4 @@
+from argparse import Namespace
 import sys
 from dataclasses import dataclass
 from typing import Any, Dict, Optional, Tuple, Union
@@ -330,11 +331,11 @@ class PnnMethod(Method, target_setting=Setting):
                     val_pbar.set_postfix(postfix)
 
     @classmethod
-    def add_argparse_args(cls, parser: ArgumentParser, dest: str = None) -> None:
+    def add_argparse_args(cls, parser: ArgumentParser) -> None:
         parser.add_arguments(cls.HParams, dest="hparams", default=None)
 
     @classmethod
-    def from_argparse_args(cls, args, dest: str = None) -> "PnnMethod":
+    def from_argparse_args(cls, args: Namespace) -> "PnnMethod":
         hparams: PnnMethod.HParams = args.hparams
         method = cls(hparams=hparams)
         return method

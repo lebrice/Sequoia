@@ -2,9 +2,10 @@
 
 Used to run experiments, which consist in applying a Method to a Setting.
 """
-import textwrap
+from argparse import _SubParsersAction
 from dataclasses import dataclass
 from pathlib import Path
+from sequoia.common.config.wandb_config import WandbConfig
 from typing import Optional, Type, Union
 
 from simple_parsing import ArgumentParser
@@ -17,8 +18,6 @@ from sequoia.methods import get_all_methods
 from sequoia.settings import all_settings
 from sequoia.settings.base import Method, Results, Setting
 from sequoia.utils import get_logger
-from argparse import _SubParsersAction
-
 
 # TODO: Fix all the `get_logger` to use __name__ instead of __file__.
 logger = get_logger(__file__)
@@ -50,17 +49,31 @@ def main():
 
     command: str = getattr(args, "command", None)
     if command is None:
-        return parser.print_help()
+        parser.print_help()
     elif command == "run":
-        method_type: Type[Method] = args.method
-        method: Method = method_type.from_argparse_args(args.method, dest="method")
-        return run(setting=args.setting, method=method, config=args.config)
+        method_type: Type[Method] = args.method_type
+        setting_type: Type[Setting] = args.setting_type
+        method: Method = method_type.from_argparse_args(args)
+        setting: Setting = setting_type.from_argparse_args(args)
+        config: Config = args.config
+        # TODO: Make this a bit cleaner, current need to set this `wandb` config as a property on
+        # the setting. Could either subclass Config and add an Optional[WandbConfig] field, or just
+        # add it directly to the existing Config class.
+        wandb_config: WandbConfig = args.wandb
+        setting.wandb = wandb_config
+        run(setting=setting, method=method, config=config)
     elif command == "sweep":
-        method_type: Type[Method] = args.method
-        method: Method = method_type.from_argparse_args(args.method, dest="method")
-        return sweep(setting=args.setting, method=method, config=args.config)
+        method_type: Type[Method] = args.method_type
+        setting_type: Type[Setting] = args.setting_type
+        method: Method = method_type.from_argparse_args(args)
+        setting: Setting = setting_type.from_argparse_args(args)
+        config: Config = args.config
+        # TODO: Fix this up a bit: Currently need to set this on the setting
+        wandb_config: WandbConfig = args.wandb
+        setting.wandb = wandb_config
+        sweep(setting=args.setting, method=method, config=args.config)
     elif command == "info":
-        return info(component=args.component)
+        info(component=args.component)
 
 
 def add_run_command(command_subparsers: _SubParsersAction) -> None:
@@ -72,16 +85,22 @@ def add_run_command(command_subparsers: _SubParsersAction) -> None:
         formatter_class=SimpleHelpFormatter,
     )
     run_parser.add_arguments(Config, dest="config")
+    run_parser.add_arguments(WandbConfig, dest="wandb")
     add_args_for_settings_and_methods(run_parser)
 
 
 def run(setting: Setting, method: Method, config: Config) -> Results:
     """Performs a single run, applying a method to a setting, and returns the results."""
     logger.debug("Setting:")
-    logger.debug(setting.dumps_yaml())
+    # BUG: TypeError: __reduce_ex__() takes exactly one argument (0 given)
+    try:
+        logger.debug(setting.dumps_yaml())
+    except TypeError:
+        logger.debug(setting)
     logger.debug("Config:")
     logger.debug(config.dumps_yaml())
-    logger.debug(f"Method: {method}")
+    logger.debug("Method")
+    logger.debug(str(method))
     results = setting.apply(method, config=config)
     logger.debug("Results:")
     logger.debug(results.summary())
@@ -119,7 +138,11 @@ def sweep(setting: Setting, method: Method, config: SweepConfig) -> Setting.Resu
     """
     print("Sweep!")
     logger.debug("Setting:")
-    logger.debug(setting.dumps_yaml())
+    # BUG: TypeError: __reduce_ex__() takes exactly one argument (0 given)
+    try:
+        logger.debug(setting.dumps_yaml())
+    except TypeError:
+        logger.debug(setting)
     logger.debug("Config:")
     logger.debug(config.dumps_yaml())
     logger.debug(f"Method: {method}")
@@ -224,13 +247,16 @@ def info(component: Union[Type[Setting], Type[Method]] = None) -> None:
 def get_help(component: Type[Setting]) -> str:
     """Returns the string to be passed as the 'help' argument to the parser."""
     # todo
+    docstring = component.__doc__
+    if not docstring:
+        docstring = f"Help for class {component.__name__} (missing docstring)"
     # IDEA: Get the first two sentences, or a shortened version of the docstring,
     # whichever one is shorter.
-    docstring = component.__doc__
-    shortened_docstring = textwrap.shorten(docstring, 150)
     first_two_sentences = ". ".join(docstring.split(".")[:2]) + "."
-    return first_two_sentences
+    # shortened_docstring = textwrap.shorten(docstring, 150)
     # return min(shortened_docstring, first_two_sentences, key=len) + "(help)"
+    # NOTE: Seems to be nicer in general to have two whole sentences, even if they are a bit longer.
+    return first_two_sentences
 
 
 # def get_description(command: str, setting: Type[Setting], method: Type[Method] = None) -> str:
@@ -248,11 +274,18 @@ def get_help(component: Type[Setting]) -> str:
 
 
 def add_args_for_settings_and_methods(command_subparser: ArgumentParser):
+    """Adds a subparser for each Setting class and method subparsers for each of those.
+
+    NOTE: Only adds subparsers for setting classes that have a non-empty 'available_datasets'
+    attribute, so that choosing `Setting`, `SLSetting` or `RLSetting` isn't an option.
+
+    This is used by the `sequoia run` and `sequoia sweep` commands.
+    """
     # ===== RUN ========
     setting_subparsers = command_subparser.add_subparsers(
         title="setting_choice",
         description="choice of experimental setting",
-        dest="setting",
+        dest="setting_type",
         metavar="<setting>",
         required=True,
     )
@@ -280,33 +313,40 @@ def add_args_for_settings_and_methods(command_subparser: ArgumentParser):
             add_dest_to_option_strings=False,
             formatter_class=SimpleHelpFormatter,
         )
-        setting.add_argparse_args(parser=setting_parser, dest="setting")
+        setting_parser.set_defaults(**{"setting_type": setting})
+
+        # NOTE: By removing the `dest` argument to `add_argparse_args, we're moving the place where
+        # the setting's values are stored from 'setting' to `camel_case(setting_class.__name__).
+        # Alternative would be to just assume that the settings are dataclasses and add arguments
+        # for the setting at destination 'setting' as before.
+        setting.add_argparse_args(parser=setting_parser)
+        # setting_parser.add_arguments(setting, dest="setting")
 
         method_subparsers = setting_parser.add_subparsers(
             title="method",
-            dest="method",
+            dest="method_name",
             metavar="<method>",
             description=f"which method to apply to the {setting_name} Setting.",
             required=True,
         )
         for method in setting.get_applicable_methods():
-            method_name = method.get_name()
+            method_name = method.get_full_name()
             method_parser: ArgumentParser = method_subparsers.add_parser(
                 method_name,
                 help=get_help(method),
                 description=(
-                    f"Run an experiment where the {method.get_full_name()} method is "
+                    f"Run an experiment where the {method_name} method is "
                     f"applied to the {setting.get_name()} setting."
                 ),
                 formatter_class=SimpleHelpFormatter,
             )
-            method_parser.set_defaults(method=method)
+            method_parser.set_defaults(method_type=method)
             # TODO: Could also pass the setting to the method's `add_argparse_args` so
             # that it gets to change its default values!
             # method.add_argparse_args_for_setting(
-            #     parser=method_parser, setting=setting, dest="method"
+            #     parser=method_parser, setting=setting,
             # )
-            method.add_argparse_args(parser=method_parser, dest="method")
+            method.add_argparse_args(parser=method_parser)
 
 
 if __name__ == "__main__":

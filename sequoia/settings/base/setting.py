@@ -256,7 +256,7 @@ class Setting(
         # NOTE: The actual train/test loop should be defined in a more specific
         # setting. This is just here as an illustration of what that could look
         # like.
-        assert False, "this is just here for illustration purposes. "
+        raise NotImplementedError("this is just here for illustration purposes. ")
 
         method.fit(
             train_env=self.train_dataloader(), valid_env=self.val_dataloader(),

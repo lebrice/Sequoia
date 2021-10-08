@@ -279,12 +279,12 @@ class ExampleMethod(Method, target_setting=ClassIncrementalSetting):
         return self.target_setting.Actions(y_pred)
 
     @classmethod
-    def add_argparse_args(cls, parser: ArgumentParser, dest: str = ""):
+    def add_argparse_args(cls, parser: ArgumentParser):
         """Adds command-line arguments for this Method to an argument parser."""
         parser.add_arguments(cls.ModelType.HParams, "hparams")
 
     @classmethod
-    def from_argparse_args(cls, args, dest: str = ""):
+    def from_argparse_args(cls, args: Namespace):
         """Creates an instance of this Method from the parsed arguments."""
         hparams: Classifier.HParams = args.hparams
         return cls(hparams=hparams)

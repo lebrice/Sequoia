@@ -64,25 +64,23 @@ except ImportError:
 
 MUJOCO_INSTALLED = False
 try:
+    import mujoco_py
+    mj_path, _ = mujoco_py.utils.discover_mujoco()
     from gym.envs.mujoco import MujocoEnv
     from .mujoco import (
         ContinualHalfCheetahEnv,
         ContinualHalfCheetahV2Env,
         ContinualHalfCheetahV3Env,
         ContinualHopperEnv,
+        ContinualHopperV2Env,
+        ContinualHopperV3Env,
         ContinualWalker2dEnv,
         ContinualWalker2dV2Env,
         ContinualWalker2dV3Env,
     )
     from .mujoco import register_mujoco_variants
-
     register_mujoco_variants(env_registry=sequoia_registry)
-
-    import mujoco_py
-
-    mj_path, _ = mujoco_py.utils.discover_mujoco()
     MUJOCO_INSTALLED = True
-
 except (
     ImportError,
     AttributeError,
@@ -98,6 +96,8 @@ except (
     class ContinualHalfCheetahV2Env(MujocoEnv): pass
     class ContinualHalfCheetahV3Env(MujocoEnv): pass
     class ContinualHopperEnv(MujocoEnv): pass
+    class ContinualHopperV2Env(MujocoEnv): pass
+    class ContinualHopperV3Env(MujocoEnv): pass
     class ContinualWalker2dEnv(MujocoEnv): pass
     class ContinualWalker2dV2Env(MujocoEnv): pass
     class ContinualWalker2dV3Env(MujocoEnv): pass

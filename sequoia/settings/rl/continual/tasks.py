@@ -341,7 +341,8 @@ if MUJOCO_INSTALLED:
     from sequoia.settings.rl.envs.mujoco import (
         ContinualHalfCheetahV2Env,
         ContinualHalfCheetahV3Env,
-        ContinualHopperEnv,
+        ContinualHopperV2Env,
+        ContinualHopperV3Env,
         ContinualWalker2dV2Env,
         ContinualWalker2dV3Env,
         ModifiedGravityEnv,
@@ -349,7 +350,8 @@ if MUJOCO_INSTALLED:
 
     default_mujoco_gravity = -9.81
 
-    @make_continuous_task.register(ContinualHopperEnv)
+    @make_continuous_task.register(ContinualHopperV2Env)
+    @make_continuous_task.register(ContinualHopperV3Env)
     @make_continuous_task.register(ContinualWalker2dV2Env)
     @make_continuous_task.register(ContinualWalker2dV3Env)
     @make_continuous_task.register(ContinualHalfCheetahV2Env)

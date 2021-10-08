@@ -7,14 +7,13 @@ from sequoia.settings import Setting
 from ..task_incremental.setting_test import (
     TestTaskIncrementalRLSetting as TaskIncrementalRLSettingTests,
 )
-from ..task_incremental.setting_test import make_dataset_fixture
 from .setting import MultiTaskRLSetting
 from sequoia.settings.rl.setting_test import DummyMethod
 
 
 class TestMultiTaskRLSetting(TaskIncrementalRLSettingTests):
     Setting: ClassVar[Type[Setting]] = MultiTaskRLSetting
-    dataset: pytest.fixture = make_dataset_fixture(MultiTaskRLSetting)
+    dataset: pytest.fixture
 
     # def test_on_task_switch_is_called(self):
     #     setting = self.Setting(
