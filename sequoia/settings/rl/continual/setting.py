@@ -111,7 +111,7 @@ available_datasets: Dict[str, str] = {env_id: env_id for env_id in supported_env
 
 @dataclass
 class ContinualRLSetting(RLSetting, ContinualAssumption):
-    """ Reinforcement Learning Setting where the environment changes over time.
+    """Reinforcement Learning Setting where the environment changes over time.
 
     This is an Active setting which uses gym environments as sources of data.
     These environments' attributes could change over time following a task
@@ -135,9 +135,7 @@ class ContinualRLSetting(RLSetting, ContinualAssumption):
     # Dict of all available options for the 'dataset' field below.
     available_datasets: ClassVar[Dict[str, Union[str, Any]]] = available_datasets
     # The function used to create the tasks for the chosen env.
-    _task_sampling_function: ClassVar[
-        Callable[..., ContinuousTask]
-    ] = make_continuous_task
+    _task_sampling_function: ClassVar[Callable[..., ContinuousTask]] = make_continuous_task
 
     # Which environment (a.k.a. "dataset") to learn on.
     # The dataset could be either a string (env id or a key from the
@@ -320,16 +318,12 @@ class ContinualRLSetting(RLSetting, ContinualAssumption):
 
         if self.dataset not in self.available_datasets.values():
             try:
-                self.dataset = find_matching_dataset(
-                    self.available_datasets, self.dataset
-                )
+                self.dataset = find_matching_dataset(self.available_datasets, self.dataset)
             except NotImplementedError as e:
                 # FIXME: Removing this warning in the case where a custom env is pased
                 # for each task. However, the train_envs field is only created in a
                 # subclass, so this check is ugly.
-                if not (
-                    hasattr(self, "train_envs") and self.dataset is self.train_envs[0]
-                ):
+                if not (hasattr(self, "train_envs") and self.dataset is self.train_envs[0]):
                     warnings.warn(
                         RuntimeWarning(
                             f"Will attempt to use unsupported dataset {textwrap.shorten(str(self.dataset), 100)}!"
@@ -342,24 +336,14 @@ class ContinualRLSetting(RLSetting, ContinualAssumption):
                     f"so this Setting ({type(self).__name__}) doesn't know how to create "
                     f"tasks for that env!\n"
                     f"Supported envs:\n"
-                    + (
-                        "\n".join(
-                            f"- {k}: {v}" for k, v in self.available_datasets.items()
-                        )
-                    )
+                    + ("\n".join(f"- {k}: {v}" for k, v in self.available_datasets.items()))
                 )
         logger.info(f"Chosen dataset: {textwrap.shorten(str(self.dataset), 50)}")
 
         # The ids of the train/valid/test environments.
-        self.train_dataset: Union[
-            str, Callable[[], gym.Env]
-        ] = self.train_dataset or self.dataset
-        self.val_dataset: Union[
-            str, Callable[[], gym.Env]
-        ] = self.val_dataset or self.dataset
-        self.test_dataset: Union[
-            str, Callable[[], gym.Env]
-        ] = self.test_dataset or self.dataset
+        self.train_dataset: Union[str, Callable[[], gym.Env]] = self.train_dataset or self.dataset
+        self.val_dataset: Union[str, Callable[[], gym.Env]] = self.val_dataset or self.dataset
+        self.test_dataset: Union[str, Callable[[], gym.Env]] = self.test_dataset or self.dataset
 
         # # The environment 'ID' associated with each 'simple name'.
         # self.train_dataset_id: str = self._get_dataset_id(self.train_dataset)
@@ -372,9 +356,7 @@ class ContinualRLSetting(RLSetting, ContinualAssumption):
 
         # Load the task schedules from the corresponding files, if present.
         if self.train_task_schedule_path:
-            self.train_task_schedule = _load_task_schedule(
-                self.train_task_schedule_path
-            )
+            self.train_task_schedule = _load_task_schedule(self.train_task_schedule_path)
             self.nb_tasks = len(self.train_task_schedule) - 1
         if self.val_task_schedule_path:
             self.val_task_schedule = _load_task_schedule(self.val_task_schedule_path)
@@ -416,9 +398,7 @@ class ContinualRLSetting(RLSetting, ContinualAssumption):
             self.train_task_schedule = type(self.train_task_schedule)(
                 {
                     new_key: self.train_task_schedule[old_key]
-                    for new_key, old_key in zip(
-                        new_keys, sorted(self.train_task_schedule.keys())
-                    )
+                    for new_key, old_key in zip(new_keys, sorted(self.train_task_schedule.keys()))
                 }
             )
         elif self.smooth_task_boundaries:
@@ -497,9 +477,7 @@ class ContinualRLSetting(RLSetting, ContinualAssumption):
                 }
             )
         if 0 not in self.test_task_schedule.keys():
-            raise RuntimeError(
-                "`test_task_schedule` needs an entry at key 0, as the initial state"
-            )
+            raise RuntimeError("`test_task_schedule` needs an entry at key 0, as the initial state")
         if self.test_max_steps != max(self.test_task_schedule):
             if self.test_max_steps == defaults["test_max_steps"]:
                 self.test_max_steps = max(self.test_task_schedule)
@@ -525,17 +503,13 @@ class ContinualRLSetting(RLSetting, ContinualAssumption):
 
         train_task_lengths: List[int] = [
             task_b_step - task_a_step
-            for task_a_step, task_b_step in pairwise(
-                sorted(self.train_task_schedule.keys())
-            )
+            for task_a_step, task_b_step in pairwise(sorted(self.train_task_schedule.keys()))
         ]
         # TODO: This will crash if nb_tasks is 1, right?
         # train_max_steps = train_last_boundary + train_task_lengths[-1]
         test_task_lengths: List[int] = [
             task_b_step - task_a_step
-            for task_a_step, task_b_step in pairwise(
-                sorted(self.test_task_schedule.keys())
-            )
+            for task_a_step, task_b_step in pairwise(sorted(self.test_task_schedule.keys()))
         ]
 
         if not (
@@ -548,17 +522,13 @@ class ContinualRLSetting(RLSetting, ContinualAssumption):
                 "number of items for now."
             )
 
-        train_last_boundary = max(
-            set(self.train_task_schedule.keys()) - {self.train_max_steps}
-        )
-        test_last_boundary = max(
-            set(self.test_task_schedule.keys()) - {self.test_max_steps}
-        )
+        train_last_boundary = max(set(self.train_task_schedule.keys()) - {self.train_max_steps})
+        test_last_boundary = max(set(self.test_task_schedule.keys()) - {self.test_max_steps})
 
         # TODO: Really annoying validation logic for these fields needs to be simplified
         # somehow.
         # if self.train_steps_per_task is None:
-        #     # if self.nb_tasks 
+        #     # if self.nb_tasks
         #     train_steps_per_task = self.train_max_steps // self.nb_tasks
         #     if self.train_task_schedule:
         #         task_lengths = [
@@ -576,8 +546,6 @@ class ContinualRLSetting(RLSetting, ContinualAssumption):
         #             )
         #     self.train_steps_per_task = train_steps_per_task
 
-       
-
         # FIXME: This is quite confusing:
         expected_nb_tasks = len(self.train_task_schedule) - 1
         # if (
@@ -590,9 +558,7 @@ class ContinualRLSetting(RLSetting, ContinualAssumption):
             if self.nb_tasks in [None, defaults["nb_tasks"]]:
                 assert len(self.train_task_schedule) == len(self.test_task_schedule)
                 self.nb_tasks = len(self.train_task_schedule) - 1
-                logger.info(
-                    f"`nb_tasks` set to {self.nb_tasks} based on the task schedule"
-                )
+                logger.info(f"`nb_tasks` set to {self.nb_tasks} based on the task schedule")
             else:
                 raise RuntimeError(
                     f"The passed number of tasks ({self.nb_tasks}) is inconsistent "
@@ -647,7 +613,7 @@ class ContinualRLSetting(RLSetting, ContinualAssumption):
             self.train_steps_per_task,
             self.train_task_schedule.keys(),
         )
-        
+
         if self.test_steps_per_task is None:
             self.test_steps_per_task = self.test_max_steps // self.nb_tasks
         assert self.test_max_steps // self.nb_tasks == self.test_steps_per_task, (
@@ -656,7 +622,6 @@ class ContinualRLSetting(RLSetting, ContinualAssumption):
             self.test_steps_per_task,
             self.test_task_schedule.keys(),
         )
-        
 
     def create_train_task_schedule(self) -> TaskSchedule:
         # change_steps = [0, self.train_max_steps]
@@ -703,15 +668,16 @@ class ContinualRLSetting(RLSetting, ContinualAssumption):
         ).tolist()
         return {
             step: task
-            for step, task in zip(
-                test_task_schedule_keys, self.train_task_schedule.values()
-            )
+            for step, task in zip(test_task_schedule_keys, self.train_task_schedule.values())
         }
 
     def create_task_schedule(
-        self, temp_env: gym.Env, change_steps: List[int], seed: int = None,
+        self,
+        temp_env: gym.Env,
+        change_steps: List[int],
+        seed: int = None,
     ) -> Dict[int, Dict]:
-        """ Create the task schedule, which maps from a step to the changes that
+        """Create the task schedule, which maps from a step to the changes that
         will occur in the environment when that step is reached.
 
         Uses the provided `temp_env` to generate the random tasks at the steps
@@ -732,7 +698,10 @@ class ContinualRLSetting(RLSetting, ContinualAssumption):
         for step in change_steps:
             # TODO: Pass wether its for training/validation/testing?
             task = type(self)._task_sampling_function(
-                temp_env, step=step, change_steps=change_steps, seed=seed,
+                temp_env,
+                step=step,
+                change_steps=change_steps,
+                seed=seed,
             )
             task_schedule[step] = task
 
@@ -740,7 +709,7 @@ class ContinualRLSetting(RLSetting, ContinualAssumption):
 
     @property
     def observation_space(self) -> TypedDictSpace:
-        """ The un-batched observation space, based on the choice of dataset and
+        """The un-batched observation space, based on the choice of dataset and
         the transforms at `self.transforms` (which apply to the train/valid/test
         environments).
 
@@ -818,10 +787,8 @@ class ContinualRLSetting(RLSetting, ContinualAssumption):
             spaces.Box(reward_range[0], reward_range[1], shape=()),
         )
 
-    def apply(
-        self, method: Method, config: Config = None
-    ) -> "ContinualRLSetting.Results":
-        """Apply the given method on this setting to producing some results. """
+    def apply(self, method: Method, config: Config = None) -> "ContinualRLSetting.Results":
+        """Apply the given method on this setting to producing some results."""
         # Use the supplied config, or parse one from the arguments that were
         # used to create `self`.
         self.config = config or self._setup_config(method)
@@ -845,14 +812,12 @@ class ContinualRLSetting(RLSetting, ContinualAssumption):
         # they aren't json-serializable.)
         if self.stationary_context:
             logger.info(
-                "Train tasks: "
-                + json.dumps(list(self.train_task_schedule.values()), indent="\t")
+                "Train tasks: " + json.dumps(list(self.train_task_schedule.values()), indent="\t")
             )
         else:
             try:
                 logger.info(
-                    "Train task schedule:"
-                    + json.dumps(self.train_task_schedule, indent="\t")
+                    "Train task schedule:" + json.dumps(self.train_task_schedule, indent="\t")
                 )
                 # BUG: Sometimes the task schedule isnt json-serializable!
             except TypeError:
@@ -861,9 +826,7 @@ class ContinualRLSetting(RLSetting, ContinualAssumption):
                     logger.info(f"{key}: {value}")
 
         if self.config.debug:
-            logger.debug(
-                "Test task schedule:" + json.dumps(self.test_task_schedule, indent="\t")
-            )
+            logger.debug("Test task schedule:" + json.dumps(self.test_task_schedule, indent="\t"))
 
         # Run the Training loop (which is defined in ContinualAssumption).
         results = self.main_loop(method)
@@ -923,7 +886,7 @@ class ContinualRLSetting(RLSetting, ContinualAssumption):
 
         batch_size = batch_size or self.batch_size
         num_workers = num_workers if num_workers is not None else self.num_workers
-
+        train_seed = self.config.seed if self.config else None
         env_factory = partial(
             self._make_env,
             base_env=self.train_dataset,
@@ -936,6 +899,7 @@ class ContinualRLSetting(RLSetting, ContinualAssumption):
             num_workers=num_workers,
             max_steps=self.steps_per_phase,
             max_episodes=self.train_max_episodes,
+            seed=train_seed,
         )
 
         if self.monitor_training_performance:
@@ -943,9 +907,7 @@ class ContinualRLSetting(RLSetting, ContinualAssumption):
             wandb_prefix = "Train"
             if self.known_task_boundaries_at_train_time:
                 wandb_prefix += f"/Task {self.current_task_id}"
-            env_dataloader = MeasureRLPerformanceWrapper(
-                env_dataloader, wandb_prefix=wandb_prefix
-            )
+            env_dataloader = MeasureRLPerformanceWrapper(env_dataloader, wandb_prefix=wandb_prefix)
 
         if self.config.render and batch_size is None:
             env_dataloader = RenderEnvWrapper(env_dataloader)
@@ -957,9 +919,7 @@ class ContinualRLSetting(RLSetting, ContinualAssumption):
 
         return self.train_env
 
-    def val_dataloader(
-        self, batch_size: int = None, num_workers: int = None
-    ) -> Environment:
+    def val_dataloader(self, batch_size: int = None, num_workers: int = None) -> Environment:
         """Create a validation gym.Env/DataLoader for the current task.
 
         Parameters
@@ -992,6 +952,7 @@ class ContinualRLSetting(RLSetting, ContinualAssumption):
             wrappers=self.valid_wrappers,
             **self.base_env_kwargs,
         )
+        valid_seed = self.config.seed if self.config else None
         env_dataloader = self._make_env_dataloader(
             env_factory,
             batch_size=batch_size or self.batch_size,
@@ -999,6 +960,7 @@ class ContinualRLSetting(RLSetting, ContinualAssumption):
             max_steps=self.steps_per_phase,
             # TODO: Create a new property to limit validation episodes?
             max_episodes=self.train_max_episodes,
+            seed=valid_seed,
         )
 
         if self.monitor_training_performance:
@@ -1007,16 +969,12 @@ class ContinualRLSetting(RLSetting, ContinualAssumption):
             wandb_prefix = "Valid"
             if self.known_task_boundaries_at_train_time:
                 wandb_prefix += f"/Task {self.current_task_id}"
-            env_dataloader = MeasureRLPerformanceWrapper(
-                env_dataloader, wandb_prefix=wandb_prefix
-            )
+            env_dataloader = MeasureRLPerformanceWrapper(env_dataloader, wandb_prefix=wandb_prefix)
 
         self.val_env = env_dataloader
         return self.val_env
 
-    def test_dataloader(
-        self, batch_size: int = None, num_workers: int = None
-    ) -> TestEnvironment:
+    def test_dataloader(self, batch_size: int = None, num_workers: int = None) -> TestEnvironment:
         """Create the test 'dataloader/gym.Env' for all tasks.
 
         NOTE: This test environment isn't just for the current task, it actually
@@ -1074,6 +1032,8 @@ class ContinualRLSetting(RLSetting, ContinualAssumption):
             batch_size = None
 
         num_workers = num_workers if num_workers is not None else self.num_workers
+        test_seed = self.config.seed if self.config else None
+
         env_factory = partial(
             self._make_env,
             base_env=self.test_dataset,
@@ -1083,7 +1043,9 @@ class ContinualRLSetting(RLSetting, ContinualAssumption):
         # TODO: Pass the max_steps argument to this `_make_env_dataloader` method,
         # rather than to a `step_limit` on the TestEnvironment.
         env_dataloader = self._make_env_dataloader(
-            env_factory, batch_size=batch_size, num_workers=num_workers,
+            env_factory,
+            batch_size=batch_size,
+            num_workers=num_workers,
         )
         if self.test_max_episodes is not None:
             raise NotImplementedError(f"TODO: Use `self.test_max_episodes`")
@@ -1106,6 +1068,9 @@ class ContinualRLSetting(RLSetting, ContinualAssumption):
             force=True,
             video_callable=None if wandb.run or self.config.render else False,
         )
+        self.test_env.seed(seed=test_seed)
+        self.test_env.action_space.seed(seed=test_seed)
+        self.test_env.observation_space.seed(seed=test_seed)
         return self.test_env
 
     @property
@@ -1133,11 +1098,7 @@ class ContinualRLSetting(RLSetting, ContinualAssumption):
         Optional[int]
             `None` if `max_steps` is None, else `max_steps // phases`.
         """
-        return (
-            None
-            if self.train_max_steps is None
-            else self.train_max_steps // self.phases
-        )
+        return None if self.train_max_steps is None else self.train_max_steps // self.phases
 
     @staticmethod
     def _make_env(
@@ -1145,7 +1106,7 @@ class ContinualRLSetting(RLSetting, ContinualAssumption):
         wrappers: List[Callable[[gym.Env], gym.Env]] = None,
         **base_env_kwargs: Dict,
     ) -> gym.Env:
-        """ Helper function to create a single (non-vectorized) environment. """
+        """Helper function to create a single (non-vectorized) environment."""
         env: gym.Env
         if isinstance(base_env, str):
             env = gym.make(base_env, **base_env_kwargs)
@@ -1172,12 +1133,8 @@ class ContinualRLSetting(RLSetting, ContinualAssumption):
         max_steps: Optional[int] = None,
         max_episodes: Optional[int] = None,
     ) -> GymDataLoader:
-        """ Helper function for creating a (possibly vectorized) environment.
-
-        """
-        logger.debug(
-            f"batch_size: {batch_size}, num_workers: {num_workers}, seed: {seed}"
-        )
+        """Helper function for creating a (possibly vectorized) environment."""
+        logger.debug(f"batch_size: {batch_size}, num_workers: {num_workers}, seed: {seed}")
 
         env: Union[gym.Env, gym.vector.VectorEnv]
         if batch_size is None:
@@ -1228,6 +1185,8 @@ class ContinualRLSetting(RLSetting, ContinualAssumption):
             env.seed([seed + i for i in range(env_dataloader.num_envs)])
         else:
             env.seed(seed)
+            env.action_space.seed(seed)
+            env.observation_space.seed(seed)
 
         return env_dataloader
 
@@ -1317,7 +1276,7 @@ class ContinualRLSetting(RLSetting, ContinualAssumption):
         max_steps: int = None,
         new_random_task_on_reset: bool = False,
     ) -> List[Callable[[gym.Env], gym.Env]]:
-        """ helper function for creating the train/valid/test wrappers.
+        """helper function for creating the train/valid/test wrappers.
 
         These wrappers get applied *before* the batching, if applicable.
         """
@@ -1327,9 +1286,7 @@ class ContinualRLSetting(RLSetting, ContinualAssumption):
         # semi-supervised?
 
         if self.max_episode_steps:
-            wrappers.append(
-                partial(TimeLimit, max_episode_steps=self.max_episode_steps)
-            )
+            wrappers.append(partial(TimeLimit, max_episode_steps=self.max_episode_steps))
 
         # NOTE: Removing this 'ActionLimit' from the 'pre-batch' wrappers.
         # wrappers.append(partial(ActionLimit, max_steps=max_steps))
@@ -1387,7 +1344,7 @@ class ContinualRLSetting(RLSetting, ContinualAssumption):
                 # Add a wrapper that creates sharp tasks.
                 # NOTE: The naming here is less than ideal! This isn't "multi-task" as-in stationary
                 # by default. It just means an env which can do multiple tasks. However, when the
-                # `new_random_task_on_reset` argument is set, then it does sample tasks IID. 
+                # `new_random_task_on_reset` argument is set, then it does sample tasks IID.
                 cl_wrapper = MultiTaskEnvironment
                 nb_tasks = self.nb_tasks
 
@@ -1418,7 +1375,7 @@ class ContinualRLSetting(RLSetting, ContinualAssumption):
         return wrappers
 
     def _get_objective_scaling_factor(self) -> float:
-        """ Return the factor to be multiplied with the mean reward per episode
+        """Return the factor to be multiplied with the mean reward per episode
         in order to produce a 'performance score' between 0 and 1.
 
         Returns
@@ -1446,7 +1403,7 @@ class ContinualRLSetting(RLSetting, ContinualAssumption):
         return 1 / max_reward_per_episode
 
     def _get_simple_name(self, env_name_or_id: str) -> Optional[str]:
-        """ Returns the 'simple name' for the given environment ID.
+        """Returns the 'simple name' for the given environment ID.
         For example, when passed "CartPole-v0", returns "cartpole".
 
         When not found, returns None.
@@ -1463,7 +1420,7 @@ class ContinualRLSetting(RLSetting, ContinualAssumption):
 
 
 def _load_task_schedule(file_path: Path) -> Dict[int, Dict]:
-    """ Load a task schedule from the given path. """
+    """Load a task schedule from the given path."""
     with open(file_path) as f:
         task_schedule = json.load(f)
         return {int(k): task_schedule[k] for k in sorted(task_schedule.keys())}
@@ -1476,7 +1433,7 @@ if __name__ == "__main__":
 def find_matching_dataset(
     available_datasets: Dict[str, Union[str, Any]], dataset: str
 ) -> Optional[Union[str, Any]]:
-    """ Compares `dataset` with the keys in the `available_datasets` dict and return the
+    """Compares `dataset` with the keys in the `available_datasets` dict and return the
     value of the matching key if found, else returns None.
     """
     if dataset in available_datasets:
@@ -1550,4 +1507,3 @@ def find_matching_dataset(
         f"Can't find any matching entries for chosen dataset {dataset}."
     )
     # assert False, (dataset, closest_matches)
-
