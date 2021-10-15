@@ -23,6 +23,7 @@ from gym.wrappers import TimeLimit
 from simple_parsing import choice, field, list_field
 from simple_parsing.helpers import dict_field
 from stable_baselines3.common.atari_wrappers import AtariWrapper
+from stable_baselines3.common.vec_env.base_vec_env import VecEnv
 
 from sequoia.common import Config
 from sequoia.common.gym_wrappers import (
@@ -1112,6 +1113,9 @@ class ContinualRLSetting(RLSetting, ContinualAssumption):
             env = gym.make(base_env, **base_env_kwargs)
         elif isinstance(base_env, gym.Env):
             env = base_env
+        # Environment can also be Stable-baselines3 vectorized environment
+        elif isinstance(base_env, VecEnv):
+            env = base_env
         elif callable(base_env):
             env = base_env(**base_env_kwargs)
         else:
@@ -1184,9 +1188,9 @@ class ContinualRLSetting(RLSetting, ContinualAssumption):
             # Seed each environment with its own seed (based on the base seed).
             env.seed([seed + i for i in range(env_dataloader.num_envs)])
         else:
-            env.seed(seed)
-            env.action_space.seed(seed)
-            env.observation_space.seed(seed)
+            env.seed(seed if seed is not None else 123)
+            env.action_space.seed(seed if seed is not None else 123)
+            env.observation_space.seed(seed if seed is not None else 123)
 
         return env_dataloader
 
