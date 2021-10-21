@@ -11,7 +11,7 @@ from d3rlpy.dataset import MDPDataset
 from torch.utils.data import random_split
 from gym.wrappers import Monitor
 from gym.wrappers.record_episode_statistics import RecordEpisodeStatistics
-from d3rlpy.algos import SAC, DQN
+from d3rlpy.algos import SAC, DQN, CQL, DiscreteCQL, BC
 from simple_parsing.helpers import choice
 from torch.utils.data import DataLoader
 from sequoia.settings.base import Method
@@ -22,6 +22,7 @@ from dataclasses import dataclass
 from d3rlpy.metrics.scorer import td_error_scorer
 from d3rlpy.metrics.scorer import average_value_estimation_scorer
 from sequoia.common.gym_wrappers.transform_wrappers import TransformObservation, TransformReward
+from sequoia.settings.rl.wrappers.measure_performance import MeasureRLPerformanceWrapper
 
 
 @dataclass
@@ -71,8 +72,11 @@ class BaseOfflineRLMethod(Method, target_setting=OfflineRLSetting):
         else:
             #
             # Wrap train_env and valid_env
-            # we have: <class 'sequoia.settings.rl.wrappers.measure_performance.MeasureRLPerformanceWrapper'>
             # we require: <class 'gym.wrappers.time_limit.TimeLimit'>
+
+            # train_env: MeasureRLPerformanceWrapper
+            # valid_env: MeasureRLPerformanceWrapper
+            # we need these as class gym.wrappers.time_limit.TimeLimit
 
             self.algo.fit_online(env=train_env, eval_env=valid_env, n_steps=self.train_steps)
 
@@ -81,12 +85,44 @@ class BaseOfflineRLMethod(Method, target_setting=OfflineRLSetting):
         return self.algo.predict(obs)
 
 
+"""
+D3RLPY Methods: work on OfflineRL and TraditionalRL assumptions
+"""
+
+
 class DQNMethod(BaseOfflineRLMethod):
     def __init__(self, train_steps: int = 1_000_000, n_epochs: int = 5, scorers: dict = None):
         super().__init__(train_steps, n_epochs, scorers)
         self.algo = DQN()
 
 
+class SACMethod(BaseOfflineRLMethod):
+    def __init__(self, train_steps: int = 1_000_000, n_epochs: int = 5, scorers: dict = None):
+        super().__init__(train_steps, n_epochs, scorers)
+        self.algo = SAC()
+
+
+class CQLMethod(BaseOfflineRLMethod):
+    def __init__(self, train_steps: int = 1_000_000, n_epochs: int = 5, scorers: dict = None):
+        super().__init__(train_steps, n_epochs, scorers)
+        self.algo = CQL()
+
+
+class DiscreteCQLMethod(BaseOfflineRLMethod):
+    def __init__(self, train_steps: int = 1_000_000, n_epochs: int = 5, scorers: dict = None):
+        super().__init__(train_steps, n_epochs, scorers)
+        self.algo = DiscreteCQL()
+
+
+class BehaviorCloningMethod(BaseOfflineRLMethod):
+    def __init__(self, train_steps: int = 1_000_000, n_epochs: int = 5, scorers: dict = None):
+        super().__init__(train_steps, n_epochs, scorers)
+        self.algo = BC()
+
+
+"""
+Quick example using DQN for offline cart-pole
+"""
 def main():
     setting_offline = OfflineRLSetting(dataset="CartPole-v0")
     setting_online = TraditionalRLSetting(dataset="CartPole-v0")
@@ -94,10 +130,10 @@ def main():
         'td_error': td_error_scorer,
         'value_scale': average_value_estimation_scorer
     })
-    # _ = setting_offline.apply(method)
+    _ = setting_offline.apply(method)
 
     # Not working
-    results = setting_online.apply(method)
+    # results = setting_online.apply(method)
     # print(results)
 
 
