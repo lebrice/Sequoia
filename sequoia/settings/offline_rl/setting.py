@@ -4,6 +4,8 @@ from d3rlpy import algos
 from dataclasses import dataclass
 from sklearn.model_selection import train_test_split
 from typing import ClassVar, List
+
+from sequoia import TraditionalRLSetting
 from sequoia.settings.base import Setting, Results
 from d3rlpy.dataset import MDPDataset
 from torch.utils.data import random_split
@@ -39,7 +41,6 @@ class OfflineRLSetting(Setting):
 
     def apply(self, method: Method["OfflineRLSetting"]) -> Results:
         method.configure(self)
-
         if self.dataset == "CartPole-v0":
             self.dataset, self.env = d3rlpy.datasets.get_cartpole()
         else:
@@ -49,50 +50,53 @@ class OfflineRLSetting(Setting):
         method.fit(train_env=self.train_dataset,
                    valid_env=self.valid_dataset)
 
-        #
-        # Evaluate on environment
-        # while env not done ...
-        #
 
-
-class DQNMethod(Method, target_setting=OfflineRLSetting):
+class BaseOfflineRLMethod(Method, target_setting=OfflineRLSetting):
     def __init__(self, train_steps: int = 1_000_000, n_epochs: int = 5, scorers: dict = None):
         super().__init__()
         self.train_steps = train_steps
         self.n_epochs = n_epochs
         self.scorers = scorers
-        self.algo: DQN
 
     def configure(self, setting: OfflineRLSetting):
         super().configure(setting)
-        # prepare algorithm
-        self.algo = DQN()
+        self.setting = setting
 
-    def fit(self, train_env: MDPDataset, valid_env: MDPDataset) -> None:
-        # train offline
-        if isinstance(train_env, MDPDataset):
+    def fit(self, train_env, valid_env) -> None:
+        if isinstance(self.setting, OfflineRLSetting):
             self.algo.fit(train_env,
                           eval_episodes=valid_env,
                           n_epochs=self.n_epochs,
                           scorers=self.scorers)
         else:
-            pass
-            # train_env = d3rlpy_wrapper(train_env)
-            # self.algo.fit_online(train_env)
+            #
+            # Wrap train_env and valid_env
+            #
+            self.algo.fit_online(env=train_env, eval_env=valid_env, n_steps=self.train_steps)
 
     def get_actions(self, obs: np.ndarray, action_space: Space) -> np.ndarray:
         # ready to control
         return self.algo.predict(obs)
 
 
+class DQNMethod(BaseOfflineRLMethod):
+    def __init__(self, train_steps: int = 1_000_000, n_epochs: int = 5, scorers: dict = None):
+        super().__init__(train_steps, n_epochs, scorers)
+        self.algo = DQN()
+
+
 def main():
-    setting = OfflineRLSetting(dataset="CartPole-v0")
+    setting_offline = OfflineRLSetting(dataset="CartPole-v0")
+    setting_online = TraditionalRLSetting(dataset="CartPole-v0")
     method = DQNMethod(scorers={
-            'td_error': td_error_scorer,
-            'value_scale': average_value_estimation_scorer
-        })
-    results = setting.apply(method)
-    print(results)
+        'td_error': td_error_scorer,
+        'value_scale': average_value_estimation_scorer
+    })
+    _ = setting_offline.apply(method)
+
+    # Not working
+    # results = setting_online.apply(method)
+    # print(results)
 
 
 if __name__ == "__main__":
