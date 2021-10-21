@@ -71,7 +71,9 @@ class BaseOfflineRLMethod(Method, target_setting=OfflineRLSetting):
         else:
             #
             # Wrap train_env and valid_env
-            #
+            # we have: <class 'sequoia.settings.rl.wrappers.measure_performance.MeasureRLPerformanceWrapper'>
+            # we require: <class 'gym.wrappers.time_limit.TimeLimit'>
+
             self.algo.fit_online(env=train_env, eval_env=valid_env, n_steps=self.train_steps)
 
     def get_actions(self, obs: np.ndarray, action_space: Space) -> np.ndarray:
@@ -92,10 +94,10 @@ def main():
         'td_error': td_error_scorer,
         'value_scale': average_value_estimation_scorer
     })
-    _ = setting_offline.apply(method)
+    # _ = setting_offline.apply(method)
 
     # Not working
-    # results = setting_online.apply(method)
+    results = setting_online.apply(method)
     # print(results)
 
 
