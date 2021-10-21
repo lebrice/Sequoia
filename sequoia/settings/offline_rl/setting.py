@@ -132,7 +132,7 @@ def main():
     })
     _ = setting_offline.apply(method)
 
-    # Not working
+    # Not working -yet-
     # results = setting_online.apply(method)
     # print(results)
 
