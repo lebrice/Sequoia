@@ -77,7 +77,6 @@ class BaseOfflineRLMethod(Method, target_setting=OfflineRLSetting):
             # train_env: MeasureRLPerformanceWrapper
             # valid_env: MeasureRLPerformanceWrapper
             # we need these as class gym.wrappers.time_limit.TimeLimit
-
             self.algo.fit_online(env=train_env, eval_env=valid_env, n_steps=self.train_steps)
 
     def get_actions(self, obs: np.ndarray, action_space: Space) -> np.ndarray:
@@ -123,6 +122,7 @@ class BehaviorCloningMethod(BaseOfflineRLMethod):
 """
 Quick example using DQN for offline cart-pole
 """
+
 def main():
     setting_offline = OfflineRLSetting(dataset="CartPole-v0")
     setting_online = TraditionalRLSetting(dataset="CartPole-v0")
@@ -130,11 +130,11 @@ def main():
         'td_error': td_error_scorer,
         'value_scale': average_value_estimation_scorer
     })
-    _ = setting_offline.apply(method)
+    # _ = setting_offline.apply(method)
 
     # Not working -yet-
-    # results = setting_online.apply(method)
-    # print(results)
+    results = setting_online.apply(method)
+    print(results)
 
 
 if __name__ == "__main__":
