@@ -7,10 +7,6 @@ from typing import ClassVar, List
 
 from sequoia import TraditionalRLSetting, RLEnvironment
 from sequoia.settings.base import Setting, Results
-from d3rlpy.dataset import MDPDataset
-from torch.utils.data import random_split
-from gym.wrappers import Monitor
-from gym.wrappers.record_episode_statistics import RecordEpisodeStatistics
 from d3rlpy.algos import SAC, DQN, CQL, DiscreteCQL, BC
 from simple_parsing.helpers import choice
 from torch.utils.data import DataLoader
@@ -54,20 +50,20 @@ class OfflineRLSetting(Setting):
 
 
 class SequoiaToGymWrapper(gym.Env):
-    def __init__(self, sequoia_env: RLEnvironment):
-        self.sequoia_env = sequoia_env
+    def __init__(self, sequoia_env: MeasureRLPerformanceWrapper):
 
+        self.sequoia_env = sequoia_env  # How do I wrap this object while keeping all its class variables?
+
+        self.observation_space = sequoia_env.observation_space.x  # ? How do i use typed dict class to get x here
 
         """
-        
-        d3rlpy fails because it att
-
         Class variables?
         for example in cartpole:
             self.gravity = 9.8    
             
             self.action_space = spaces.Discrete(2)
-            self.observation_space = spaces.Box(-high, high, dtype=np.float32)
+            
+            self.observation_space = spaces.Box(-high, high, dtype=np.float32) Need to convert to this from 
             
             self.seed()
             self.viewer = None
@@ -113,6 +109,8 @@ class BaseOfflineRLMethod(Method, target_setting=OfflineRLSetting):
             # we need these as class gym.wrappers.time_limit.TimeLimit
 
             # train_env, valid_env = SequoiaToGymWrapper(train_env), SequoiaToGymWrapper(valid_env)
+            print(train_env.gravity)
+            exit(0)
             self.algo.fit_online(env=train_env, eval_env=valid_env, n_steps=self.train_steps)
 
     def get_actions(self, obs: np.ndarray, action_space: Space) -> np.ndarray:
