@@ -108,9 +108,7 @@ class BaseOfflineRLMethod(Method, target_setting=OfflineRLSetting):
             # valid_env: MeasureRLPerformanceWrapper
             # we need these as class gym.wrappers.time_limit.TimeLimit
 
-            # train_env, valid_env = SequoiaToGymWrapper(train_env), SequoiaToGymWrapper(valid_env)
-            print(train_env.gravity)
-            exit(0)
+            train_env, valid_env = SequoiaToGymWrapper(train_env), SequoiaToGymWrapper(valid_env)
             self.algo.fit_online(env=train_env, eval_env=valid_env, n_steps=self.train_steps)
 
     def get_actions(self, obs: np.ndarray, action_space: Space) -> np.ndarray:
