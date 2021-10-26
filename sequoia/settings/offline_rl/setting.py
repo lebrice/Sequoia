@@ -49,15 +49,17 @@ class OfflineRLSetting(Setting):
                    valid_env=self.valid_dataset)
 
 
-class SequoiaToGymWrapper(gym.Env):
-    def __init__(self, sequoia_env: MeasureRLPerformanceWrapper):
-
+class SequoiaToGymWrapper(MeasureRLPerformanceWrapper):
+    def __init__(self, sequoia_env):
+        # maybe inherit from MeasureRLPerformanceWrapper and do super.__init__()
         self.sequoia_env = sequoia_env  # How do I wrap this object while keeping all its class variables?
 
+        # Need to unwrap these two from their native sequoia formats
         self.observation_space = sequoia_env.observation_space.x  # ? How do i use typed dict class to get x here
+        self.action_space = sequoia_env.action_space.x # same thing here
 
         """
-        Class variables?
+        Class variables from env parameter?
         for example in cartpole:
             self.gravity = 9.8    
             
@@ -69,20 +71,12 @@ class SequoiaToGymWrapper(gym.Env):
             self.viewer = None
             self.state = None
         """
-
-    def seed(self, seed=None):
+    def reset(self):
+        # Need to unwrap observation from super.reset()
         pass
 
     def step(self, action):
-        pass
-
-    def reset(self):
-        pass
-
-    def render(self, mode="human"):
-        pass
-
-    def close(self):
+        # Need to send action to env and unwrap sequoia formats for observation, action
         pass
 
 
