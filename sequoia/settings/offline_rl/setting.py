@@ -51,7 +51,6 @@ class OfflineRLSetting(Setting):
 
 class SequoiaToGymWrapper(MeasureRLPerformanceWrapper):
     def __init__(self, sequoia_env):
-        # maybe inherit from MeasureRLPerformanceWrapper and do super.__init__()
         self.sequoia_env = sequoia_env  # How do I wrap this object while keeping all its class variables?
 
         # Need to unwrap these two from their native sequoia formats
