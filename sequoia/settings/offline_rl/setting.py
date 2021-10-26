@@ -5,7 +5,7 @@ from dataclasses import dataclass
 from sklearn.model_selection import train_test_split
 from typing import ClassVar, List
 
-from sequoia import TraditionalRLSetting
+from sequoia import TraditionalRLSetting, RLEnvironment
 from sequoia.settings.base import Setting, Results
 from d3rlpy.dataset import MDPDataset
 from torch.utils.data import random_split
@@ -23,6 +23,7 @@ from d3rlpy.metrics.scorer import td_error_scorer
 from d3rlpy.metrics.scorer import average_value_estimation_scorer
 from sequoia.common.gym_wrappers.transform_wrappers import TransformObservation, TransformReward
 from sequoia.settings.rl.wrappers.measure_performance import MeasureRLPerformanceWrapper
+import gym
 
 
 @dataclass
@@ -52,6 +53,43 @@ class OfflineRLSetting(Setting):
                    valid_env=self.valid_dataset)
 
 
+class SequoiaToGymWrapper(gym.Env):
+    def __init__(self, sequoia_env: RLEnvironment):
+        self.sequoia_env = sequoia_env
+
+
+        """
+        
+        d3rlpy fails because it att
+
+        Class variables?
+        for example in cartpole:
+            self.gravity = 9.8    
+            
+            self.action_space = spaces.Discrete(2)
+            self.observation_space = spaces.Box(-high, high, dtype=np.float32)
+            
+            self.seed()
+            self.viewer = None
+            self.state = None
+        """
+
+    def seed(self, seed=None):
+        pass
+
+    def step(self, action):
+        pass
+
+    def reset(self):
+        pass
+
+    def render(self, mode="human"):
+        pass
+
+    def close(self):
+        pass
+
+
 class BaseOfflineRLMethod(Method, target_setting=OfflineRLSetting):
     def __init__(self, train_steps: int = 1_000_000, n_epochs: int = 5, scorers: dict = None):
         super().__init__()
@@ -70,13 +108,11 @@ class BaseOfflineRLMethod(Method, target_setting=OfflineRLSetting):
                           n_epochs=self.n_epochs,
                           scorers=self.scorers)
         else:
-            #
-            # Wrap train_env and valid_env
-            # we require: <class 'gym.wrappers.time_limit.TimeLimit'>
-
             # train_env: MeasureRLPerformanceWrapper
             # valid_env: MeasureRLPerformanceWrapper
             # we need these as class gym.wrappers.time_limit.TimeLimit
+
+            # train_env, valid_env = SequoiaToGymWrapper(train_env), SequoiaToGymWrapper(valid_env)
             self.algo.fit_online(env=train_env, eval_env=valid_env, n_steps=self.train_steps)
 
     def get_actions(self, obs: np.ndarray, action_space: Space) -> np.ndarray:
