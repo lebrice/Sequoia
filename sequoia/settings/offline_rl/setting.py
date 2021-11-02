@@ -155,12 +155,25 @@ class BEAR(BaseOfflineRLMethod):
 class AWRMethod(BaseOfflineRLMethod):
     Algo: Type[AlgoBase] = AWR
 
+
+class DiscreteAWRMethod(BaseOfflineRLMethod):
+    Algo: Type[AlgoBase] = DiscreteAWR
+
+
 class BC(BaseOfflineRLMethod):
     Algo: Type[AlgoBase] = BC
 
 
+class DiscreteBCMethod(BaseOfflineRLMethod):
+    Algo: Type[AlgoBase] = DiscreteBC
+
+
 class BCQMethod(BaseOfflineRLMethod):
     Algo: Type[AlgoBase] = BCQ
+
+
+class DiscreteBCQMethod(BaseOfflineRLMethod):
+    Algo: Type[AlgoBase] = DiscreteBCQ
 
 
 """
@@ -168,9 +181,9 @@ Quick example using DQN for offline cart-pole
 """
 
 def main():
-    setting_offline = OfflineRLSetting(dataset="CartPole-v0")
+    setting_offline = OfflineRLSetting(dataset="cartpole-replay")
     setting_online = TraditionalRLSetting(dataset="CartPole-v0")
-    method = SACMethod(scorers={
+    method = DQNMethod(scorers={
         'td_error': td_error_scorer,
         'value_scale': average_value_estimation_scorer
     })
