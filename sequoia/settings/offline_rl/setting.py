@@ -5,27 +5,46 @@ from dataclasses import dataclass
 from sklearn.model_selection import train_test_split
 from typing import ClassVar, List, Type
 
-from sequoia import TraditionalRLSetting, RLEnvironment
+from sequoia import TraditionalRLSetting
 from sequoia.settings.base import Setting, Results
-from d3rlpy.algos import SAC, DQN, CQL, DiscreteCQL, BC, DiscreteSAC, AlgoBase
-from simple_parsing.helpers import choice
+from d3rlpy.algos import *
 from torch.utils.data import DataLoader
 from sequoia.settings.base import Method
 import numpy as np
 from gym.spaces import Space
-import gym
 from dataclasses import dataclass
 from d3rlpy.metrics.scorer import td_error_scorer
 from d3rlpy.metrics.scorer import average_value_estimation_scorer
-from sequoia.common.gym_wrappers.transform_wrappers import TransformObservation, TransformReward
-from sequoia.settings.rl.wrappers.measure_performance import MeasureRLPerformanceWrapper
 import gym
 from simple_parsing.helpers import choice
+import re
+# get_cartpole
+
+# get_pendulum
+
 
 @dataclass
 class OfflineRLSetting(Setting):
-    available_datasets: ClassVar[dict] = {"CartPole-v0": d3rlpy.datasets.get_cartpole}
-    dataset: str = choice(available_datasets.keys(), default="CartPole-v0")
+
+    # We can pass in any of the available datasets shown below.
+    # get_dataset() will attempt to match the regex expressions for d4rl, py_bullet and atari
+
+    """ TODO: consult with fabrice about regular expressions the best way to show users how to use
+        https://github.com/takuseno/d3rlpy/blob/master/d3rlpy/datasets.py
+     """
+
+    available_datasets: ClassVar[list] = ["cartpole-replay",  # Cartpole Replay
+                                          "cartpole-random",  # Cartpole Random
+                                          "pendulum-replay",  # Pendulum Replay
+                                          "pendulum-random",  # Pendulum Random
+                                          r"^bullet-.+$",     # d4rl
+                                          r"hopper|halfcheetah|walker|ant",  # also d4rl
+                                          r"^.+-bullet-.+$"  # py_bullet
+                                          # Atari: see d3rlpy.datasets.ATARI_GAMES
+                                          ]
+    dataset: str = choice(available_datasets, default="cartpole-replay")
+    create_mask: bool = False
+    mask_size: int = 1
     val_size: int = 0.2
     test_steps: int = 10_000
     seed: int = 123
@@ -38,8 +57,8 @@ class OfflineRLSetting(Setting):
 
     def apply(self, method: Method["OfflineRLSetting"]) -> Results:
         method.configure(self)
-        self.dataset, self.env = self.available_datasets[self.dataset]()
-        self.train_dataset, self.valid_dataset = train_test_split(self.dataset, test_size=self.val_size)
+        self.mdp_dataset, self.env = d3rlpy.datasets.get_dataset(self.dataset, self.create_mask, self.mask_size)
+        self.train_dataset, self.valid_dataset = train_test_split(self.mdp_dataset, test_size=self.val_size)
         method.fit(train_env=self.train_dataset,
                    valid_env=self.valid_dataset)
 
