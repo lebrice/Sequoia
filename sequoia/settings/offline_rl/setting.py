@@ -120,6 +120,18 @@ class DQNMethod(BaseOfflineRLMethod):
     Algo: Type[AlgoBase] = DQN
 
 
+class DoubleDQNMethod(BaseOfflineRLMethod):
+    Algo: Type[AlgoBase] = DoubleDQN
+
+
+class DDPGMethod(BaseOfflineRLMethod):
+    Algo: Type[AlgoBase] = DDPG
+
+
+class TD3Method(BaseOfflineRLMethod):
+    Algo: Type[AlgoBase] = TD3
+
+
 class SACMethod(BaseOfflineRLMethod):
     Algo: Type[AlgoBase] = SAC
 
@@ -136,8 +148,19 @@ class DiscreteCQLMethod(BaseOfflineRLMethod):
     Algo: Type[AlgoBase] = DiscreteCQL
 
 
-class BehaviorCloningMethod(BaseOfflineRLMethod):
+class BEAR(BaseOfflineRLMethod):
+    Algo: Type[AlgoBase] = BEAR
+
+
+class AWRMethod(BaseOfflineRLMethod):
+    Algo: Type[AlgoBase] = AWR
+
+class BC(BaseOfflineRLMethod):
     Algo: Type[AlgoBase] = BC
+
+
+class BCQMethod(BaseOfflineRLMethod):
+    Algo: Type[AlgoBase] = BCQ
 
 
 """
