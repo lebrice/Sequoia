@@ -120,3 +120,12 @@ class BCQMethod(BaseOfflineRLMethod):
 
 class DiscreteBCQMethod(BaseOfflineRLMethod):
     Algo: ClassVar[Type[AlgoBase]] = DiscreteBCQ
+
+
+class RandomPolicyMethod(BaseOfflineRLMethod):
+    Algo: ClassVar[Type[AlgoBase]] = RandomPolicy
+
+
+class DiscreteRandomPolicyMethod(BaseOfflineRLMethod):
+    Algo: ClassVar[Type[AlgoBase]] = DiscreteRandomPolicy
+

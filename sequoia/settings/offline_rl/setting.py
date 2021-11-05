@@ -1,24 +1,16 @@
 import d3rlpy
-import torch
-from d3rlpy import algos
-from dataclasses import dataclass
 from sklearn.model_selection import train_test_split
 from typing import ClassVar, List, Type
 
 from sequoia import TraditionalRLSetting
+from sequoia.methods.d3rlpy_methods.base import SACMethod
 from sequoia.settings.base import Setting, Results
-from d3rlpy.algos import *
 from torch.utils.data import DataLoader
 from sequoia.settings.base import Method
-import numpy as np
-from gym.spaces import Space
 from dataclasses import dataclass
 from d3rlpy.metrics.scorer import td_error_scorer
 from d3rlpy.metrics.scorer import average_value_estimation_scorer
-import gym
 from simple_parsing.helpers import choice
-import re
-
 
 @dataclass()
 class OfflineRLResults(Results):
@@ -49,7 +41,6 @@ class OfflineRLSetting(Setting):
                                           "cartpole-random",  # Cartpole Random
                                           "pendulum-replay",  # Pendulum Replay
                                           "pendulum-random",  # Pendulum Random
-
                                           ]
     dataset: str = choice(available_datasets, default="cartpole-replay")
     create_mask: bool = False
@@ -71,15 +62,14 @@ class OfflineRLSetting(Setting):
         method.fit(train_env=self.train_dataset,
                    valid_env=self.valid_dataset)
 
+
 """
 Quick example using DQN for offline cart-pole
-"""
-
 
 def main():
     setting_offline = OfflineRLSetting(dataset="cartpole-replay")
     setting_online = TraditionalRLSetting(dataset="CartPole-v0")
-    method = DQNMethod(scorers={
+    method = SACMethod(scorers={
         'td_error': td_error_scorer,
         'value_scale': average_value_estimation_scorer
     })
@@ -91,3 +81,5 @@ def main():
 
 if __name__ == "__main__":
     main()
+
+"""

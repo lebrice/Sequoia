@@ -1,12 +1,14 @@
+from typing import ClassVar, Type
+
 import pytest
 from d3rlpy.metrics import average_value_estimation_scorer, td_error_scorer
 from sequoia import TraditionalRLSetting
-from sequoia.methods.d3rlpy_methods.base import BaseOfflineRLMethod
+from sequoia.methods.d3rlpy_methods.base import BaseOfflineRLMethod, DQNMethod
 from sequoia.methods.method_test import MethodTests
 from sequoia.settings.offline_rl.setting import OfflineRLSetting
 
 
-class BaseOfflineRLMethodTests():
+class BaseOfflineRLMethodTests:
     Method: ClassVar[Type[BaseOfflineRLMethod]]
 
     @pytest.fixture
@@ -23,7 +25,6 @@ class BaseOfflineRLMethodTests():
         setting_offline = OfflineRLSetting(dataset=dataset)
         results = setting_offline.apply(method)
 
-        # TODO: write checks that make sense for this dataset
         assert results.objective > 100
 
     @pytest.mark.parametrize('dataset', TraditionalRLSetting.available_datasets)
