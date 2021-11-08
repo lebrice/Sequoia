@@ -3,7 +3,6 @@ from sklearn.model_selection import train_test_split
 from typing import ClassVar, List, Type
 
 from sequoia import TraditionalRLSetting
-from sequoia.methods.d3rlpy_methods.base import SACMethod
 from sequoia.settings.base import Setting, Results
 from torch.utils.data import DataLoader
 from sequoia.settings.base import Method
