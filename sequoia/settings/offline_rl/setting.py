@@ -22,15 +22,12 @@ class OfflineRLResults(Results):
         return sum(self.rewards)/len(self.rewards)
 
 
-
-
-
 @dataclass
 class OfflineRLSetting(Setting):
     # We can pass in any of the available datasets shown below.
     # get_dataset() will attempt to match the regex expressions for d4rl, py_bullet and atari
 
-    """ TODO: consult with fabrice about regular expressions the best way to show users how to use
+    """ TODO: consult with fabrice about best way to show users how to use
         https://github.com/takuseno/d3rlpy/blob/master/d3rlpy/datasets.py
      """
 
@@ -45,7 +42,6 @@ class OfflineRLSetting(Setting):
     create_mask: bool = False
     mask_size: int = 1
     val_size: int = 0.2
-    test_steps: int = 10_000
     seed: int = 123
 
     def train_dataloader(self, batch_size: int = None) -> DataLoader:

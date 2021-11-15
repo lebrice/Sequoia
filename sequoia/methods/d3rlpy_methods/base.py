@@ -30,10 +30,10 @@ class OfflineRLWrapper(gym.Wrapper):
 class BaseOfflineRLMethod(Method, target_setting=OfflineRLSetting):
     Algo: ClassVar[Type[AlgoBase]] = AlgoBase
 
-    def __init__(self, train_steps: int = 1_000_000, n_epochs: int = 5, scorers: dict = None):
+    def __init__(self, train_steps: int = 1_000_000, train_steps_per_epoch=1_000_000, scorers: dict = None):
         super().__init__()
         self.train_steps = train_steps
-        self.n_epochs = n_epochs
+        self.train_steps_per_epoch = train_steps_per_epoch
         self.scorers = scorers
         self.algo = type(self).Algo()
 
@@ -45,7 +45,8 @@ class BaseOfflineRLMethod(Method, target_setting=OfflineRLSetting):
         if isinstance(self.setting, OfflineRLSetting):
             self.algo.fit(train_env,
                           eval_episodes=valid_env,
-                          n_epochs=self.n_epochs,
+                          n_steps=self.train_steps,
+                          n_steps_per_epoch=self.train_steps_per_epoch,
                           scorers=self.scorers)
         else:
             train_env, valid_env = OfflineRLWrapper(train_env), OfflineRLWrapper(valid_env)
@@ -54,7 +55,6 @@ class BaseOfflineRLMethod(Method, target_setting=OfflineRLSetting):
     def get_actions(self, obs: np.ndarray, action_space: Space) -> np.ndarray:
         # ready to control
         return self.algo.predict(obs)
-
 
 
 """
