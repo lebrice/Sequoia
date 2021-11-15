@@ -94,7 +94,7 @@ class DiscreteCQLMethod(BaseOfflineRLMethod):
     Algo: ClassVar[Type[AlgoBase]] = DiscreteCQL
 
 
-class BEAR(BaseOfflineRLMethod):
+class BEARMethod(BaseOfflineRLMethod):
     Algo: ClassVar[Type[AlgoBase]] = BEAR
 
 
@@ -106,7 +106,7 @@ class DiscreteAWRMethod(BaseOfflineRLMethod):
     Algo: ClassVar[Type[AlgoBase]] = DiscreteAWR
 
 
-class BC(BaseOfflineRLMethod):
+class BCMethod(BaseOfflineRLMethod):
     Algo: ClassVar[Type[AlgoBase]] = BC
 
 
