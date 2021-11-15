@@ -42,67 +42,67 @@ class TestDQNMethod(BaseOfflineRLMethodTests):
     Method: ClassVar[Type[BaseOfflineRLMethod]] = DQNMethod
 
 
-class TestDoubleDQNMethod(BaseOfflineRLMethod):
+class TestDoubleDQNMethod(BaseOfflineRLMethodTests):
     Method: ClassVar[Type[BaseOfflineRLMethod]] = DoubleDQNMethod
 
 
-class TestDDPGMethod(BaseOfflineRLMethod):
+class TestDDPGMethod(BaseOfflineRLMethodTests):
     Method: ClassVar[Type[BaseOfflineRLMethod]] = DDPGMethod
 
 
-class TestTD3Method(BaseOfflineRLMethod):
+class TestTD3Method(BaseOfflineRLMethodTests):
     Method: ClassVar[Type[BaseOfflineRLMethod]] = TD3Method
 
 
-class TestSACMethod(BaseOfflineRLMethod):
+class TestSACMethod(BaseOfflineRLMethodTests):
     Method: ClassVar[Type[BaseOfflineRLMethod]] = SACMethod
 
 
-class TestDiscreteSACMethod(BaseOfflineRLMethod):
+class TestDiscreteSACMethod(BaseOfflineRLMethodTests):
     Method: ClassVar[Type[BaseOfflineRLMethod]] = DiscreteSACMethod
 
 
-class TestCQLMethod(BaseOfflineRLMethod):
+class TestCQLMethod(BaseOfflineRLMethodTests):
     Method: ClassVar[Type[BaseOfflineRLMethod]] = CQLMethod
 
 
-class TestDiscreteCQLMethod(BaseOfflineRLMethod):
+class TestDiscreteCQLMethod(BaseOfflineRLMethodTests):
     Method: ClassVar[Type[BaseOfflineRLMethod]] = DiscreteCQLMethod
 
 
-class TestBEARMethod(BaseOfflineRLMethod):
+class TestBEARMethod(BaseOfflineRLMethodTests):
     Method: ClassVar[Type[BaseOfflineRLMethod]] = BEARMethod
 
 
-class TestAWRMethod(BaseOfflineRLMethod):
+class TestAWRMethod(BaseOfflineRLMethodTests):
     Method: ClassVar[Type[BaseOfflineRLMethod]] = AWRMethod
 
 
-class TestDiscreteAWRMethod(BaseOfflineRLMethod):
+class TestDiscreteAWRMethod(BaseOfflineRLMethodTests):
     Method: ClassVar[Type[BaseOfflineRLMethod]] = DiscreteAWRMethod
 
 
-class TestBCMethod(BaseOfflineRLMethod):
+class TestBCMethod(BaseOfflineRLMethodTests):
     Method: ClassVar[Type[BaseOfflineRLMethod]] = BCMethod
 
 
-class TestDiscreteBCMethod(BaseOfflineRLMethod):
+class TestDiscreteBCMethod(BaseOfflineRLMethodTests):
     Method: ClassVar[Type[BaseOfflineRLMethod]] = DiscreteBCMethod
 
 
-class TestBCQMethod(BaseOfflineRLMethod):
+class TestBCQMethod(BaseOfflineRLMethodTests):
     Method: ClassVar[Type[BaseOfflineRLMethod]] = BCQMethod
 
 
-class TestDiscreteBCQMethod(BaseOfflineRLMethod):
+class TestDiscreteBCQMethod(BaseOfflineRLMethodTests):
     Method: ClassVar[Type[BaseOfflineRLMethod]] = DiscreteBCQMethod
 
 
-class TestRandomPolicyMethod(BaseOfflineRLMethod):
+class TestRandomPolicyMethod(BaseOfflineRLMethodTests):
     Method: ClassVar[Type[BaseOfflineRLMethod]] = RandomPolicyMethod
 
 
-class TestDiscreteRandomPolicyMethod(BaseOfflineRLMethod):
+class TestDiscreteRandomPolicyMethod(BaseOfflineRLMethodTests):
     Method: ClassVar[Type[BaseOfflineRLMethod]] = DiscreteRandomPolicyMethod
 
 
