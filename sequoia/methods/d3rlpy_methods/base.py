@@ -1,9 +1,10 @@
-from typing import Type, ClassVar
+from typing import Type, ClassVar, List, Tuple, Dict, Union
 
 import gym
 from d3rlpy.algos import *
 import numpy as np
 from gym import Space
+from gym.wrappers.record_episode_statistics import RecordEpisodeStatistics
 
 from sequoia import Method
 from sequoia.settings.offline_rl.setting import OfflineRLSetting
@@ -14,15 +15,11 @@ class OfflineRLWrapper(gym.Wrapper):
         super().__init__(env)
         self.observation_space = env.observation_space.x
 
-        # TODO: If action space is changed to dictionary, do this
-        # self.action_space = env.action_space.y_pred
-
     def reset(self):
         observation = super().reset()
         return observation.x
 
     def step(self, action):
-        # TODO: if step expects a dictionary as action, just pass {'y_pred': action}
         observation, reward, done, info = super().step(action)
         return observation.x, reward.y, done, info
 
@@ -30,27 +27,32 @@ class OfflineRLWrapper(gym.Wrapper):
 class BaseOfflineRLMethod(Method, target_setting=OfflineRLSetting):
     Algo: ClassVar[Type[AlgoBase]] = AlgoBase
 
-    def __init__(self, train_steps: int = 1_000_000, train_steps_per_epoch=1_000_000, scorers: dict = None):
+    def __init__(self, train_steps: int = 1_000_000,
+                 train_steps_per_epoch=1_000_000,
+                 scorers: dict = None,
+                 use_gpu: bool = False):
         super().__init__()
         self.train_steps = train_steps
         self.train_steps_per_epoch = train_steps_per_epoch
         self.scorers = scorers
-        self.algo = type(self).Algo()
+        self.algo = type(self).Algo(use_gpu=use_gpu)
 
     def configure(self, setting: OfflineRLSetting):
         super().configure(setting)
         self.setting = setting
 
-    def fit(self, train_env, valid_env) -> None:
+    def fit(self, train_env, valid_env) -> Union[Tuple[List[int], List[int]], List[Tuple[int, Dict[str, float]]]]:
         if isinstance(self.setting, OfflineRLSetting):
-            self.algo.fit(train_env,
-                          eval_episodes=valid_env,
-                          n_steps=self.train_steps,
-                          n_steps_per_epoch=self.train_steps_per_epoch,
-                          scorers=self.scorers)
+            return self.algo.fit(train_env,
+                                 eval_episodes=valid_env,
+                                 n_steps=self.train_steps,
+                                 n_steps_per_epoch=self.train_steps_per_epoch,
+                                 scorers=self.scorers)
         else:
-            train_env, valid_env = OfflineRLWrapper(train_env), OfflineRLWrapper(valid_env)
+            train_env, valid_env = RecordEpisodeStatistics(OfflineRLWrapper(train_env)), \
+                                   RecordEpisodeStatistics(OfflineRLWrapper(valid_env))
             self.algo.fit_online(env=train_env, eval_env=valid_env, n_steps=self.train_steps)
+            return train_env.episode_returns, valid_env.episode_returns
 
     def get_actions(self, obs: np.ndarray, action_space: Space) -> np.ndarray:
         # ready to control
@@ -128,4 +130,3 @@ class RandomPolicyMethod(BaseOfflineRLMethod):
 
 class DiscreteRandomPolicyMethod(BaseOfflineRLMethod):
     Algo: ClassVar[Type[AlgoBase]] = DiscreteRandomPolicy
-

@@ -1,6 +1,6 @@
 import d3rlpy
 from sklearn.model_selection import train_test_split
-from typing import ClassVar, List, Type
+from typing import ClassVar, List, Type, Tuple, Dict
 
 from sequoia import TraditionalRLSetting
 from sequoia.settings.base import Setting, Results
@@ -11,32 +11,11 @@ from d3rlpy.metrics.scorer import td_error_scorer
 from d3rlpy.metrics.scorer import average_value_estimation_scorer
 from simple_parsing.helpers import choice
 
-@dataclass()
-class OfflineRLResults(Results):
-    objective_name: ClassVar[str] = "Average Reward"
-    rewards: List[int]
-
-    @property
-    def objective(self):
-        assert self.rewards
-        return sum(self.rewards)/len(self.rewards)
-
 
 @dataclass
 class OfflineRLSetting(Setting):
-    # We can pass in any of the available datasets shown below.
-    # get_dataset() will attempt to match the regex expressions for d4rl, py_bullet and atari
-
-    """ TODO: consult with fabrice about best way to show users how to use
-        https://github.com/takuseno/d3rlpy/blob/master/d3rlpy/datasets.py
-     """
-
-    # TODO: Results: ClassVar[Type[Results]] = OfflineRLResults
-
     available_datasets: ClassVar[list] = ["cartpole-replay",  # Cartpole Replay
                                           "cartpole-random",  # Cartpole Random
-                                          "pendulum-replay",  # Pendulum Replay
-                                          "pendulum-random",  # Pendulum Random
                                           ]
     dataset: str = choice(available_datasets, default="cartpole-replay")
     create_mask: bool = False
@@ -44,18 +23,19 @@ class OfflineRLSetting(Setting):
     val_size: int = 0.2
     seed: int = 123
 
+    def __post_init__(self):
+        self.mdp_dataset, self.env = d3rlpy.datasets.get_dataset(self.dataset, self.create_mask, self.mask_size)
+        self.train_dataset, self.valid_dataset = train_test_split(self.mdp_dataset, test_size=self.val_size)
+
     def train_dataloader(self, batch_size: int = None) -> DataLoader:
         return DataLoader(self.train_dataset, batch_size=batch_size)
 
     def val_dataloader(self, batch_size: int = None) -> DataLoader:
         return DataLoader(self.valid_dataset, batch_size=batch_size)
 
-    def apply(self, method: Method["OfflineRLSetting"]) -> Results:
+    def apply(self, method: Method["OfflineRLSetting"]) -> List[Tuple[int, Dict[str, float]]]:
         method.configure(self)
-        self.mdp_dataset, self.env = d3rlpy.datasets.get_dataset(self.dataset, self.create_mask, self.mask_size)
-        self.train_dataset, self.valid_dataset = train_test_split(self.mdp_dataset, test_size=self.val_size)
-        method.fit(train_env=self.train_dataset,
-                   valid_env=self.valid_dataset)
+        return method.fit(train_env=self.train_dataset, valid_env=self.valid_dataset)
 
 
 """

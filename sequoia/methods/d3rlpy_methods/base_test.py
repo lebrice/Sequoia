@@ -1,11 +1,47 @@
-from typing import ClassVar, Type
+from typing import ClassVar, Type, cast
 
 import pytest
+from d3rlpy.constants import ActionSpace, DISCRETE_ACTION_SPACE_MISMATCH_ERROR, CONTINUOUS_ACTION_SPACE_MISMATCH_ERROR
+from d3rlpy.dataset import MDPDataset, Episode, Transition
 from d3rlpy.metrics import average_value_estimation_scorer, td_error_scorer
 from sequoia import TraditionalRLSetting
 from sequoia.methods.d3rlpy_methods.base import *
 from sequoia.methods.method_test import MethodTests
 from sequoia.settings.offline_rl.setting import OfflineRLSetting
+
+
+"""
+How d3rlpy checks for offline compatibility
+
+# check action space
+        if self.get_action_type() == ActionSpace.BOTH:
+            pass
+        elif transitions[0].is_discrete:
+            assert (
+                self.get_action_type() == ActionSpace.DISCRETE
+            ), DISCRETE_ACTION_SPACE_MISMATCH_ERROR
+        else:
+            assert (
+                self.get_action_type() == ActionSpace.CONTINUOUS
+            ), CONTINUOUS_ACTION_SPACE_MISMATCH_ERROR
+
+How d3rlpy checks for online compatibility
+if isinstance(env.action_space, gym.spaces.Box):
+        assert (
+            algo.get_action_type() == ActionSpace.CONTINUOUS
+        ), CONTINUOUS_ACTION_SPACE_MISMATCH_ERROR
+    elif isinstance(env.action_space, gym.spaces.discrete.Discrete):
+        assert (
+            algo.get_action_type() == ActionSpace.DISCRETE
+        ), DISCRETE_ACTION_SPACE_MISMATCH_ERROR
+    else:
+        action_space = type(env.action_space)
+        raise ValueError(f"The action-space is not supported: {action_space}")
+
+
+
+
+"""
 
 
 class BaseOfflineRLMethodTests:
@@ -20,22 +56,46 @@ class BaseOfflineRLMethodTests:
 
     @pytest.mark.parametrize('dataset', OfflineRLSetting.available_datasets)
     def test_offlinerl(self, method, dataset: str):
-        # TODO check compatibility of method and dataset
 
         setting_offline = OfflineRLSetting(dataset=dataset)
+
+        #
+        # Check for mismatch
+        if isinstance(setting_offline.env.action_space, gym.spaces.Box):
+            if method.algo.get_action_type() != ActionSpace.CONTINUOUS:
+                return
+
+        elif isinstance(setting_offline.env.action_space, gym.spaces.discrete.Discrete):
+            if method.algo.get_action_type() != ActionSpace.DISCRETE:
+                return
+        else:
+            return
+
         results = setting_offline.apply(method)
 
-        # assert results.objective > 0
+        # Assert that loss in the final episode is less than .1
+        assert results[-1][1]['loss'] < .1
 
     @pytest.mark.parametrize('dataset', TraditionalRLSetting.available_datasets)
     def test_traditionalrl(self, method, dataset):
         setting_online = TraditionalRLSetting(dataset=dataset)
 
-        # TODO check compatibility
+        #
+        # Check for mismatch
+        if isinstance(setting_online.action_space, gym.spaces.Box):
+            if method.algo.get_action_type() != ActionSpace.CONTINUOUS:
+                return
+
+        elif isinstance(setting_online.action_space, gym.spaces.discrete.Discrete):
+            if method.algo.get_action_type() != ActionSpace.DISCRETE:
+                return
+        else:
+            return
 
         results = setting_online.apply(method)
-        # TODO: Validate results
-        # assert results.objective > 0
+
+        # Assert that the average validation reward is larger than the average train reward
+        assert sum(results[0])/len(results[0]) <= sum(results[1])/len(results[1])
 
 
 class TestDQNMethod(BaseOfflineRLMethodTests):
