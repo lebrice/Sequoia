@@ -3,10 +3,11 @@ from typing import Type, ClassVar, List, Tuple, Dict, Union
 import gym
 from d3rlpy.algos import *
 import numpy as np
+from d3rlpy.metrics import td_error_scorer, average_value_estimation_scorer
 from gym import Space
 from gym.wrappers.record_episode_statistics import RecordEpisodeStatistics
 
-from sequoia import Method
+from sequoia import Method, TraditionalRLSetting
 from sequoia.settings.offline_rl.setting import OfflineRLSetting
 
 
@@ -52,11 +53,13 @@ class BaseOfflineRLMethod(Method, target_setting=OfflineRLSetting):
             train_env, valid_env = RecordEpisodeStatistics(OfflineRLWrapper(train_env)), \
                                    RecordEpisodeStatistics(OfflineRLWrapper(valid_env))
             self.algo.fit_online(env=train_env, eval_env=valid_env, n_steps=self.train_steps)
-            return train_env.episode_returns, valid_env.episode_returns
 
     def get_actions(self, obs: np.ndarray, action_space: Space) -> np.ndarray:
         # ready to control
-        return self.algo.predict(obs)
+        print(obs)
+
+        out = self.algo.predict(obs)
+
 
 
 """
@@ -130,3 +133,20 @@ class RandomPolicyMethod(BaseOfflineRLMethod):
 
 class DiscreteRandomPolicyMethod(BaseOfflineRLMethod):
     Algo: ClassVar[Type[AlgoBase]] = DiscreteRandomPolicy
+
+
+# Quick example using DQN for offline cart-pole
+
+def main():
+    setting_online = TraditionalRLSetting(dataset="Cartpole-v0")
+    method = DQNMethod(train_steps=1000, train_steps_per_epoch=1000, scorers={
+        'td_error': td_error_scorer,
+        'value_scale': average_value_estimation_scorer
+    })
+
+    results = setting_online.apply(method)
+    print(results)
+
+
+if __name__ == "__main__":
+    main()

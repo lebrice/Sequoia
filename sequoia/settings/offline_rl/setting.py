@@ -2,13 +2,12 @@ import d3rlpy
 from sklearn.model_selection import train_test_split
 from typing import ClassVar, List, Type, Tuple, Dict
 
-from sequoia import TraditionalRLSetting
+
 from sequoia.settings.base import Setting, Results
 from torch.utils.data import DataLoader
 from sequoia.settings.base import Method
 from dataclasses import dataclass
-from d3rlpy.metrics.scorer import td_error_scorer
-from d3rlpy.metrics.scorer import average_value_estimation_scorer
+
 from simple_parsing.helpers import choice
 
 
@@ -38,23 +37,4 @@ class OfflineRLSetting(Setting):
         return method.fit(train_env=self.train_dataset, valid_env=self.valid_dataset)
 
 
-"""
-Quick example using DQN for offline cart-pole
 
-def main():
-    setting_offline = OfflineRLSetting(dataset="cartpole-replay")
-    setting_online = TraditionalRLSetting(dataset="CartPole-v0")
-    method = SACMethod(scorers={
-        'td_error': td_error_scorer,
-        'value_scale': average_value_estimation_scorer
-    })
-
-    _ = setting_offline.apply(method)
-    # results = setting_online.apply(method)
-    # print(results)
-
-
-if __name__ == "__main__":
-    main()
-
-"""
