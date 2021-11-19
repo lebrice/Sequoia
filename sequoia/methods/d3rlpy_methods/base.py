@@ -1,5 +1,6 @@
 from typing import Type, ClassVar, List, Tuple, Dict, Union
 
+import d3rlpy
 import gym
 from d3rlpy.algos import *
 import numpy as np
@@ -42,7 +43,7 @@ class BaseOfflineRLMethod(Method, target_setting=OfflineRLSetting):
         super().configure(setting)
         self.setting = setting
 
-    def fit(self, train_env, valid_env) -> Union[Tuple[List[int], List[int]], List[Tuple[int, Dict[str, float]]]]:
+    def fit(self, train_env, valid_env) -> List[Tuple[int, Dict[str, float]]]:
         if isinstance(self.setting, OfflineRLSetting):
             return self.algo.fit(train_env,
                                  eval_episodes=valid_env,
@@ -55,10 +56,8 @@ class BaseOfflineRLMethod(Method, target_setting=OfflineRLSetting):
             self.algo.fit_online(env=train_env, eval_env=valid_env, n_steps=self.train_steps)
 
     def get_actions(self, obs: np.ndarray, action_space: Space) -> np.ndarray:
-        # ready to control
-        print(obs)
-
-        out = self.algo.predict(obs)
+        # TODO: fix
+        return self.algo.predict(obs)
 
 
 
@@ -126,20 +125,12 @@ class BCQMethod(BaseOfflineRLMethod):
 class DiscreteBCQMethod(BaseOfflineRLMethod):
     Algo: ClassVar[Type[AlgoBase]] = DiscreteBCQ
 
-
-class RandomPolicyMethod(BaseOfflineRLMethod):
-    Algo: ClassVar[Type[AlgoBase]] = RandomPolicy
-
-
-class DiscreteRandomPolicyMethod(BaseOfflineRLMethod):
-    Algo: ClassVar[Type[AlgoBase]] = DiscreteRandomPolicy
-
-
 # Quick example using DQN for offline cart-pole
 
-def main():
+
+def online_example():
     setting_online = TraditionalRLSetting(dataset="Cartpole-v0")
-    method = DQNMethod(train_steps=1000, train_steps_per_epoch=1000, scorers={
+    method = DQNMethod(train_steps=1, train_steps_per_epoch=1, scorers={
         'td_error': td_error_scorer,
         'value_scale': average_value_estimation_scorer
     })
@@ -149,4 +140,4 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    online_example()

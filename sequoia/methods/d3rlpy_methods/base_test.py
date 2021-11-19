@@ -36,10 +36,6 @@ if isinstance(env.action_space, gym.spaces.Box):
     else:
         action_space = type(env.action_space)
         raise ValueError(f"The action-space is not supported: {action_space}")
-
-
-
-
 """
 
 
@@ -48,10 +44,7 @@ class BaseOfflineRLMethodTests:
 
     @pytest.fixture
     def method(self):
-        return self.Method(train_steps=1000, train_steps_per_epoch=1000, scorers={
-            'td_error': td_error_scorer,
-            'value_scale': average_value_estimation_scorer
-        })
+        return self.Method(train_steps=1, train_steps_per_epoch=1)
 
     @pytest.mark.timeout(0)
     @pytest.mark.parametrize('dataset', OfflineRLSetting.available_datasets)
@@ -62,20 +55,23 @@ class BaseOfflineRLMethodTests:
         #
         # Check for mismatch
         if isinstance(setting_offline.env.action_space, gym.spaces.Box):
-            if method.algo.get_action_type() != ActionSpace.CONTINUOUS:
+            if method.algo.get_action_type() is not ActionSpace.CONTINUOUS:
                 return
 
         elif isinstance(setting_offline.env.action_space, gym.spaces.discrete.Discrete):
-            if method.algo.get_action_type() != ActionSpace.DISCRETE:
+            if method.algo.get_action_type() is not ActionSpace.DISCRETE:
                 return
         else:
             return
 
         results = setting_offline.apply(method)
 
-        # Assert that loss in the final episode is less than .1
-        objective = results[-1][1]['loss'] if 'loss' in results[-1][1] else results[-1][1]['temp_loss']
-        assert objective
+        # Check that the metric dict for our 1 step epoch is not None
+
+        epoch_metrics = results[-1][1]
+        assert epoch_metrics is not None
+        assert isinstance(epoch_metrics, dict)
+
 
     '''
     @pytest.mark.parametrize('dataset', TraditionalRLSetting.available_datasets)
@@ -160,10 +156,3 @@ class TestBCQMethod(BaseOfflineRLMethodTests):
 class TestDiscreteBCQMethod(BaseOfflineRLMethodTests):
     Method: ClassVar[Type[BaseOfflineRLMethod]] = DiscreteBCQMethod
 
-
-class TestRandomPolicyMethod(BaseOfflineRLMethodTests):
-    Method: ClassVar[Type[BaseOfflineRLMethod]] = RandomPolicyMethod
-
-
-class TestDiscreteRandomPolicyMethod(BaseOfflineRLMethodTests):
-    Method: ClassVar[Type[BaseOfflineRLMethod]] = DiscreteRandomPolicyMethod
