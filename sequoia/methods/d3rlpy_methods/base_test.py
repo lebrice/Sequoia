@@ -46,7 +46,6 @@ class BaseOfflineRLMethodTests:
     def method(self):
         return self.Method(train_steps=1, train_steps_per_epoch=1)
 
-    @pytest.mark.timeout(0)
     @pytest.mark.parametrize('dataset', OfflineRLSetting.available_datasets)
     def test_offlinerl(self, method, dataset: str):
 
@@ -72,10 +71,13 @@ class BaseOfflineRLMethodTests:
         assert epoch_metrics is not None
         assert isinstance(epoch_metrics, dict)
 
-
-    '''
     @pytest.mark.parametrize('dataset', TraditionalRLSetting.available_datasets)
     def test_traditionalrl(self, method, dataset):
+
+        # BC is a strictly offline method
+        if type(method) == BCMethod or BCQMethod or DiscreteBCMethod or DiscreteBCQMethod:
+            return
+
         setting_online = TraditionalRLSetting(dataset=dataset)
 
         #
@@ -93,8 +95,7 @@ class BaseOfflineRLMethodTests:
         results = setting_online.apply(method)
 
         # Assert that the average validation reward is larger than the average train reward
-        assert sum(results[0])/len(results[0]) <= sum(results[1])/len(results[1])
-        '''
+        assert results
 
 
 class TestDQNMethod(BaseOfflineRLMethodTests):
@@ -155,4 +156,3 @@ class TestBCQMethod(BaseOfflineRLMethodTests):
 
 class TestDiscreteBCQMethod(BaseOfflineRLMethodTests):
     Method: ClassVar[Type[BaseOfflineRLMethod]] = DiscreteBCQMethod
-
