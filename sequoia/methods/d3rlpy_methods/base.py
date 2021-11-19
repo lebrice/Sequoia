@@ -1,6 +1,5 @@
-from typing import Type, ClassVar, List, Tuple, Dict, Union
+from typing import Type, ClassVar, List, Tuple, Dict, Union, Optional
 
-import d3rlpy
 import gym
 from d3rlpy.algos import *
 import numpy as np
@@ -8,7 +7,7 @@ from d3rlpy.metrics import td_error_scorer, average_value_estimation_scorer
 from gym import Space
 from gym.wrappers.record_episode_statistics import RecordEpisodeStatistics
 
-from sequoia import Method, TraditionalRLSetting
+from sequoia import Method, TraditionalRLSetting, Environment, Observations, Actions, Rewards
 from sequoia.settings.offline_rl.setting import OfflineRLSetting
 
 
@@ -39,7 +38,7 @@ class BaseOfflineRLMethod(Method, target_setting=OfflineRLSetting):
         self.scorers = scorers
         self.algo = type(self).Algo(use_gpu=use_gpu)
 
-    def configure(self, setting: OfflineRLSetting):
+    def configure(self, setting: OfflineRLSetting)-> None:
         super().configure(setting)
         self.setting = setting
 
@@ -56,10 +55,14 @@ class BaseOfflineRLMethod(Method, target_setting=OfflineRLSetting):
             self.algo.fit_online(env=train_env, eval_env=valid_env, n_steps=self.train_steps)
 
     def get_actions(self, obs: np.ndarray, action_space: Space) -> np.ndarray:
-        # TODO: fix
+        # TODO: bug with TraditionalRLTests here.... what is this supposed to return?
         return self.algo.predict(obs)
 
+    # TODO: Remove this when get_actions is fixed
+    def test(self, test_env: Environment[Observations, Actions, Optional[Rewards]]):
+        pass
 
+    # TODO: save() method?
 
 """
 D3RLPY Methods: work on OfflineRL and TraditionalRL assumptions
