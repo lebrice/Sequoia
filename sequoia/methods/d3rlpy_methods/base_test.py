@@ -1,42 +1,9 @@
 from typing import ClassVar, Type, cast
-
 import pytest
-from d3rlpy.constants import ActionSpace, DISCRETE_ACTION_SPACE_MISMATCH_ERROR, CONTINUOUS_ACTION_SPACE_MISMATCH_ERROR
-from d3rlpy.dataset import MDPDataset, Episode, Transition
-from d3rlpy.metrics import average_value_estimation_scorer, td_error_scorer
-from sequoia import TraditionalRLSetting
+from d3rlpy.constants import ActionSpace
 from sequoia.methods.d3rlpy_methods.base import *
 from sequoia.methods.method_test import MethodTests
 from sequoia.settings.offline_rl.setting import OfflineRLSetting
-
-"""
-How d3rlpy checks for offline compatibility
-
-# check action space
-        if self.get_action_type() == ActionSpace.BOTH:
-            pass
-        elif transitions[0].is_discrete:
-            assert (
-                self.get_action_type() == ActionSpace.DISCRETE
-            ), DISCRETE_ACTION_SPACE_MISMATCH_ERROR
-        else:
-            assert (
-                self.get_action_type() == ActionSpace.CONTINUOUS
-            ), CONTINUOUS_ACTION_SPACE_MISMATCH_ERROR
-
-How d3rlpy checks for online compatibility
-if isinstance(env.action_space, gym.spaces.Box):
-        assert (
-            algo.get_action_type() == ActionSpace.CONTINUOUS
-        ), CONTINUOUS_ACTION_SPACE_MISMATCH_ERROR
-    elif isinstance(env.action_space, gym.spaces.discrete.Discrete):
-        assert (
-            algo.get_action_type() == ActionSpace.DISCRETE
-        ), DISCRETE_ACTION_SPACE_MISMATCH_ERROR
-    else:
-        action_space = type(env.action_space)
-        raise ValueError(f"The action-space is not supported: {action_space}")
-"""
 
 
 class BaseOfflineRLMethodTests:
