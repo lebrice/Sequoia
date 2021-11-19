@@ -1,9 +1,9 @@
 import d3rlpy
 from sklearn.model_selection import train_test_split
-from typing import ClassVar, List, Type, Tuple, Dict
+from typing import ClassVar, List, Tuple, Dict
 
 
-from sequoia.settings.base import Setting, Results
+from sequoia.settings.base import Setting
 from torch.utils.data import DataLoader
 from sequoia.settings.base import Method
 from dataclasses import dataclass

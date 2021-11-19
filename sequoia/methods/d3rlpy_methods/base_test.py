@@ -1,8 +1,6 @@
-from typing import ClassVar, Type, cast
 import pytest
 from d3rlpy.constants import ActionSpace
 from sequoia.methods.d3rlpy_methods.base import *
-from sequoia.methods.method_test import MethodTests
 from sequoia.settings.offline_rl.setting import OfflineRLSetting
 
 

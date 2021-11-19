@@ -1,13 +1,12 @@
-from typing import Type, ClassVar, List, Tuple, Dict, Union, Optional
+from typing import Type, ClassVar, List, Tuple, Dict, Optional
 
 import gym
 from d3rlpy.algos import *
 import numpy as np
-from d3rlpy.metrics import td_error_scorer, average_value_estimation_scorer
 from gym import Space
 from gym.wrappers.record_episode_statistics import RecordEpisodeStatistics
 
-from sequoia import Method, TraditionalRLSetting, Environment, Observations, Actions, Rewards
+from sequoia import Method, Environment, Observations, Actions, Rewards
 from sequoia.settings.offline_rl.setting import OfflineRLSetting
 
 
@@ -128,19 +127,3 @@ class BCQMethod(BaseOfflineRLMethod):
 class DiscreteBCQMethod(BaseOfflineRLMethod):
     Algo: ClassVar[Type[AlgoBase]] = DiscreteBCQ
 
-# Quick example using DQN for offline cart-pole
-
-
-def online_example():
-    setting_online = TraditionalRLSetting(dataset="Cartpole-v0")
-    method = DQNMethod(train_steps=1, train_steps_per_epoch=1, scorers={
-        'td_error': td_error_scorer,
-        'value_scale': average_value_estimation_scorer
-    })
-
-    results = setting_online.apply(method)
-    print(results)
-
-
-if __name__ == "__main__":
-    online_example()
