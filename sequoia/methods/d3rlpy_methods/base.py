@@ -84,7 +84,9 @@ class BaseOfflineRLMethod(Method, target_setting=OfflineRLSetting):
         # TODO: do I need to return this? Is this the right tuple order?
         return env.episode_returns, env.episode_lengths, env.episode_count
 
-    # TODO: save() method?
+    def save(self):
+        # TODO: write this, maybe?
+        pass
 
 
 """
