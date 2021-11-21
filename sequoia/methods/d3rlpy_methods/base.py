@@ -1,11 +1,11 @@
-from typing import Type, ClassVar, List, Tuple, Dict, Optional
+from typing import Type, ClassVar, List, Tuple, Dict, Optional, Union
 
 import gym
 from d3rlpy.algos import *
 import numpy as np
 from gym import Space
 from gym.wrappers.record_episode_statistics import RecordEpisodeStatistics
-
+from sequoia import TraditionalRLSetting
 from sequoia import Method, Environment, Observations, Actions, Rewards
 from sequoia.settings.offline_rl.setting import OfflineRLSetting
 
@@ -35,13 +35,19 @@ class BaseOfflineRLMethod(Method, target_setting=OfflineRLSetting):
         self.train_steps = train_steps
         self.train_steps_per_epoch = train_steps_per_epoch
         self.scorers = scorers
+
+        # TODO: does use_gpu here actually work?
         self.algo = type(self).Algo(use_gpu=use_gpu)
 
     def configure(self, setting: OfflineRLSetting) -> None:
         super().configure(setting)
         self.setting = setting
 
-    def fit(self, train_env, valid_env) -> List[Tuple[int, Dict[str, float]]]:
+    def fit(self, train_env, valid_env) -> Union[None, List[Tuple[int, Dict[str, float]]]]:
+        """
+        Fit self.algo on training and evaluation environment
+        Works for both sequoia environments and d3rlpy datasets
+        """
         if isinstance(self.setting, OfflineRLSetting):
             return self.algo.fit(train_env,
                                  eval_episodes=valid_env,
@@ -54,18 +60,21 @@ class BaseOfflineRLMethod(Method, target_setting=OfflineRLSetting):
             self.algo.fit_online(env=train_env, eval_env=valid_env, n_steps=self.train_steps)
 
     def get_actions(self, obs: np.ndarray, action_space: Space) -> np.ndarray:
-        # TODO: bug with TraditionalRLTests here.... what is this supposed to return?
-        return self.algo.predict(obs)
+        """
+        Return actions predicted by self.algo for given observation and action space
+        """
+        obs = np.expand_dims(obs, 0)
+        return np.asarray(self.algo.predict(obs), dtype=np.float32)
 
     # TODO: Remove this when get_actions is fixed
-    def test(self, test_env: Environment[Observations, Actions, Optional[Rewards]]):
+    def test(self, test_env: Environment[Observations, Actions, Optional[Rewards]]) -> None:
         pass
 
     # TODO: save() method?
 
 
 """
-D3RLPY Methods: work on OfflineRL and TraditionalRL assumptions
+D3RLPY Methods: target OfflineRL and TraditionalRL assumptions
 """
 
 
@@ -127,3 +136,4 @@ class BCQMethod(BaseOfflineRLMethod):
 
 class DiscreteBCQMethod(BaseOfflineRLMethod):
     Algo: ClassVar[Type[AlgoBase]] = DiscreteBCQ
+
