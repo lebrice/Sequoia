@@ -1,7 +1,6 @@
 import pytest
 from d3rlpy.constants import ActionSpace
 
-from sequoia import TraditionalRLSetting
 from sequoia.methods.d3rlpy_methods.base import *
 from sequoia.settings.offline_rl.setting import OfflineRLSetting
 

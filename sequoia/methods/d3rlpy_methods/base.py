@@ -29,11 +29,13 @@ class BaseOfflineRLMethod(Method, target_setting=OfflineRLSetting):
 
     def __init__(self, train_steps: int = 1_000_000,
                  train_steps_per_epoch=1_000_000,
+                 test_steps=1_000,
                  scorers: dict = None,
                  use_gpu: bool = False):
         super().__init__()
         self.train_steps = train_steps
         self.train_steps_per_epoch = train_steps_per_epoch
+        self.test_steps = test_steps
         self.scorers = scorers
 
         # TODO: does use_gpu here actually work?
@@ -63,12 +65,24 @@ class BaseOfflineRLMethod(Method, target_setting=OfflineRLSetting):
         """
         Return actions predicted by self.algo for given observation and action space
         """
-        obs = np.expand_dims(obs, 0)
-        return np.asarray(self.algo.predict(obs), dtype=np.float32)
+        obs = np.expand_dims(obs, axis=0)
+        action = np.asarray(self.algo.predict(obs)).squeeze(axis=0)
+        return action
 
-    # TODO: Remove this when get_actions is fixed
-    def test(self, test_env: Environment[Observations, Actions, Optional[Rewards]]) -> None:
-        pass
+    def test(self, test_env: Environment[Observations, Actions, Optional[Rewards]]):
+        """
+        Test self.algo on given test_env for self.test_steps iterations
+        """
+        env = RecordEpisodeStatistics(OfflineRLWrapper(test_env))
+        obs = env.reset()
+        for _ in range(self.test_steps):
+            obs, reward, done, info = env.step(self.get_actions(obs, action_space=env.action_space))
+            if done:
+                break
+        env.close()
+
+        # TODO: do I need to return this? Is this the right tuple order?
+        return env.episode_returns, env.episode_lengths, env.episode_count
 
     # TODO: save() method?
 
@@ -136,4 +150,3 @@ class BCQMethod(BaseOfflineRLMethod):
 
 class DiscreteBCQMethod(BaseOfflineRLMethod):
     Algo: ClassVar[Type[AlgoBase]] = DiscreteBCQ
-
