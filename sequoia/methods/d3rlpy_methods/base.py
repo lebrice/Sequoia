@@ -5,7 +5,6 @@ from d3rlpy.algos import *
 import numpy as np
 from gym import Space
 from gym.wrappers.record_episode_statistics import RecordEpisodeStatistics
-from sequoia import TraditionalRLSetting
 from sequoia import Method, Environment, Observations, Actions, Rewards
 from sequoia.settings.offline_rl.setting import OfflineRLSetting
 
