@@ -26,7 +26,8 @@ class OfflineRLWrapper(gym.Wrapper):
 class BaseOfflineRLMethod(Method, target_setting=OfflineRLSetting):
     Algo: ClassVar[Type[AlgoBase]] = AlgoBase
 
-    def __init__(self, train_steps: int = 1_000_000,
+    def __init__(self,
+                 train_steps: int = 1_000_000,
                  train_steps_per_epoch=1_000_000,
                  test_steps=1_000,
                  scorers: dict = None,

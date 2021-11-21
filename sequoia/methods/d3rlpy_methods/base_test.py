@@ -3,7 +3,7 @@ from d3rlpy.constants import ActionSpace
 
 from sequoia.methods.d3rlpy_methods.base import *
 from sequoia.settings.offline_rl.setting import OfflineRLSetting
-
+from sequoia import TraditionalRLSetting
 
 class BaseOfflineRLMethodTests:
     Method: ClassVar[Type[BaseOfflineRLMethod]]
@@ -60,7 +60,6 @@ class BaseOfflineRLMethodTests:
 
         results = setting_online.apply(method)
 
-        # Assert that the average validation reward is larger than the average train reward
         assert results
 
 
