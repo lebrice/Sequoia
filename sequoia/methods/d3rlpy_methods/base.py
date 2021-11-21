@@ -37,7 +37,7 @@ class BaseOfflineRLMethod(Method, target_setting=OfflineRLSetting):
         self.scorers = scorers
         self.algo = type(self).Algo(use_gpu=use_gpu)
 
-    def configure(self, setting: OfflineRLSetting)-> None:
+    def configure(self, setting: OfflineRLSetting) -> None:
         super().configure(setting)
         self.setting = setting
 
@@ -62,6 +62,7 @@ class BaseOfflineRLMethod(Method, target_setting=OfflineRLSetting):
         pass
 
     # TODO: save() method?
+
 
 """
 D3RLPY Methods: work on OfflineRL and TraditionalRL assumptions
@@ -126,4 +127,3 @@ class BCQMethod(BaseOfflineRLMethod):
 
 class DiscreteBCQMethod(BaseOfflineRLMethod):
     Algo: ClassVar[Type[AlgoBase]] = DiscreteBCQ
-

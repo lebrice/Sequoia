@@ -42,7 +42,7 @@ class BaseOfflineRLMethodTests:
     def test_traditionalrl(self, method, dataset):
 
         # BC is a strictly offline method
-        if type(method) == BCMethod or BCQMethod or DiscreteBCMethod or DiscreteBCQMethod:
+        if type(method) in {BCMethod, BCQMethod, DiscreteBCMethod, DiscreteBCQMethod}:
             return
 
         setting_online = TraditionalRLSetting(dataset=dataset)
