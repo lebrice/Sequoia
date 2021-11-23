@@ -29,6 +29,7 @@ class OfflineRLResults:
     def objective(self):
         return sum(self.test_rewards) / len(self.test_rewards)
 
+# TODO: smarter way to do this, like a dict { 'offline_datasets_from_d3rlpy': set() } ?
 
 offline_datasets_from_d3rlpy = {'cartpole-replay', 'cartpole-random'}
 other_datasets = {}
