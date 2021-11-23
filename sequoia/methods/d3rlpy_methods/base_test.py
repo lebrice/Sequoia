@@ -5,6 +5,7 @@ from sequoia.methods.d3rlpy_methods.base import *
 from sequoia.settings.offline_rl.setting import OfflineRLSetting
 from sequoia import TraditionalRLSetting
 
+
 class BaseOfflineRLMethodTests:
     Method: ClassVar[Type[BaseOfflineRLMethod]]
 
@@ -19,13 +20,13 @@ class BaseOfflineRLMethodTests:
 
         #
         # Check for mismatch
-        if isinstance(setting_offline.env.action_space, gym.spaces.Box):
-            if method.algo.get_action_type() is not ActionSpace.CONTINUOUS:
-                return
+        if isinstance(setting_offline.action_space, gym.spaces.Box):
+            if method.algo.get_action_type() != ActionSpace.CONTINUOUS:
+                pytest.skip("This setting requires continuous action space algorithm")
 
-        elif isinstance(setting_offline.env.action_space, gym.spaces.discrete.Discrete):
-            if method.algo.get_action_type() is not ActionSpace.DISCRETE:
-                return
+        elif isinstance(setting_offline.action_space, gym.spaces.discrete.Discrete):
+            if method.algo.get_action_type() != ActionSpace.DISCRETE:
+                pytest.skip("This setting requires discrete action space algorithm")
         else:
             return
 
@@ -42,7 +43,7 @@ class BaseOfflineRLMethodTests:
 
         # BC is a strictly offline method
         if type(method) in {BCMethod, BCQMethod, DiscreteBCMethod, DiscreteBCQMethod}:
-            return
+            pytest.skip("This method only works on OfflineRLSetting")
 
         setting_online = TraditionalRLSetting(dataset=dataset)
 
@@ -50,11 +51,11 @@ class BaseOfflineRLMethodTests:
         # Check for mismatch
         if isinstance(setting_online.action_space, gym.spaces.Box):
             if method.algo.get_action_type() != ActionSpace.CONTINUOUS:
-                return
+                pytest.skip("This setting requires continuous action space algorithm")
 
         elif isinstance(setting_online.action_space, gym.spaces.discrete.Discrete):
             if method.algo.get_action_type() != ActionSpace.DISCRETE:
-                return
+                pytest.skip("This setting requires discrete action space algorithm")
         else:
             return
 
