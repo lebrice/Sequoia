@@ -5,7 +5,7 @@ from d3rlpy.algos import *
 import numpy as np
 from gym import Space
 from gym.wrappers.record_episode_statistics import RecordEpisodeStatistics
-from sequoia import Method, Environment, Observations, Actions, Rewards
+from sequoia import Method, Environment, Observations, Actions, Rewards, TraditionalRLSetting
 from sequoia.settings.offline_rl.setting import OfflineRLSetting
 
 
@@ -38,7 +38,7 @@ class BaseOfflineRLMethod(Method, target_setting=OfflineRLSetting):
         self.test_steps = test_steps
         self.scorers = scorers
 
-        # TODO: does use_gpu here actually work?
+        # TODO: add support for all algo params, not just common ones
         self.algo = type(self).Algo(use_gpu=use_gpu)
 
     def configure(self, setting: OfflineRLSetting) -> None:
@@ -69,24 +69,24 @@ class BaseOfflineRLMethod(Method, target_setting=OfflineRLSetting):
         action = np.asarray(self.algo.predict(obs)).squeeze(axis=0)
         return action
 
-    def test(self, test_env: Environment[Observations, Actions, Optional[Rewards]]):
+    def test(self, test_env: Union[gym.Env, Environment[Observations, Actions, Optional[Rewards]]]):
         """
         Test self.algo on given test_env for self.test_steps iterations
         """
-        env = RecordEpisodeStatistics(OfflineRLWrapper(test_env))
-        obs = env.reset()
+        if isinstance(self.setting, OfflineRLSetting):
+            test_env = RecordEpisodeStatistics(test_env)
+        else:
+            test_env = RecordEpisodeStatistics(OfflineRLWrapper(test_env))
+
+        obs = test_env.reset()
         for _ in range(self.test_steps):
-            obs, reward, done, info = env.step(self.get_actions(obs, action_space=env.action_space))
+            obs, reward, done, info = test_env.step(self.get_actions(obs, action_space=test_env.action_space))
             if done:
                 break
-        env.close()
+        test_env.close()
 
-        # TODO: do I need to return this? Is this the right tuple order?
-        return env.episode_returns, env.episode_lengths, env.episode_count
+        return test_env.episode_returns, test_env.episode_lengths, test_env.episode_count
 
-    def save(self):
-        # TODO: write this, maybe?
-        pass
 
 
 """
@@ -152,3 +152,11 @@ class BCQMethod(BaseOfflineRLMethod):
 
 class DiscreteBCQMethod(BaseOfflineRLMethod):
     Algo: ClassVar[Type[AlgoBase]] = DiscreteBCQ
+
+
+if __name__ == '__main__':
+    setting_online = TraditionalRLSetting(dataset='CartPole-v0')
+    alg = DQNMethod(train_steps=5, train_steps_per_epoch=5, test_steps=5)
+    results = setting_online.apply(alg)
+    print(results.objective)
+

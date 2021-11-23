@@ -20,11 +20,11 @@ class BaseOfflineRLMethodTests:
 
         #
         # Check for mismatch
-        if isinstance(setting_offline.action_space, gym.spaces.Box):
+        if isinstance(setting_offline.env.action_space, gym.spaces.Box):
             if method.algo.get_action_type() != ActionSpace.CONTINUOUS:
                 pytest.skip("This setting requires continuous action space algorithm")
 
-        elif isinstance(setting_offline.action_space, gym.spaces.discrete.Discrete):
+        elif isinstance(setting_offline.env.action_space, gym.spaces.discrete.Discrete):
             if method.algo.get_action_type() != ActionSpace.DISCRETE:
                 pytest.skip("This setting requires discrete action space algorithm")
         else:
@@ -32,11 +32,8 @@ class BaseOfflineRLMethodTests:
 
         results = setting_offline.apply(method)
 
-        # Check that the metric dict for our 1 step epoch is not None
-
-        epoch_metrics = results[-1][1]
-        assert epoch_metrics is not None
-        assert isinstance(epoch_metrics, dict)
+        # Difficult to set a meaningful threshold for 1 step fit
+        assert isinstance(results.objective, float)
 
     @pytest.mark.parametrize('dataset', TraditionalRLSetting.available_datasets)
     def test_traditionalrl(self, method, dataset):
@@ -61,7 +58,8 @@ class BaseOfflineRLMethodTests:
 
         results = setting_online.apply(method)
 
-        assert results
+        # Difficult to set a meaningful threshold for 1 step fit
+        assert isinstance(results.objective, float)
 
 
 class TestDQNMethod(BaseOfflineRLMethodTests):
