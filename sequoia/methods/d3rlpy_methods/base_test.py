@@ -57,7 +57,7 @@ class BaseOfflineRLMethodTests:
             if method.algo.get_action_type() != ActionSpace.DISCRETE:
                 pytest.skip("This setting requires discrete action space algorithm")
         else:
-            return
+            pytest.skip("Invalid setting action space")
 
         results = setting_online.apply(method)
 
