@@ -1,4 +1,6 @@
 import d3rlpy
+import gym
+from gym.wrappers import RecordEpisodeStatistics
 from sklearn.model_selection import train_test_split
 from typing import ClassVar, List, Tuple, Dict
 
@@ -19,10 +21,6 @@ class OfflineRLResults:
     test_episode_length: list
     test_episode_count: list
 
-    # Metrics from offline training: not required
-    # [ ...(episode index, {..., metric_name: metric_value, ....}) ...
-    offline_metrics: List[Tuple[int, Dict[str, float]]] = None
-
     objective_name: ClassVar[str] = "Average Reward"
 
     @property
@@ -30,6 +28,7 @@ class OfflineRLResults:
         return sum(self.test_rewards) / len(self.test_rewards)
 
 # TODO: smarter way to do this, like a dict { 'offline_datasets_from_d3rlpy': set() } ?
+
 
 offline_datasets_from_d3rlpy = {'cartpole-replay', 'cartpole-random'}
 other_datasets = {}
@@ -41,7 +40,7 @@ class OfflineRLSetting(Setting):
     dataset: str = choice(available_datasets, default="cartpole-replay")
     val_size: int = 0.2
 
-    # Only d3rlpy uses these params and they're the only ones
+    # Only d3rlpy uses these params
     create_mask: bool = False
     mask_size: int = 1
 
@@ -63,14 +62,28 @@ class OfflineRLSetting(Setting):
     def val_dataloader(self, batch_size: int = None) -> DataLoader:
         return DataLoader(self.valid_dataset, batch_size=batch_size)
 
-    def apply(self, method: Method["OfflineRLSetting"]) -> OfflineRLResults:
+    def test(self, method, test_env: gym.Env):
+        """
+            Test self.algo on given test_env for self.test_steps iterations
+        """
+        test_env = RecordEpisodeStatistics(test_env)
+
+        obs = test_env.reset()
+        for _ in range(method.test_steps):
+            obs, reward, done, info = test_env.step(method.get_actions(obs, action_space=test_env.action_space))
+            if done:
+                break
+        test_env.close()
+
+        return test_env.episode_returns, test_env.episode_lengths, test_env.episode_count
+
+    def apply(self, method) -> OfflineRLResults:
         method.configure(self)
 
-        offline_metrics = method.fit(train_env=self.train_dataset, valid_env=self.valid_dataset)
+        method.fit(train_env=self.train_dataset, valid_env=self.valid_dataset)
 
         # Test
-        test_rewards, test_episode_length, test_episode_count = method.test(self.env)
+        test_rewards, test_episode_length, test_episode_count = self.test(method, self.env)
         return OfflineRLResults(test_rewards=test_rewards,
                                 test_episode_length=test_episode_length,
-                                test_episode_count=test_episode_count,
-                                offline_metrics=offline_metrics)
+                                test_episode_count=test_episode_count)

@@ -3,6 +3,7 @@ from typing import Type, ClassVar, List, Tuple, Dict, Optional, Union
 import gym
 from d3rlpy.algos import *
 import numpy as np
+from d3rlpy.dataset import MDPDataset
 from gym import Space
 from gym.wrappers.record_episode_statistics import RecordEpisodeStatistics
 from sequoia import Method, Environment, Observations, Actions, Rewards, TraditionalRLSetting
@@ -37,6 +38,7 @@ class BaseOfflineRLMethod(Method, target_setting=OfflineRLSetting):
         self.train_steps_per_epoch = train_steps_per_epoch
         self.test_steps = test_steps
         self.scorers = scorers
+        self.offline_metrics = None
 
         # TODO: add support for all algo params, not just common ones
         self.algo = type(self).Algo(use_gpu=use_gpu)
@@ -45,13 +47,15 @@ class BaseOfflineRLMethod(Method, target_setting=OfflineRLSetting):
         super().configure(setting)
         self.setting = setting
 
-    def fit(self, train_env, valid_env) -> Union[None, List[Tuple[int, Dict[str, float]]]]:
+    def fit(self,
+            train_env: Union[Environment[Observations, Actions, Rewards], MDPDataset],
+            valid_env: Union[Environment[Observations, Actions, Rewards], MDPDataset]) -> None:
         """
         Fit self.algo on training and evaluation environment
         Works for both sequoia environments and d3rlpy datasets
         """
         if isinstance(self.setting, OfflineRLSetting):
-            return self.algo.fit(train_env,
+            self.offline_metrics = self.algo.fit(train_env,
                                  eval_episodes=valid_env,
                                  n_steps=self.train_steps,
                                  n_steps_per_epoch=self.train_steps_per_epoch,
@@ -69,14 +73,11 @@ class BaseOfflineRLMethod(Method, target_setting=OfflineRLSetting):
         action = np.asarray(self.algo.predict(obs)).squeeze(axis=0)
         return action
 
-    def test(self, test_env: Union[gym.Env, Environment[Observations, Actions, Optional[Rewards]]]):
+    def test(self, test_env):
         """
-        Test self.algo on given test_env for self.test_steps iterations
+            Test self.algo on given test_env for self.test_steps iterations
         """
-        if isinstance(self.setting, OfflineRLSetting):
-            test_env = RecordEpisodeStatistics(test_env)
-        else:
-            test_env = RecordEpisodeStatistics(OfflineRLWrapper(test_env))
+        test_env = RecordEpisodeStatistics(OfflineRLWrapper(test_env))
 
         obs = test_env.reset()
         for _ in range(self.test_steps):
@@ -84,10 +85,6 @@ class BaseOfflineRLMethod(Method, target_setting=OfflineRLSetting):
             if done:
                 break
         test_env.close()
-
-        return test_env.episode_returns, test_env.episode_lengths, test_env.episode_count
-
-
 
 """
 D3RLPY Methods: target OfflineRL and TraditionalRL assumptions
