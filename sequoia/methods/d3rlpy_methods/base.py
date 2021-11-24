@@ -65,26 +65,15 @@ class BaseOfflineRLMethod(Method, target_setting=OfflineRLSetting):
                                    RecordEpisodeStatistics(OfflineRLWrapper(valid_env))
             self.algo.fit_online(env=train_env, eval_env=valid_env, n_steps=self.train_steps)
 
-    def get_actions(self, obs: np.ndarray, action_space: Space) -> np.ndarray:
+    def get_actions(self, obs: Union[np.ndarray, Observations], action_space: Space) -> np.ndarray:
         """
         Return actions predicted by self.algo for given observation and action space
         """
+        if isinstance(obs, Observations):
+            obs = obs.x
         obs = np.expand_dims(obs, axis=0)
         action = np.asarray(self.algo.predict(obs)).squeeze(axis=0)
         return action
-
-    def test(self, test_env):
-        """
-            Test self.algo on given test_env for self.test_steps iterations
-        """
-        test_env = RecordEpisodeStatistics(OfflineRLWrapper(test_env))
-
-        obs = test_env.reset()
-        for _ in range(self.test_steps):
-            obs, reward, done, info = test_env.step(self.get_actions(obs, action_space=test_env.action_space))
-            if done:
-                break
-        test_env.close()
 
 """
 D3RLPY Methods: target OfflineRL and TraditionalRL assumptions

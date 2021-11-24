@@ -42,7 +42,7 @@ class BaseOfflineRLMethodTests:
         if type(method) in {BCMethod, BCQMethod, DiscreteBCMethod, DiscreteBCQMethod}:
             pytest.skip("This method only works on OfflineRLSetting")
 
-        setting_online = TraditionalRLSetting(dataset=dataset)
+        setting_online = TraditionalRLSetting(dataset=dataset, test_max_steps=10)
 
         #
         # Check for mismatch
