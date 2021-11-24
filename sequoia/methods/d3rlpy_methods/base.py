@@ -139,10 +139,3 @@ class BCQMethod(BaseOfflineRLMethod):
 class DiscreteBCQMethod(BaseOfflineRLMethod):
     Algo: ClassVar[Type[AlgoBase]] = DiscreteBCQ
 
-
-if __name__ == '__main__':
-    setting_online = TraditionalRLSetting(dataset='CartPole-v0')
-    alg = DQNMethod(train_steps=5, train_steps_per_epoch=5, test_steps=5)
-    results = setting_online.apply(alg)
-    print(results.objective)
-
