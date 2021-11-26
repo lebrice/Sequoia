@@ -21,11 +21,11 @@ class BaseOfflineRLMethodTests:
         #
         # Check for mismatch
         if isinstance(setting_offline.env.action_space, gym.spaces.Box):
-            if method.algo.get_action_type() != ActionSpace.CONTINUOUS:
+            if method.algo.get_action_type() not in  {ActionSpace.CONTINUOUS, ActionSpace.BOTH}:
                 pytest.skip("This setting requires continuous action space algorithm")
 
         elif isinstance(setting_offline.env.action_space, gym.spaces.discrete.Discrete):
-            if method.algo.get_action_type() != ActionSpace.DISCRETE:
+            if method.algo.get_action_type() not in {ActionSpace.DISCRETE, ActionSpace.BOTH}:
                 pytest.skip("This setting requires discrete action space algorithm")
         else:
             pytest.skip("Invalid setting action space")
