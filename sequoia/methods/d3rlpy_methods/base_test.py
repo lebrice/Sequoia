@@ -39,7 +39,7 @@ class BaseOfflineRLMethodTests:
     def test_traditionalrl(self, method, dataset):
 
         # BC is a strictly offline method
-        if type(method) in {BCMethod, BCQMethod, DiscreteBCMethod, DiscreteBCQMethod}:
+        if isinstance(method, (BCMethod, BCQMethod, DiscreteBCMethod, DiscreteBCQMethod)):
             pytest.skip("This method only works on OfflineRLSetting")
 
         setting_online = TraditionalRLSetting(dataset=dataset, test_max_steps=10)
