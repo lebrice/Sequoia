@@ -1,8 +1,9 @@
 import d3rlpy
 import gym
 from gym.wrappers import RecordEpisodeStatistics
+from matplotlib import pyplot as plt
 from sklearn.model_selection import train_test_split
-from typing import ClassVar, List, Tuple, Dict
+from typing import ClassVar, List, Tuple, Dict, Any
 
 from sequoia import Results
 from sequoia.settings.base import Setting
@@ -13,9 +14,19 @@ from dataclasses import dataclass
 from simple_parsing.helpers import choice
 
 
-# TODO: Can't inherit from Results here, not sure why
+# TODO: Can't inherit from Results here, not sure why:
+#
 @dataclass
-class OfflineRLResults:
+class OfflineRLResults(Results):
+    def summary(self) -> str:
+        pass
+
+    def make_plots(self) -> Dict[str, plt.Figure]:
+        pass
+
+    def to_log_dict(self, verbose: bool = False) -> Dict[str, Any]:
+        pass
+
     # Metrics from online testing
     test_rewards: list
     test_episode_length: list
