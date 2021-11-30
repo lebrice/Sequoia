@@ -14,10 +14,11 @@ from dataclasses import dataclass
 from simple_parsing.helpers import choice
 
 
-# TODO: Can't inherit from Results here, not sure why:
-#
+
 @dataclass
 class OfflineRLResults(Results):
+
+    # TODO: Write these methods
     def summary(self) -> str:
         pass
 
@@ -38,9 +39,9 @@ class OfflineRLResults(Results):
     def objective(self):
         return sum(self.test_rewards) / len(self.test_rewards)
 
+
+
 # TODO: smarter way to do this, like a dict { 'offline_datasets_from_d3rlpy': set() } ?
-
-
 offline_datasets_from_d3rlpy = {'cartpole-replay', 'cartpole-random'}
 other_datasets = {}
 
