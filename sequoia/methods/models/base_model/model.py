@@ -483,6 +483,7 @@ class Model(LightningModule, Generic[SettingType]):
         if isinstance(batch, tuple) and len(batch) == 2:
             observations, rewards = batch
         else:
+            # TODO: Rework this: Will be an Episode!
             assert isinstance(batch, self.Observations), batch
             observations, rewards = batch, None
 

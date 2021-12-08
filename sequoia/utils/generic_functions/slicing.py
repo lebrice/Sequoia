@@ -9,7 +9,7 @@ import numpy as np
 import torch
 from torch import Tensor
 
-from ._namedtuple import is_namedtuple, NamedTuple
+# from ._namedtuple import is_namedtuple, NamedTuple
 
 K = TypeVar("K")
 V = TypeVar("V")
@@ -17,7 +17,7 @@ T = TypeVar("T")
 
 
 @singledispatch
-def get_slice(value: T, indices: Sequence[int]) -> T:
+def get_slice(value: Sequence[T], indices: Sequence[int]) -> T:
     """ Returns a slices of `value` at the given indices.
     """
     if value is None:
@@ -32,17 +32,18 @@ def _get_dict_slice(value: Dict[K, V], indices: Sequence[int]) -> Dict[K, V]:
     ) 
 
 
-@get_slice.register(tuple)
-def _get_tuple_slice(value: Tuple[T, ...], indices: Sequence[int]) -> Tuple[T, ...]:
-    # NOTE: we use type(value)( ... ) to create the output dicts or tuples, in
-    # case a subclass of tuple or dict is being used (e.g. NamedTuples). 
-    if is_namedtuple(value):
-        return type(value)(*[
-            get_slice(v, indices) for v in value
-        ])    
-    return type(value)([
-        get_slice(v, indices) for v in value
-    ])
+# @get_slice.register(tuple)
+# def _get_tuple_slice(value: Tuple[T, ...], indices: Sequence[int]) -> Tuple[T, ...]:
+#     # NOTE: we use type(value)( ... ) to create the output dicts or tuples, in
+#     # case a subclass of tuple or dict is being used (e.g. NamedTuples). 
+#     if is_namedtuple(value):
+#         return type(value)(*[
+#             get_slice(v, indices) for v in value
+#         ])
+#     # This isn't quite right.
+#     return type(value)([
+#         get_slice(v, indices) for v in value
+#     ])
 
 
 from sequoia.common.batch import Batch
