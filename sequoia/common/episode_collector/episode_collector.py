@@ -70,6 +70,8 @@ class EpisodeCollector(
         self.ongoing_episodes: List[Episode[Observation, Action, Reward]] = []
         self._generator: Optional[Generator[Episode[Observation, Action, Reward]]] = None
 
+        self.model_version: int = 0
+
     @property
     def generator(self):
         if self._generator is None:
@@ -88,6 +90,8 @@ class EpisodeCollector(
     def send(self, new_policy: Optional[Policy[Observation, Action]]) -> None:  # type: ignore
         if new_policy is not None:
             self.on_policy_update(new_policy=new_policy)
+        self.model_version += 1
+            
 
     def throw(self, something):
         # TODO: No idea what to do here.
@@ -107,6 +111,7 @@ class EpisodeCollector(
                 rewards=[],
                 infos=[],
                 last_observation=None,
+                model_versions=[]
             )
             self.ongoing_episodes = [episode]
 
@@ -123,6 +128,7 @@ class EpisodeCollector(
 
                 episode.rewards.append(reward)
                 episode.infos.append(info)
+                episode.model_versions.append(self.model_version)
 
                 if done:
                     episode.last_observation = obs
@@ -186,6 +192,7 @@ class EpisodeCollector(
                 self.ongoing_episodes[i].actions.append(action)  # type: ignore
                 self.ongoing_episodes[i].rewards.append(reward)  # type: ignore
                 self.ongoing_episodes[i].infos.append(info)
+                self.ongoing_episodes[i].model_versions.append(self.model_version)
 
             for i, (done, info) in enumerate(zip(dones, infos)):
                 if done:

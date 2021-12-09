@@ -25,7 +25,7 @@ T = TypeVar("T")
 
 
 @singledispatch
-def stack(first_item: Union[T, List[T]], *others: T, **kwargs) -> Any:
+def stack(first_item: Union[T, Sequence[T]], *others: T, **kwargs) -> Any:
     # By default, if we don't know how to handle the item type, just
     # return an ndarray with with all the items.
     # note: We could also try to return a tensor, rather than an ndarray

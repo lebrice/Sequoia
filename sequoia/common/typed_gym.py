@@ -13,9 +13,9 @@ import numpy as np
 
 
 Observation = TypeVar("Observation")
-Observation_co = TypeVar("Observation_co", covariant=True)
-Action = TypeVar("Action")
-Reward = TypeVar("Reward")
+_Observation_co = TypeVar("Observation_co", covariant=True)
+_Action = TypeVar("Action")
+_Reward = TypeVar("Reward")
 Reward_co = TypeVar("Reward_co", covariant=True)
 T_co = TypeVar("T_co", covariant=True)
 T = TypeVar("T")
@@ -28,7 +28,7 @@ def detach(value: T) -> T:
 
 
 @runtime_checkable
-class Space(Protocol[T_co]):
+class _Space(Protocol[T_co]):
     def sample(self) -> T_co:
         raise NotImplementedError
 
@@ -43,14 +43,14 @@ class Space(Protocol[T_co]):
 
 
 @runtime_checkable
-class Env(Protocol[Observation, Action, Reward_co]):
-    observation_space: Space[Observation]
-    action_space: Space[Action]
+class _Env(Protocol[Observation, _Action, Reward_co]):
+    observation_space: _Space[Observation]
+    action_space: _Space[_Action]
 
     def reset(self) -> Observation:
         raise NotImplementedError
 
-    def step(self, action: Action) -> Tuple[Observation, Reward_co, bool, dict]:
+    def step(self, action: _Action) -> Tuple[Observation, Reward_co, bool, dict]:
         raise NotImplementedError
 
     def seed(self, seed: Optional[int]) -> List[int]:
@@ -59,16 +59,16 @@ class Env(Protocol[Observation, Action, Reward_co]):
         seeds.extend(self.observation_space.seed(seed))
         return seeds
     
-    # @property
-    # def unwrapped(self) -> "Env":
-    #     return self
+    @property
+    def unwrapped(self) -> "Env":
+        return self
 
 @runtime_checkable
-class VectorEnv(Env[Observation, Action, Reward_co], Protocol):
+class _VectorEnv(_Env[Observation, _Action, Reward_co], Protocol):
     num_envs: int
 
     def step(  # type: ignore
-        self, action: Action
+        self, action: _Action
     ) -> Tuple[Observation, Reward_co, np.ndarray, Sequence[dict]]:
         pass
 
