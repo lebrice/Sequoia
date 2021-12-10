@@ -1188,9 +1188,9 @@ class ContinualRLSetting(RLSetting, ContinualAssumption):
             # Seed each environment with its own seed (based on the base seed).
             env.seed([seed + i for i in range(env_dataloader.num_envs)])
         else:
-            env.seed(seed if seed is not None else 123)
-            env.action_space.seed(seed if seed is not None else 123)
-            env.observation_space.seed(seed if seed is not None else 123)
+            env.seed(seed)
+            env.action_space.seed(seed)
+            env.observation_space.seed(seed)
 
         return env_dataloader
 

@@ -434,9 +434,10 @@ class TestEnvironment(gym.wrappers.Monitor, IterableWrapper[EnvType], ABC):
         else:
             done = bool(done)
 
-        # If the environment is a multi-agent environment, the reward_for_stats will be a vector of agent rewards,
-        # which must be condensed to a single scalar reward
-        if isinstance(reward_for_stats, np.ndarray):
+
+        if (hasattr(self.config, 'is_multi_agent_environment') and self.config.is_multi_agent_environment):
+            # If the environment is a multi-agent environment, the reward_for_stats will be a vector of agent rewards,
+            # which must be condensed to a single scalar reward
             # Have n agents per game (i.e. 20 pistons) in 1 vectorized environment
             # To get reward to evaluate on, we take the average of rewards of all n agents
             done = self._after_step(observation_for_stats, np.mean(reward_for_stats), done, info)

@@ -20,7 +20,7 @@ except ImportError:
 # For testing, we set the num_vector_envs to 1 to create a single pistonball environment (vectorized across agents)
 def make_pistonball_env(
         vector_env_type: Literal["gym", "stable_baselines3", "stable_baselines"] = "stable_baselines3",
-        num_vector_envs: int = 8
+        num_vector_envs: int = 1,
 ) -> VectorEnv:
     env = pistonball_v4.parallel_env(
         n_pistons=20,
@@ -37,11 +37,11 @@ def make_pistonball_env(
     env = ss.color_reduction_v0(env, mode="B")
     env = ss.resize_v0(env, x_size=84, y_size=84)
     env = ss.frame_stack_v1(env, 3)
-    vector_env: VectorEnv = ss.pettingzoo_env_to_vec_env_v0(env)
-    env = ss.concat_vec_envs_v0(vector_env, num_vector_envs, num_cpus=4, base_class=vector_env_type)
+    env: VectorEnv = ss.pettingzoo_env_to_vec_env_v0(env)
+    env = ss.concat_vec_envs_v0(env, num_vector_envs, num_cpus=4, base_class=vector_env_type)
     env.spec = EnvSpec("Sequoia_PistonBall-v4", entry_point=make_pistonball_env)
     if vector_env_type == "stable_baselines3":
-        # Patch missing attributes
+        # Patch missing attributes on concatenated vectorized env
         env.reward_range = (-np.inf, np.inf)
         env.single_action_space = env.venv.action_space
     return env
@@ -50,15 +50,33 @@ gym.register("Sequoia_PistonBall-v4", entry_point=make_pistonball_env)
 
 
 class MARLMethod(Method, target_setting=MARLSetting):
-    def __init__(self, input_model=None):
+    def __init__(self):
         super().__init__()
-        self.input_model = input_model
 
     def configure(self, setting: MARLSetting) -> None:
-        pass
+        # Delete the model, if present.
+        self.model = None
 
     def fit(self, train_env: gym.Env, valid_env: gym.Env):
-        self.model = self.input_model
+        # Because of SB3 type restrictions, have to unwrap environment to SB3VecEnvWrapper
+        train_env = train_env.env.env.env.env.env.env
+
+        if self.model is None:
+            self.model = PPO(
+                CnnPolicy,
+                train_env,
+                verbose=3,
+                gamma=0.95,
+                n_steps=256,
+                ent_coef=0.0905168,
+                learning_rate=0.00062211,
+                vf_coef=0.042202,
+                max_grad_norm=0.9,
+                gae_lambda=0.99,
+                n_epochs=5,
+                clip_range=0.3,
+                batch_size=256,
+            )
 
         self.model.learn(total_timesteps=200_000)
         # Smaller timestep amount for debugging
@@ -81,27 +99,6 @@ def main():
     pistonball_val_env = make_pistonball_env()
     pistonball_test_env = make_pistonball_env(num_vector_envs=1)
 
-    model = PPO(
-        CnnPolicy,
-        pistonball_env,
-        verbose=3,
-        gamma=0.95,
-        n_steps=256,
-        ent_coef=0.0905168,
-        learning_rate=0.00062211,
-        vf_coef=0.042202,
-        max_grad_norm=0.9,
-        gae_lambda=0.99,
-        n_epochs=5,
-        clip_range=0.3,
-        batch_size=256,
-    )
-
-    pistonball_env = model.env
-
-    # Set reward range because gym requries it
-    pistonball_env.reward_range = pistonball_env.venv.venv.reward_range
-
     # Set single_action_space manually
     pistonball_env.single_action_space = pistonball_env.action_space
 
@@ -111,9 +108,12 @@ def main():
         test_envs=[pistonball_test_env],
         train_max_steps=250_000
     )
-    model.env = setting
 
-    method = MARLMethod(input_model=model)
+    method = MARLMethod()
+    setting.config = setting._setup_config(method)
+    setting.config.seed = 123
+    setting.config.is_multi_agent_environment = True
+
     results = setting.apply(method)
     print(results)
 

@@ -479,33 +479,6 @@ class IncrementalRLSetting(IncrementalAssumption, DiscreteTaskAgnosticRLSetting)
         # FIXME: Really annoying little bugs with these three arguments!
         # self.nb_tasks = self.max_steps // self.steps_per_task
 
-        # If dataset has been wrapped, access the spec attribute of the dataset's venv attribute
-        # (Needed for Stable Baselines 3 wrapper VecTransposeImage)
-        if not hasattr(self.test_dataset, "spec") and hasattr(self.test_dataset, "venv") and hasattr(
-                self.test_dataset.venv, "spec"):
-            self.test_dataset.spec = self.test_dataset.venv.spec
-
-    def reset(self):
-        # Set num_envs attribute on setting if it is missing
-        if not hasattr(self, "num_envs"):
-            self.num_envs = self.train_env.num_envs
-
-        reset_data = self.train_env.reset()
-
-        # Transform observation if necessary
-        if hasattr(reset_data, "x"):
-            reset_data = reset_data.x
-
-        return reset_data
-
-    def step(self, actions):
-        new_obs, rewards, dones, infos = self.train_env.step(actions)
-
-        rewards = rewards.y if isinstance(rewards, Rewards) else rewards
-        new_obs = new_obs.x if isinstance(new_obs, Observations) else new_obs
-
-        return new_obs, rewards, dones, infos
-
     @property
     def current_task_id(self) -> int:
         return self._current_task_id
