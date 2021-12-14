@@ -1,6 +1,7 @@
 import itertools
 import json
 import time
+import numpy as np
 from abc import ABC, abstractmethod
 from dataclasses import asdict, dataclass, field, is_dataclass
 from io import StringIO
@@ -433,7 +434,15 @@ class TestEnvironment(gym.wrappers.Monitor, IterableWrapper[EnvType], ABC):
         else:
             done = bool(done)
 
-        done = self._after_step(observation_for_stats, reward_for_stats, done, info)
+
+        if (hasattr(self.config, 'is_multi_agent_environment') and self.config.is_multi_agent_environment):
+            # If the environment is a multi-agent environment, the reward_for_stats will be a vector of agent rewards,
+            # which must be condensed to a single scalar reward
+            # Have n agents per game (i.e. 20 pistons) in 1 vectorized environment
+            # To get reward to evaluate on, we take the average of rewards of all n agents
+            done = self._after_step(observation_for_stats, np.mean(reward_for_stats), done, info)
+        else:
+            done = self._after_step(observation_for_stats, reward_for_stats, done, info)
 
         if self.get_total_steps() >= self.step_limit:
             done = True
