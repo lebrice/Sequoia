@@ -9,6 +9,7 @@ from sequoia.settings.base.setting import Setting as MARLSetting
 from sequoia.settings.rl import IncrementalRLSetting
 from stable_baselines3.ppo import CnnPolicy
 from stable_baselines3 import PPO
+from supersuit.vector.sb3_vector_wrapper import SB3VecEnvWrapper
 
 try:
     from typing import Literal
@@ -49,6 +50,10 @@ def make_pistonball_env(
 gym.register("Sequoia_PistonBall-v4", entry_point=make_pistonball_env)
 
 
+class MARLSB3Wrapper(SB3VecEnvWrapper):
+    def __init__(self, env):
+        super().__init__(env.env.env.env.env.env.env.venv)
+
 class MARLMethod(Method, target_setting=MARLSetting):
     def __init__(self):
         super().__init__()
@@ -58,8 +63,8 @@ class MARLMethod(Method, target_setting=MARLSetting):
         self.model = None
 
     def fit(self, train_env: gym.Env, valid_env: gym.Env):
-        # Because of SB3 type restrictions, have to unwrap environment to SB3VecEnvWrapper
-        train_env = train_env.env.env.env.env.env.env
+        # Because of type restrictions, we must wrap the env with supersuit SB3VecEnvWrapper
+        train_env = MARLSB3Wrapper(train_env)
 
         if self.model is None:
             self.model = PPO(
