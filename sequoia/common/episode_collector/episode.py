@@ -5,12 +5,14 @@ from typing import (
     TypeVar,
     MutableSequence,
     Union,
+    Dict,
     overload,
 )
 from dataclasses import dataclass, field
 from typing import Sequence
 
 from torch.utils import data
+
 # from typed_gym import Env, Space, VectorEnv
 
 Observation = TypeVar("Observation")
@@ -25,7 +27,24 @@ from sequoia.utils.generic_functions import stack
 
 
 @dataclass
-class Episode(Generic[Observation, Action, Reward]):
+class Transition(Generic[Observation_co, Action, Reward]):
+    observation: Observation_co
+    action: Action
+    reward: Reward
+    next_observation: Observation_co
+    info: Optional[Dict] = None
+    done: bool = False
+
+
+# NOTE: Making `Episode` a Sequence[Transition[Observation,Action,Reward]] causes a bug in PL atm:
+# forward receives a Transition, rather than an Observation.
+
+
+@dataclass
+class Episode(
+    Sequence[Transition[Observation, Action, Reward]],
+    Generic[Observation, Action, Reward],
+    ):
     observations: MutableSequence[Observation] = field(default_factory=list)
     actions: MutableSequence[Action] = field(default_factory=list)
     rewards: MutableSequence[Reward] = field(default_factory=list)
@@ -44,9 +63,28 @@ class Episode(Generic[Observation, Action, Reward]):
             observations=stack(self.observations),
             actions=stack(self.actions),
             rewards=stack(self.rewards),
-            infos=stack(self.infos),
+            infos=stack(self.infos), # TODO: List of empty dicts in case infos is empty.
             last_observation=self.last_observation,
-            model_versions=stack(self.model_versions)
+            model_versions=stack(self.model_versions),
+        )
+
+    def __getitem__(
+        self, index: Union[int, slice]
+    ) -> Union[
+        Transition[Observation, Action, Reward],
+        Sequence[Transition[Observation, Action, Reward]],
+    ]:
+        if not isinstance(index, int):
+            raise NotImplementedError(index)
+        return Transition(
+            observation=self.observations[index],
+            action=self.actions[index],
+            next_observation=(
+                self.last_observation if index == len(self) else self.observations[index+1]
+            ),
+            reward=self.rewards[index],
+            info=self.infos[index] if self.infos else {},
+            done=index == (len(self) - 1),
         )
 
 

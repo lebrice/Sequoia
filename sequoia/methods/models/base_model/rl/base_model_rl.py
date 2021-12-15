@@ -36,6 +36,7 @@ from torch.optim import Adam
 from torch.optim.optimizer import Optimizer
 from torch.utils.data.dataloader import DataLoader
 from gym.vector.utils import batch_space
+from sequoia.utils.generic_functions import move
 
 
 @dataclass(frozen=True)
@@ -142,6 +143,8 @@ class BaseRLModel(LightningModule, Generic[_Observation_co, _Action, _Reward]):
         ] = None
         # Number of updates so far:
         self.n_updates: int = 0
+        self.recomputed_forward_passes = 0
+        self.n_forward_passes = 0
 
     def forward(
         self, observation: Observation, action_space: _Space[DiscreteAction]
@@ -189,6 +192,11 @@ class BaseRLModel(LightningModule, Generic[_Observation_co, _Action, _Reward]):
         self._val_dataloader = EnvDataLoader(dataset)
         return self._val_dataloader
 
+    def transfer_batch_to_device(self, batch: Any, device: torch.device, dataloader_idx: int) -> Any:
+        if isinstance(batch, Episode):
+            return move(batch, device=device)
+        return super().transfer_batch_to_device(batch, device, dataloader_idx)
+
     def training_step(
         self, episode: Episode[_Observation_co, _Action, _Reward], batch_idx: int,
     ) -> Tensor:
@@ -197,6 +205,7 @@ class BaseRLModel(LightningModule, Generic[_Observation_co, _Action, _Reward]):
         NOTE: The actions in the episode are *currently* from the same model that is being trained.
         accumulate_grad_batches controls the update frequency.
         """
+        print(episode.model_versions)
         if set(episode.model_versions) != {self.n_updates}:
             # Need to recompute the forward pass for at least some part of the actions.
 
@@ -216,13 +225,17 @@ class BaseRLModel(LightningModule, Generic[_Observation_co, _Action, _Reward]):
 
             old_actions = episode.actions
             new_actions = self(episode.observations, action_space=action_space)
+            self.recomputed_forward_passes += 1
+            
             # Replace the actions
             episode = replace(
                 episode,
                 actions=new_actions,
                 model_versions=[self.n_updates for _ in episode.model_versions],
             )
-
+        else:
+            print(f"all good")
+        self.n_forward_passes += 1
         selected_action_logits = episode.actions.action_logits
 
         loss = vanilla_policy_gradient(

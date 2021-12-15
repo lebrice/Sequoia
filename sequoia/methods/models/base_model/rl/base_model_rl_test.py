@@ -2,7 +2,7 @@ from .base_model_rl import BaseRLModel
 import gym
 import torch
 from pytorch_lightning.trainer import Trainer
-
+import itertools
 
 
 def test_cartpole_manual():
@@ -28,7 +28,6 @@ def test_cartpole_manual():
     # There's a delay of one step between the dataloader and the model. This is annoying.
     # Could probably create an 'adapter' of some sort that recomputes the forward pass of the actions
     # for just that single misaligned step?
-    import itertools
     model.n_updates = 0
     for i, episode in enumerate(itertools.islice(train_dl, max_episodes)):
         loss = model.training_step(episode, batch_idx=i)
@@ -41,7 +40,6 @@ def test_cartpole_manual():
         assert set(episode.model_versions) == {model.n_updates}
 
         if is_update_step:
-            model.n_updates += 1
             print(f"Update #{model.n_updates} at step {i}")
 
             # model.optimizer_step()
@@ -50,6 +48,7 @@ def test_cartpole_manual():
             optimizer.zero_grad()
             # Udpate the 'deployed' policy.
             train_dl.send(model)
+            model.n_updates += 1
 
         assert i < max_episodes
 
@@ -76,3 +75,4 @@ def test_cartpole_pl():
     )
     trainer.fit(model)
 
+    assert False, (model.recomputed_forward_passes, model.n_forward_passes, model.global_step, model.n_updates)

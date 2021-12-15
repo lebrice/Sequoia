@@ -28,8 +28,8 @@ def test_episode_collector(env_fn):
     partial(gym.vector.make, "CartPole-v0", num_envs=10),
 ])
 def test_max_episodes(env_fn):
-    env = env_fn()
-    
+    env: gym.Env = env_fn()
+
     episode_collector = EpisodeCollector(env, policy=RandomPolicy(), max_episodes=10)
 
     episodes = []
