@@ -3,7 +3,7 @@ from gym.vector.utils import shared_memory
 from gym.vector.utils.shared_memory import create_shared_memory
 import numpy as np
 from torch.utils.data import DataLoader
-from typing import Any, Dict, Generator, Iterable, Iterator, MutableSequence, Sequence, TypeVar, List, Union, overload
+from typing import Any, Dict, Generator, Iterable, Iterator, MutableSequence, Optional, Sequence, TypeVar, List, Union, overload
 
 from .episode import Episode, Observation, Action, Reward, T_co, T, Transition
 from .episode_collector import EpisodeCollector
@@ -28,7 +28,7 @@ Item = TypeVar("Item", covariant=True)
 
 
 class ReplayBuffer(IterableDataset[Item], Sequence[Item]):
-    def __init__(self, item_space: _Space[Item], capacity: int):
+    def __init__(self, item_space: _Space[Item], capacity: int, seed: int=None):
         super().__init__()
         self.item_space = item_space
         self._capacity = capacity
@@ -40,6 +40,7 @@ class ReplayBuffer(IterableDataset[Item], Sequence[Item]):
         self._current_index = 0
         # Number of total insertions so far (can be greater than capacity).
         self._n_insertions = 0
+        self.rng = np.random.RandomState(seed=seed)
 
     @property
     def capacity(self) -> int:
@@ -57,12 +58,21 @@ class ReplayBuffer(IterableDataset[Item], Sequence[Item]):
         return self.capacity
 
     def __setitem__(self, index: int, value: Item) -> None:
-        if isinstance(index, int) and not (0 <= index < len(self)):
-            raise IndexError(index)
         if isinstance(index, int):
-            set_slice(self._data, indices=[index], value=stack(value))
-        # write_to_shared_memory(self.item_space, index=index, value=value, shared_memory=self._data)
-        set_slice(self._data, index=index, value=value)
+            if not self.full and index == len(self):
+                # batched_value = stack([value])
+                # assert False, (value, batched_value)
+                # let it slide
+                set_slice(self._data, indices=index, values=value)
+                return
+            elif not (0 <= index < len(self)):
+                raise IndexError(index)
+            else:
+                # batched_value = stack(value)
+                set_slice(self._data, indices=index, values=value)
+        else:
+            # write_to_shared_memory(self.item_space, index=index, value=value, shared_memory=self._data)
+            set_slice(self._data, index=index, values=value)
 
     def __getitem__(self, index: int) -> Item:
         if isinstance(index, int) and not (0 <= index < len(self)):
@@ -88,8 +98,8 @@ class ReplayBuffer(IterableDataset[Item], Sequence[Item]):
             return self[self.rng.choice(len(self), 1)]
         indices = self.rng.choice(len(self), n_samples, replace=False)
         # TODO: Would be better to do batch read/write, for sure.
-        # return self[indices]
-        return [self[i] for i in indices]
+        return self[indices]
+        # return [self[i] for i in indices]
 
     def extend(self, items: Iterable[Item]) -> None:
         # NOTE: Should this just redirect to add_reservoir?
@@ -128,14 +138,13 @@ class ReplayBuffer(IterableDataset[Item], Sequence[Item]):
         while i <= n:
             # i := i + floor(log(random())/log(1-W)) + 1  
             # TODO: Increment I by at least 1? What is the other term?
-            i += 1 + np.floor(np.log(random.random())/np.log(1-W))
+            i += 1 + int(np.floor(np.log(random.random())/np.log(1-W)))
             if i <= n:
                 # (* replace a random item of the reservoir with item i *)
                 # R[randomInteger(1,k)] := S[i]  // random index between 1 and k, inclusive
                 # replace a random item of the reservoir with item i
                 # random index between 0 and k-1, inclusive
                 write_index = random.randrange(0, self.capacity)
-
                 self[write_index] = batch[i] 
 
                 # W := W * exp(log(random())/k)

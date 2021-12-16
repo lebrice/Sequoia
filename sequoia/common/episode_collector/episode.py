@@ -24,10 +24,10 @@ T_co = TypeVar("T_co", covariant=True)
 T = TypeVar("T")
 
 from sequoia.utils.generic_functions import stack
+from sequoia.common.batch import Batch
 
-
-@dataclass
-class Transition(Generic[Observation_co, Action, Reward]):
+@dataclass(frozen=True)
+class Transition(Batch, Generic[Observation_co, Action, Reward]):
     observation: Observation_co
     action: Action
     reward: Reward
@@ -40,8 +40,8 @@ class Transition(Generic[Observation_co, Action, Reward]):
 # forward receives a Transition, rather than an Observation.
 
 
-@dataclass
-class Episode(
+@dataclass(frozen=True)
+class Episode(Batch,
     Sequence[Transition[Observation, Action, Reward]],
     Generic[Observation, Action, Reward],
     ):
@@ -86,6 +86,29 @@ class Episode(
             info=self.infos[index] if self.infos else {},
             done=index == (len(self) - 1),
         )
+
+from sequoia.utils.generic_functions import set_slice, get_slice
+from dataclasses import fields
+
+
+@set_slice.register(Transition)
+def _(target: Transition, indices: Sequence[int], values: Transition):
+    for f in fields(target):
+        k = f.name
+        target_v = getattr(target, k)
+        values_v = getattr(values, k)
+        set_slice(target_v, indices=indices, values=values_v)
+
+
+@get_slice.register(Transition)
+def _(target: Transition, indices: Sequence[int]) -> Transition:
+    result = {}
+    for f in fields(target):
+        k = f.name
+        target_v = getattr(target, k)
+        sliced_v = get_slice(target_v, indices=indices)
+        result[k] = sliced_v
+    return type(target)(**result)
 
 
 @dataclass(frozen=True)

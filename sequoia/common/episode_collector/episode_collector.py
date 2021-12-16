@@ -131,7 +131,9 @@ class EpisodeCollector(
                 episode.model_versions.append(self.model_version)
 
                 if done:
+                    # TODO: FrozenInstanceError if the Episode class is frozen!
                     episode.last_observation = obs
+
                     # Yield the episode, and if we get a new policy to use, then update it.
                     new_policy: Optional[Policy[Observation, Action]]
                     new_policy = yield episode.stack()
