@@ -25,3 +25,18 @@ class RandomPolicy(Policy[Observation, Action]):
         # todo: should we be garanteed to always have this be called with full batches?
         # i.e., constant batch size?
         return action_space.sample()
+
+
+from torch import nn
+
+class EpsilonGreedyPolicy(nn.Module, Policy[Observation, Action]):
+    def __init__(self, base_policy: Policy[Observation, Action], epsilon: float, seed: int = None) -> None:
+        super().__init__()
+        self.epsilon = epsilon
+        self.base_policy = base_policy
+
+    def __call__(self, observation: Observation, action_space: Space[Action]) -> Action:
+        # Select a random action with probability epsilon.
+        if action_space.np_random.rand() < self.epsilon:
+            return action_space.sample()
+        return self.base_policy(observation, action_space=action_space)

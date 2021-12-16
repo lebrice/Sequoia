@@ -41,7 +41,7 @@ class Transition(Batch, Generic[Observation_co, Action, Reward]):
 
 
 @dataclass(frozen=True)
-class Episode(Batch,
+class Episode(
     Sequence[Transition[Observation, Action, Reward]],
     Generic[Observation, Action, Reward],
     ):
@@ -57,6 +57,7 @@ class Episode(Batch,
         """ Length of the episode, as-in number of transitions. """
         n_obs = len(self.observations)
         return n_obs if self.last_observation is not None else n_obs - 1
+        # return n_obs
 
     def stack(self) -> "Episode[Observation, Action, Reward]":
         return Episode(
@@ -76,15 +77,25 @@ class Episode(Batch,
     ]:
         if not isinstance(index, int):
             raise NotImplementedError(index)
+        if not (0 <= index < len(self)):
+            raise IndexError(f"Index {index} is out of range! (len is {len(self)})")
+
+        obs = self.observations[index]
+        action = self.actions[index]
+        next_obs = (
+            self.last_observation if self.last_observation is not None and index == len(self.observations)-1
+            else self.observations[index+1]
+        )
+        reward = self.rewards[index]
+        info = self.infos[index] if self.infos else {}
+        done = index == (len(self.observations) - 1)
         return Transition(
-            observation=self.observations[index],
-            action=self.actions[index],
-            next_observation=(
-                self.last_observation if index == len(self) else self.observations[index+1]
-            ),
-            reward=self.rewards[index],
-            info=self.infos[index] if self.infos else {},
-            done=index == (len(self) - 1),
+            observation=obs,
+            action=action,
+            next_observation=next_obs,
+            reward=reward,
+            info=info,
+            done=done,
         )
 
 from sequoia.utils.generic_functions import set_slice, get_slice

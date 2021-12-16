@@ -22,11 +22,21 @@ from dataclasses import dataclass, field, replace
 from typing import Generator, Sequence, Tuple, Protocol, Any, Iterator, Type
 import numpy as np
 from enum import Enum, auto
+
 # from typed_gym import Env, Space, VectorEnv
 from functools import singledispatch
 from sequoia.utils.generic_functions import detach, stack, get_slice
 
-from .episode import Episode, Observation, Observation_co, Action, Reward, Reward_co, T, T_co
+from .episode import (
+    Episode,
+    Observation,
+    Observation_co,
+    Action,
+    Reward,
+    Reward_co,
+    T,
+    T_co,
+)
 from .update_strategy import (
     Policy,
     PolicyUpdateStrategy,
@@ -49,7 +59,8 @@ class EpisodeCollector(
     def __init__(
         self,
         env: Union[
-            Environment[Observation, Action, Reward], "VectorEnv[Observation, Action, Reward]"
+            Environment[Observation, Action, Reward],
+            "VectorEnv[Observation, Action, Reward]",
         ],
         policy: Policy[Observation, Action],
         max_steps: Optional[int] = None,
@@ -68,14 +79,22 @@ class EpisodeCollector(
         # envs.
         # NOT a buffer of episodes.
         self.ongoing_episodes: List[Episode[Observation, Action, Reward]] = []
-        self._generator: Optional[Generator[Episode[Observation, Action, Reward]]] = None
+        self._generator: Optional[
+            Generator[
+                Episode[Observation, Action, Reward],
+                Optional[Policy[Observation, Action]],
+                None,
+            ]
+        ] = None
 
         self.model_version: int = 0
 
     @property
     def generator(self):
         if self._generator is None:
-            if isinstance(self.env, VectorEnv) or isinstance(self.env.unwrapped, VectorEnv):
+            if isinstance(self.env, VectorEnv) or isinstance(
+                self.env.unwrapped, VectorEnv
+            ):
                 self._generator = self._iter_vectorenv()
             else:
                 self._generator = self._iter_env()
@@ -91,7 +110,6 @@ class EpisodeCollector(
         if new_policy is not None:
             self.on_policy_update(new_policy=new_policy)
         self.model_version += 1
-            
 
     def throw(self, something):
         # TODO: No idea what to do here.
@@ -111,7 +129,7 @@ class EpisodeCollector(
                 rewards=[],
                 infos=[],
                 last_observation=None,
-                model_versions=[]
+                model_versions=[],
             )
             self.ongoing_episodes = [episode]
 
@@ -132,7 +150,8 @@ class EpisodeCollector(
 
                 if done:
                     # TODO: FrozenInstanceError if the Episode class is frozen!
-                    episode.last_observation = obs
+                    object.__setattr__(episode, "last_observation", obs)
+                    # episode.last_observation = obs
 
                     # Yield the episode, and if we get a new policy to use, then update it.
                     new_policy: Optional[Policy[Observation, Action]]
@@ -180,7 +199,9 @@ class EpisodeCollector(
 
         for n_total_steps in itertools.count(step=num_envs):
             # Get an action for each environment from the policy.
-            actions: Action = self.policy(observations, action_space=self.env.action_space)
+            actions: Action = self.policy(
+                observations, action_space=self.env.action_space
+            )
             observations, rewards, dones, infos = self.env.step(actions)
 
             for i, (done, info) in enumerate(zip(dones, infos)):

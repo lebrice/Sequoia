@@ -36,7 +36,7 @@ def stack(first_item: Union[T, Sequence[T]], *others: T, **kwargs) -> Any:
         if first_item is None:
             # Stacking a list of 'None' items returns None.
             return None
-        assert isinstance(first_item, (list, tuple)), first_item
+        # assert isinstance(first_item, (list, tuple)), first_item
         # assert len(first_item) > 1, first_item
         items = first_item
         return stack(items[0], *items[1:], **kwargs)

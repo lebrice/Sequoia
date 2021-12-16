@@ -40,6 +40,11 @@ class ReplayBuffer(IterableDataset[Item], Sequence[Item]):
         self._current_index = 0
         # Number of total insertions so far (can be greater than capacity).
         self._n_insertions = 0
+        self.rng: np.random.RandomState
+        if seed is not None:
+            self.seed(seed)
+
+    def seed(self, seed: Optional[int]) -> None:
         self.rng = np.random.RandomState(seed=seed)
 
     @property
@@ -134,21 +139,21 @@ class ReplayBuffer(IterableDataset[Item], Sequence[Item]):
         # NOTE: i is still usable here. 
 
         # random() generates a uniform (0,1)
-        W = np.exp(np.log(random.random())/self.capacity)
+        W = np.exp(np.log(self.rng.random())/self.capacity)
         while i <= n:
             # i := i + floor(log(random())/log(1-W)) + 1  
             # TODO: Increment I by at least 1? What is the other term?
-            i += 1 + int(np.floor(np.log(random.random())/np.log(1-W)))
-            if i <= n:
+            i += 1 + int(np.floor(np.log(self.rng.random())/np.log(1-W)))
+            if i < n:
                 # (* replace a random item of the reservoir with item i *)
                 # R[randomInteger(1,k)] := S[i]  // random index between 1 and k, inclusive
                 # replace a random item of the reservoir with item i
                 # random index between 0 and k-1, inclusive
-                write_index = random.randrange(0, self.capacity)
+                write_index = self.rng.randint(0, self.capacity)
                 self[write_index] = batch[i] 
 
                 # W := W * exp(log(random())/k)
-                W *= np.exp(np.log(random.random())/self.capacity)
+                W *= np.exp(np.log(self.rng.random())/self.capacity)
         return
 
 

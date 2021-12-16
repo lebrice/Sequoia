@@ -3,6 +3,7 @@ from numpy.random.mtrand import sample
 from torch.utils.data import DataLoader
 from typing import (
     Iterator,
+    List,
     Optional,
     Tuple,
     TypeVar,
@@ -58,32 +59,39 @@ class ExperienceReplayLoader(DataLoader[Transition[Observation, Action, Reward]]
         max_steps: int = None,
         max_episodes: int = None,
         policy: Policy[Observation, Action] = None,
+        seed: Optional[int] = None,
     ):
-        self.env = env
+        self._env = env
         self.batch_size = batch_size
+        self._seed = seed
         self._capacity = buffer_size
         self._max_steps = max_steps
         self._max_episodes = max_episodes
 
         # NOTE: Use the single space? or batched space?
         num_envs = get_num_envs(env)
+        self.reward_space = get_reward_space(env)
         item_space = TypedDictSpace(
             spaces={
                 "observation": getattr(
                     env, "single_observation_space", env.observation_space
                 ),
                 "action": getattr(env, "single_action_space", env.action_space),
-                "reward": getattr(env, "single_reward_space", get_reward_space(env)),
+                "reward": getattr(env, "single_reward_space", self.reward_space),
                 "next_observation": env.observation_space,
                 "info": spaces.Dict(),
                 "done": spaces.Box(False, True, dtype=bool, shape=()),
             },
             dtype=Transition
         )
-        dataset = ReplayBuffer(item_space=item_space, capacity=buffer_size)
+        if seed is not None:
+            # Seed the item space, since it is used to populate the replay buffer.
+            item_space.seed(seed)
+
+        dataset = ReplayBuffer(item_space=item_space, capacity=buffer_size, seed=seed)
         self.episode_generator = EpisodeCollector(
-            self.env,
-            policy=RandomPolicy(),
+            self._env,
+            policy=policy or RandomPolicy(),
             max_steps=max_steps,
             max_episodes=max_episodes,
         )
@@ -93,13 +101,24 @@ class ExperienceReplayLoader(DataLoader[Transition[Observation, Action, Reward]]
 
         if policy is not None:
             self.send(policy)
+        
+        if self._seed is not None:
+            self.seed(seed)
+
+    def seed(self, seed: Optional[int]) -> List[int]:
+        self._seed = seed
+        self._env.seed(seed)
+        self._env.action_space.seed(seed)
+        self._env.observation_space.seed(seed)
+        self.reward_space.seed(seed)
+        self.dataset.seed(seed)
 
     def __iter__(self) -> Iterator[Transition[Observation, Action, Reward]]:
         # Populate the replay buffer with transitions, until we're able to produce a full batch.
         for i, new_episode in enumerate(self.episode_generator):
-            transitions = list(new_episode)
+            # transitions = list(new_episode)
             # NOTE: Episode := List[Transition]
-            self.dataset.add_reservoir(transitions)
+            self.dataset.add_reservoir(new_episode)
 
             if len(self.dataset) < self.batch_size:
                 # Buffer doesn't contain enough data yet, skip to the next iteration.
@@ -109,8 +128,7 @@ class ExperienceReplayLoader(DataLoader[Transition[Observation, Action, Reward]]
             
             assert isinstance(sampled_transitions, Transition)
             assert isinstance(sampled_transitions.observation, np.ndarray)
-            assert sampled_transitions.observation.shape == self.batch_size
-
+            assert sampled_transitions.observation.shape == (self.batch_size,)
 
             new_policy: Optional[Policy[Observation, Action]] = yield sampled_transitions
 

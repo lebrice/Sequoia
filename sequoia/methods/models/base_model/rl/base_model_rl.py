@@ -19,7 +19,8 @@ from pytorch_lightning import LightningModule
 from sequoia.common.batch import Batch
 from sequoia.common.config import Config
 from sequoia.common.episode_collector import EnvDataLoader, EnvDataset
-from sequoia.common.episode_collector.episode import Episode
+from sequoia.common.episode_collector.episode import Episode, Transition
+from sequoia.common.episode_collector.policy import EpsilonGreedyPolicy
 from sequoia.common.gym_wrappers.transform_wrappers import TransformAction
 from sequoia.common.spaces.typed_dict import TypedDictSpace
 from sequoia.common.typed_gym import (
@@ -112,12 +113,16 @@ _Action = TypeVar(
 )
 
 _Reward = TypeVar("_Reward", bound=Union[Rewards, RewardsBatch], covariant=True)
+from sequoia.common.episode_collector.experience_replay import (
+    ExperienceReplayLoader,
+)
 
 
 class BaseRLModel(LightningModule, Generic[_Observation_co, _Action, _Reward]):
     @dataclass
     class HParams(HyperParameters):
         learning_rate: float = 1e-3
+        batch_size: int = 32
 
     def __init__(
         self,
@@ -178,9 +183,19 @@ class BaseRLModel(LightningModule, Generic[_Observation_co, _Action, _Reward]):
 
     def train_dataloader(
         self,
-    ) -> DataLoader[Episode[Observation, DiscreteAction, Rewards]]:
-        dataset = EnvDataset(self.train_env, policy=self)
-        self._train_dataloader = EnvDataLoader(dataset)
+    ) -> DataLoader[Transition[Observation, DiscreteAction, Rewards]]:
+        # ) -> DataLoader[Episode[Observation, DiscreteAction, Rewards]]:
+        # dataset = EnvDataset(self.train_env, policy=self)
+        # self._train_dataloader = EnvDataLoader(dataset)
+        self.epsilon = 0.1
+        self.policy = EpsilonGreedyPolicy(base_policy=self, epsilon=self.epsilon)
+        self._train_dataloader = ExperienceReplayLoader(
+            env=self.train_env,
+            batch_size=self.hp.batch_size,
+            max_steps=10_000,
+            max_episodes=100,
+            policy=self.policy,
+        )
         return self._train_dataloader
 
     def val_dataloader(
@@ -188,11 +203,21 @@ class BaseRLModel(LightningModule, Generic[_Observation_co, _Action, _Reward]):
     ) -> Optional[DataLoader[Episode[Observation, DiscreteAction, Rewards]]]:
         if self.val_env is None:
             return None
-        dataset = EnvDataset(self.val_env, policy=self)
-        self._val_dataloader = EnvDataLoader(dataset)
+        # dataset = EnvDataset(self.val_env, policy=self)
+        # self._val_dataloader = EnvDataLoader(dataset)
+        self._val_dataloader = ExperienceReplayLoader(
+            env=self.val_env,
+            batch_size=self.hp.batch_size,
+            max_steps=10_000,
+            max_episodes=100,
+            policy=torch.no_grad(self.policy),
+        )
+
         return self._val_dataloader
 
-    def transfer_batch_to_device(self, batch: Any, device: torch.device, dataloader_idx: int) -> Any:
+    def transfer_batch_to_device(
+        self, batch: Any, device: torch.device, dataloader_idx: int
+    ) -> Any:
         if isinstance(batch, Episode):
             return move(batch, device=device)
         return super().transfer_batch_to_device(batch, device, dataloader_idx)
@@ -219,15 +244,17 @@ class BaseRLModel(LightningModule, Generic[_Observation_co, _Action, _Reward]):
             # assert False, (episode.model_versions, self.n_updates, episode.actions)
             # todo: fix for vectorenv, the `action_space` here might not actually work.
             # todo: Make Episodes immutable
-            single_action_space = self.train_env.single_action_space if isinstance(self.train_env.unwrapped, VectorEnv) else self.train_env.action_space
+
+            single_action_space = getattr(self.train_env, "single_action_space", self.train_env.action_space)
             action_space = batch_space(single_action_space, n=len(episode))
             action_space.dtype = DiscreteActionBatch
 
             old_actions = episode.actions
             new_actions = self(episode.observations, action_space=action_space)
             self.recomputed_forward_passes += 1
-            
+
             # Replace the actions
+
             episode = replace(
                 episode,
                 actions=new_actions,
