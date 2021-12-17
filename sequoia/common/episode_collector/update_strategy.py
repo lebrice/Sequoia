@@ -1,4 +1,3 @@
-
 from abc import abstractmethod
 from typing import (
     List,
@@ -11,9 +10,8 @@ from .episode import Episode, Observation_co, Action, Reward
 from .policy import Policy
 
 
-
 class PolicyUpdateStrategy(Protocol[Observation_co, Action, Reward]):
-    """ Strategy for what to do with ongoing episodes when the policy is updated. """
+    """Strategy for what to do with ongoing episodes when the policy is updated."""
 
     @abstractmethod
     def __call__(
@@ -71,4 +69,3 @@ def redo_forward_pass_strategy(
         new_episode = replace(old_episode, actions=list(new_actions))
         episodes.append(new_episode)
     return episodes
-

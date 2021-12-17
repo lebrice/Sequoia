@@ -5,13 +5,16 @@ import pytest
 from functools import partial
 
 
-@pytest.mark.parametrize("env_fn", [
-    partial(gym.make, "CartPole-v0"),
-    partial(gym.vector.make, "CartPole-v0", num_envs=10),
-])
+@pytest.mark.parametrize(
+    "env_fn",
+    [
+        partial(gym.make, "CartPole-v0"),
+        partial(gym.vector.make, "CartPole-v0", num_envs=10),
+    ],
+)
 def test_episode_collector(env_fn):
     env = env_fn()
-    
+
     episode_collector = EpisodeCollector(env, policy=RandomPolicy())
 
     episodes = []
@@ -23,10 +26,13 @@ def test_episode_collector(env_fn):
     assert len(episodes) == 10
 
 
-@pytest.mark.parametrize("env_fn", [
-    partial(gym.make, "CartPole-v0"),
-    partial(gym.vector.make, "CartPole-v0", num_envs=10),
-])
+@pytest.mark.parametrize(
+    "env_fn",
+    [
+        partial(gym.make, "CartPole-v0"),
+        partial(gym.vector.make, "CartPole-v0", num_envs=10),
+    ],
+)
 def test_max_episodes(env_fn):
     env: gym.Env = env_fn()
 
@@ -41,10 +47,13 @@ def test_max_episodes(env_fn):
     assert len(episodes) == 10
 
 
-@pytest.mark.parametrize("env_fn", [
-    partial(gym.make, "CartPole-v0"),
-    partial(gym.vector.make, "CartPole-v0", num_envs=10),
-])
+@pytest.mark.parametrize(
+    "env_fn",
+    [
+        partial(gym.make, "CartPole-v0"),
+        partial(gym.vector.make, "CartPole-v0", num_envs=10),
+    ],
+)
 def test_max_episodes(env_fn):
     env = env_fn()
     episode_collector = EpisodeCollector(env, policy=RandomPolicy(), max_episodes=10)

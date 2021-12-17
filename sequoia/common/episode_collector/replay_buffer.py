@@ -3,22 +3,41 @@ from gym.vector.utils import shared_memory
 from gym.vector.utils.shared_memory import create_shared_memory
 import numpy as np
 from torch.utils.data import DataLoader
-from typing import Any, Dict, Generator, Iterable, Iterator, MutableSequence, Optional, Sequence, TypeVar, List, Union, overload
+from typing import (
+    Any,
+    Dict,
+    Generator,
+    Iterable,
+    Iterator,
+    MutableSequence,
+    Optional,
+    Sequence,
+    TypeVar,
+    List,
+    Union,
+    overload,
+)
 
 from .episode import Episode, Observation, Action, Reward, T_co, T, Transition
 from .episode_collector import EpisodeCollector
 from .env_dataloader import EnvDataLoader
+
 T = TypeVar("T")
 
 from sequoia.methods.experience_replay import Buffer
 
 from collections.abc import Iterable as _Iterable
 from sequoia.common.typed_gym import _Space
-from sequoia.utils.generic_functions import get_slice, set_slice, stack, concatenate 
+from sequoia.utils.generic_functions import get_slice, set_slice, stack, concatenate
+
 # NOTE: Usign this, but it would probably be easier to use arrays instead, no need for this to be
-# shared memory at all. 
+# shared memory at all.
 # TODO: Register variants of these functions for writing/reading tensors rather than numpy arrays.
-from gym.vector.utils import create_empty_array, write_to_shared_memory, read_from_shared_memory
+from gym.vector.utils import (
+    create_empty_array,
+    write_to_shared_memory,
+    read_from_shared_memory,
+)
 from torch.utils.data import IterableDataset
 
 from gym.vector.utils.spaces import batch_space
@@ -28,14 +47,14 @@ Item = TypeVar("Item", covariant=True)
 
 
 class ReplayBuffer(IterableDataset[Item], Sequence[Item]):
-    def __init__(self, item_space: _Space[Item], capacity: int, seed: int=None):
+    def __init__(self, item_space: _Space[Item], capacity: int, seed: int = None):
         super().__init__()
         self.item_space = item_space
         self._capacity = capacity
         # TODO: Make this equal to `register_buffer` somehow when the space is a TensorSpace or something.
         # self._data = create_shared_memory(self.item_space, n=self.capacity)
         # TODO: Could also maybe do this to create the buffers, allowing for batch read/write!
-        self._data = batch_space(item_space, n=capacity).sample()
+        self._data = create_empty_array(item_space, n=capacity)
 
         self._current_index = 0
         # Number of total insertions so far (can be greater than capacity).
@@ -63,13 +82,13 @@ class ReplayBuffer(IterableDataset[Item], Sequence[Item]):
         return self.capacity
 
     def __setitem__(self, index: int, value: Item) -> None:
+        # write_to_shared_memory(self.item_space, index=index, value=value, shared_memory=self._data)
+        # return
         if isinstance(index, int):
-            if not self.full and index == len(self):
-                # batched_value = stack([value])
-                # assert False, (value, batched_value)
-                # let it slide
+            if not self.full and index == self._current_index:
+                # Let it slide:
+                # TODO: There are some bugs here because set_slice expects indices to be arrays of ints.
                 set_slice(self._data, indices=index, values=value)
-                return
             elif not (0 <= index < len(self)):
                 raise IndexError(index)
             else:
@@ -81,6 +100,7 @@ class ReplayBuffer(IterableDataset[Item], Sequence[Item]):
 
     def __getitem__(self, index: int) -> Item:
         if isinstance(index, int) and not (0 <= index < len(self)):
+            # TODO: Allow negative indices
             raise IndexError(index)
         # return read_from_shared_memory(self.item_space, index=index, shared_memory=self._data)
         if isinstance(index, int):
@@ -92,13 +112,13 @@ class ReplayBuffer(IterableDataset[Item], Sequence[Item]):
             return get_slice(self._data, indices=index)
 
     def append(self, item: Item) -> None:
-        # Behaves like a deque when using append/extend by default. 
+        # Behaves like a deque when using append/extend by default.
         self._n_insertions += 1
         self._current_index += 1
         self._current_index %= self.capacity
         self[self._current_index] = item
 
-    def sample(self, n_samples: int=None) -> Union[Item, Sequence[Item]]:
+    def sample(self, n_samples: int = None) -> Union[Item, Sequence[Item]]:
         if n_samples is None:
             return self[self.rng.choice(len(self), 1)]
         indices = self.rng.choice(len(self), n_samples, replace=False)
@@ -136,34 +156,40 @@ class ReplayBuffer(IterableDataset[Item], Sequence[Item]):
             if self.full:
                 break
             self.append(item)
-        # NOTE: i is still usable here. 
+        # NOTE: i is still usable here.
 
         # random() generates a uniform (0,1)
-        W = np.exp(np.log(self.rng.random())/self.capacity)
+        W = np.exp(np.log(self.rng.random()) / self.capacity)
         while i <= n:
-            # i := i + floor(log(random())/log(1-W)) + 1  
+            # i := i + floor(log(random())/log(1-W)) + 1
             # TODO: Increment I by at least 1? What is the other term?
-            i += 1 + int(np.floor(np.log(self.rng.random())/np.log(1-W)))
+            i += 1 + int(np.floor(np.log(self.rng.random()) / np.log(1 - W)))
             if i < n:
                 # (* replace a random item of the reservoir with item i *)
                 # R[randomInteger(1,k)] := S[i]  // random index between 1 and k, inclusive
                 # replace a random item of the reservoir with item i
                 # random index between 0 and k-1, inclusive
                 write_index = self.rng.randint(0, self.capacity)
-                self[write_index] = batch[i] 
+                self[write_index] = batch[i]
 
                 # W := W * exp(log(random())/k)
-                W *= np.exp(np.log(self.rng.random())/self.capacity)
+                W *= np.exp(np.log(self.rng.random()) / self.capacity)
         return
 
-
     @overload
-    def __add__(self: "ReplayBuffer[Item]", other: "ReplayBuffer[Item]") -> "ReplayBuffer[Item]":
+    def __add__(
+        self: "ReplayBuffer[Item]", other: "ReplayBuffer[Item]"
+    ) -> "ReplayBuffer[Item]":
         ...
 
     @overload
-    def __add__(self: "ReplayBuffer[Item]", other: "ReplayBuffer[T]") -> "ReplayBuffer[Union[Item, T]]":
+    def __add__(
+        self: "ReplayBuffer[Item]", other: "ReplayBuffer[T]"
+    ) -> "ReplayBuffer[Union[Item, T]]":
         ...
 
-    def __add__(self: "ReplayBuffer[Item]", other: Union["ReplayBuffer[Item]", "ReplayBuffer[T]", Any]) -> Union["ReplayBuffer[Union[Item, T]]", "ReplayBuffer[Item]"]:
+    def __add__(
+        self: "ReplayBuffer[Item]",
+        other: Union["ReplayBuffer[Item]", "ReplayBuffer[T]", Any],
+    ) -> Union["ReplayBuffer[Union[Item, T]]", "ReplayBuffer[Item]"]:
         raise NotImplementedError("IDEA: add two buffers?")

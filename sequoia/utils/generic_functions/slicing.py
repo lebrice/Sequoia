@@ -104,5 +104,7 @@ def _set_tuple_slice(target: Tuple[T, ...], indices: Sequence[int], values: Tupl
 
 @set_slice.register(Batch)
 def set_batch_slice(target: Batch, indices: Sequence[int], values: Batch) -> None:
+    # Note: This is added here, makes things more rigid, but prevents bugs.
+    assert isinstance(values, type(target)), (target, values)
     for key, target_values in target.items():
-        set_slice(target_values, indices, values[key])
+        set_slice(target_values, indices=indices, values=values[key])

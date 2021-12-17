@@ -3,10 +3,18 @@ import gym
 import torch
 from pytorch_lightning.trainer import Trainer
 import itertools
+import pytest
 
 
 def test_cartpole_manual():
+    
+    # TODO: First, add tests for the env dataset / dataloader / experience replay with envs that
+    # have typed objects (e.g.) Observation/Action/Reward, tensors, etc.
+    
     env = gym.make("CartPole-v0")
+    from sequoia.common.gym_wrappers.convert_tensors import ConvertToFromTensors
+    # env = ConvertToFromTensors(env, device="cpu")
+
     
     # seed everything.
     env.seed(123)
@@ -17,10 +25,28 @@ def test_cartpole_manual():
         torch.cuda.manual_seed_all(123)
 
     model = BaseRLModel(env)
+    env = ConvertToFromTensors(env, device=model.device)
+    from .base_model_rl import UseObjectsWrapper
+    # TODO: This is causing some issues.
+    # env = UseObjectsWrapper(env)
+
     optimizer = model.configure_optimizers()
     # act = model(env.reset(), action_space=env.action_space)
     # assert False, act
-    train_dl = model.train_dataloader()
+    # train_dl = model.train_dataloader()
+    # self.epsilon = 0.1
+    # policy = EpsilonGreedyPolicy(base_policy=self, epsilon=self.epsilon, seed=self.config.seed)
+    policy = model
+
+    from sequoia.common.episode_collector.experience_replay import ExperienceReplayLoader
+    train_dl = ExperienceReplayLoader(
+        env=env,
+        batch_size=10,
+        # max_steps=1_000,
+        max_episodes=10,
+        policy=policy,
+    )
+    
     episodes_per_update = 3
     max_episodes = 10
 
@@ -30,6 +56,7 @@ def test_cartpole_manual():
     # for just that single misaligned step?
     model.n_updates = 0
     for i, episode in enumerate(itertools.islice(train_dl, max_episodes)):
+        assert False, episode
         loss = model.training_step(episode, batch_idx=i)
 
         is_update_step = episodes_per_update == 1 or (i > 0 and i % episodes_per_update == 0)
@@ -52,7 +79,7 @@ def test_cartpole_manual():
 
         assert i < max_episodes
 
-import pytest
+
 @pytest.mark.timeout(5)
 def test_cartpole_pl():
     env = gym.make("CartPole-v0")

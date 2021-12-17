@@ -156,6 +156,7 @@ class BaseRLModel(LightningModule, Generic[_Observation_co, _Action, _Reward]):
     ) -> DiscreteAction:
         random_action = action_space.sample()
         logits = self.net(observation)
+        logits = self.net(observation.observation)
         action = logits.argmax(-1)
         return replace(random_action, logits=logits, action=action)
 
@@ -188,7 +189,7 @@ class BaseRLModel(LightningModule, Generic[_Observation_co, _Action, _Reward]):
         # dataset = EnvDataset(self.train_env, policy=self)
         # self._train_dataloader = EnvDataLoader(dataset)
         self.epsilon = 0.1
-        self.policy = EpsilonGreedyPolicy(base_policy=self, epsilon=self.epsilon)
+        self.policy = EpsilonGreedyPolicy(base_policy=self, epsilon=self.epsilon, seed=self.config.seed)
         self._train_dataloader = ExperienceReplayLoader(
             env=self.train_env,
             batch_size=self.hp.batch_size,
@@ -218,7 +219,7 @@ class BaseRLModel(LightningModule, Generic[_Observation_co, _Action, _Reward]):
     def transfer_batch_to_device(
         self, batch: Any, device: torch.device, dataloader_idx: int
     ) -> Any:
-        if isinstance(batch, Episode):
+        if isinstance(batch, (Episode, Transition)):
             return move(batch, device=device)
         return super().transfer_batch_to_device(batch, device, dataloader_idx)
 
@@ -309,12 +310,14 @@ class BaseRLModel(LightningModule, Generic[_Observation_co, _Action, _Reward]):
     ) -> _Env[Observation, DiscreteAction, Rewards]:
         """ TODO: Add wrappers to conver the 'naked' actions/rewards into the typed objects we have. """
         if isinstance(env.action_space, spaces.Discrete):
-            env = Adapter(env)
-            env = FlattenedObs(env)
-            env = TransformObservation(
-                env, f=partial(torch.as_tensor, device=self.device, dtype=self.dtype)
-            )
-            env = TransformAction(env, f=lambda act: act.detach().cpu().numpy())
+            # Use this on something like CartPole for example.
+            from sequoia.common.gym_wrappers.convert_tensors import ConvertToFromTensors
+            env = ConvertToFromTensors(env, device=self.device)
+            env = UseObjectsWrapper(env)
+            # env = TransformObservation(
+            #     env, f=partial(torch.as_tensor, device=self.device, dtype=self.dtype)
+            # )
+            # env = TransformAction(env, f=lambda act: act.detach().cpu().numpy())
             return env
         raise NotImplementedError(env)
 
@@ -324,7 +327,7 @@ from gym import Wrapper, spaces
 
 
 # note: This is the same job as the `TypedObjectsWrapper`, basically.
-class Adapter(Wrapper, _Env[Observation, DiscreteAction, Rewards]):
+class UseObjectsWrapper(Wrapper, _Env[Observation, DiscreteAction, Rewards]):
     def __init__(self, env: _Env[Observation, DiscreteAction, Rewards]) -> None:
         super().__init__(env)
         self.observation_space = TypedDictSpace(
@@ -343,14 +346,14 @@ class Adapter(Wrapper, _Env[Observation, DiscreteAction, Rewards]):
         )
 
     def reset(self) -> Observation:
-        return Observation(self.env.reset())
+        return self.observation_space.dtype(observation=self.env.reset())
 
     def step(self, action: DiscreteAction) -> Tuple[Observation, Rewards, bool, dict]:
         action = action.action
         obs, reward, done, info = self.env.step(action)
         return (
-            self.observation_space.dtype(obs),
-            self.reward_space.dtype(reward),
+            self.observation_space.dtype(observation=obs),
+            self.reward_space.dtype(reward=reward),
             done,
             info,
         )

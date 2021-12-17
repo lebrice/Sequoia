@@ -117,7 +117,7 @@ class EpisodeCollector(
         # raise something
 
     def _iter_env(self):
-        """ Yields full episodes from an environment. """
+        """Yields full episodes from an environment."""
         for n_episodes in itertools.count():
             obs = self.env.reset()
             done = False
@@ -184,7 +184,7 @@ class EpisodeCollector(
         Optional[Policy[Observation, Action]],
         None,
     ]:
-        """ Generator that yields complete episodes from a vectorized environment.
+        """Generator that yields complete episodes from a vectorized environment.
 
         The episodes are flattened, so that they always just look like a regular episode from
         a single environment.

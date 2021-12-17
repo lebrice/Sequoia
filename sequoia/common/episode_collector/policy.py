@@ -1,8 +1,11 @@
 import gym
 from typing import (
+    Optional,
     TypeVar,
 )
 from typing import Protocol
+
+from numpy.random.mtrand import RandomState
 
 Observation = TypeVar("Observation")
 Observation_co = TypeVar("Observation_co", covariant=True)
@@ -28,15 +31,23 @@ class RandomPolicy(Policy[Observation, Action]):
 
 
 from torch import nn
+import numpy as np
+
 
 class EpsilonGreedyPolicy(nn.Module, Policy[Observation, Action]):
-    def __init__(self, base_policy: Policy[Observation, Action], epsilon: float, seed: int = None) -> None:
+    def __init__(
+        self, base_policy: Policy[Observation, Action], epsilon: float, seed: int = None
+    ) -> None:
         super().__init__()
         self.epsilon = epsilon
         self.base_policy = base_policy
+        self.rng = np.random.RandomState(seed)
 
+    def seed(self, seed: Optional[int]) -> None:
+        self.rng = np.random.RandomState(seed)
+    
     def __call__(self, observation: Observation, action_space: Space[Action]) -> Action:
         # Select a random action with probability epsilon.
-        if action_space.np_random.rand() < self.epsilon:
+        if self.rng.rand() < self.epsilon:
             return action_space.sample()
         return self.base_policy(observation, action_space=action_space)

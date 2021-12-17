@@ -1,44 +1,34 @@
 from functools import singledispatch
-from numpy.random.mtrand import sample
-from torch.utils.data import DataLoader
-from typing import (
-    Iterator,
-    List,
-    Optional,
-    Tuple,
-    TypeVar,
-)
-from sequoia.common.spaces.typed_dict import TypedDictSpace
+from typing import Iterator, List, Optional, Tuple, TypeVar
 
-from sequoia.common.typed_gym import _Env, _Space, _VectorEnv
-from .episode import Action, Observation, Reward, T, Transition
-from .episode_collector import EpisodeCollector
-from .replay_buffer import ReplayBuffer
-from .policy import Policy, RandomPolicy
-
-T = TypeVar("T")
-from gym.vector import VectorEnv
 import numpy as np
 from gym import spaces
+from gym.vector import VectorEnv
+from sequoia.common.spaces.typed_dict import TypedDictSpace
+from sequoia.common.typed_gym import _Env, _Space, _VectorEnv
+from torch.utils.data import DataLoader
+
+from .episode import Action, Observation, Reward, Transition
+from .episode_collector import EpisodeCollector
+from .policy import Policy, RandomPolicy
+from .replay_buffer import ReplayBuffer
+
+T = TypeVar("T")
 
 
-@singledispatch
 def get_reward_space(env: _Env[Observation, Action, Reward]) -> _Space[Reward]:
     if hasattr(env, "reward_space") and env.reward_space is not None:
         return env.reward_space
     reward_range: Tuple[float, float] = getattr(env, "reward_range", (-np.inf, np.inf))
     num_envs = env.num_envs if isinstance(env.unwrapped, VectorEnv) else None
-    return spaces.Box(reward_range[0], reward_range[1], dtype=float, shape=(num_envs) if num_envs is not None else ())
-
-
-@get_reward_space.register(VectorEnv)
-def _(env: _VectorEnv[Observation, Action, Reward]) -> _Space[Reward]:
-    if hasattr(env, "reward_space") and env.reward_space is not None:
-        return env.reward_space
-    reward_range: Tuple[float, float] = getattr(env, "reward_range", (-np.int, np.inf))
     return spaces.Box(
-        reward_range[0], reward_range[1], dtype=float, shape=(env.num_envs,)
+        reward_range[0],
+        reward_range[1],
+        dtype=float,
+        shape=(num_envs) if num_envs is not None else (),
     )
+
+
 
 
 def get_num_envs(env: _Env) -> Optional[int]:
@@ -47,6 +37,7 @@ def get_num_envs(env: _Env) -> Optional[int]:
     else:
         return None
 
+
 # TODO: There's a difference between a buffer with Episode as the item, and a buffer with Transition as the item!
 
 
@@ -54,12 +45,14 @@ class ExperienceReplayLoader(DataLoader[Transition[Observation, Action, Reward]]
     def __init__(
         self,
         env: _Env[Observation, Action, Reward],
+        *,
         batch_size: int,
         buffer_size: int = 10_000,
+        policy: Policy[Observation, Action] = None,
         max_steps: int = None,
         max_episodes: int = None,
-        policy: Policy[Observation, Action] = None,
         seed: Optional[int] = None,
+        **kwargs,
     ):
         self._env = env
         self.batch_size = batch_size
@@ -82,28 +75,38 @@ class ExperienceReplayLoader(DataLoader[Transition[Observation, Action, Reward]]
                 "info": spaces.Dict(),
                 "done": spaces.Box(False, True, dtype=bool, shape=()),
             },
-            dtype=Transition
+            dtype=Transition,
         )
         if seed is not None:
             # Seed the item space, since it is used to populate the replay buffer.
             item_space.seed(seed)
 
-        dataset = ReplayBuffer(item_space=item_space, capacity=buffer_size, seed=seed)
+        dataset = ReplayBuffer(
+            item_space=item_space, capacity=buffer_size, seed=seed
+        )
         self.episode_generator = EpisodeCollector(
             self._env,
             policy=policy or RandomPolicy(),
             max_steps=max_steps,
             max_episodes=max_episodes,
         )
-        super().__init__(dataset=dataset, batch_size=batch_size, num_workers=0, collate_fn=None)
+        # NOTE: Some thigns can't be changed here.
+        kwargs.update(num_workers=0, collate_fn=None)
+        super().__init__(
+            dataset=dataset, batch_size=batch_size, **kwargs
+        )
         self.dataset: ReplayBuffer[Transition[Observation, Action, Reward]]
         assert self.dataset is dataset
 
         if policy is not None:
             self.send(policy)
-        
+
         if self._seed is not None:
             self.seed(seed)
+
+        # The space of the batches that this will yield.
+        from gym.vector.utils import batch_space
+        self.item_space = batch_space(item_space, n=batch_size)
 
     def seed(self, seed: Optional[int]) -> List[int]:
         self._seed = seed
@@ -125,12 +128,10 @@ class ExperienceReplayLoader(DataLoader[Transition[Observation, Action, Reward]]
                 continue
 
             sampled_transitions = self.dataset.sample(n_samples=self.batch_size)
-            
-            assert isinstance(sampled_transitions, Transition)
-            assert isinstance(sampled_transitions.observation, np.ndarray)
-            assert sampled_transitions.observation.shape == (self.batch_size,)
+            assert isinstance(sampled_transitions, Transition), sampled_transitions
 
-            new_policy: Optional[Policy[Observation, Action]] = yield sampled_transitions
+            new_policy: Optional[Policy[Observation, Action]]
+            new_policy = yield sampled_transitions
 
             if new_policy is not None:
                 self.episode_generator.send(new_policy)

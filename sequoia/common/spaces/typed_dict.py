@@ -388,6 +388,12 @@ def _concatenate_typed_dicts(
         }
     )
 
+from gym.vector.utils import create_empty_array
+
+@create_empty_array.register(TypedDictSpace)
+def _create_empty_typeddict(space: TypedDictSpace, n: int=1, fn=np.zeros):
+    return space.dtype(**create_empty_array.dispatch(spaces.Dict)(space, n=n, fn=fn))
+
 
 def _add_field_to_dataclass(
     dataclass_type: Type[Dataclass],
