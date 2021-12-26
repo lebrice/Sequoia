@@ -12,11 +12,11 @@ from typing import Any, Protocol, Sequence, Tuple
 import numpy as np
 
 
-Observation = TypeVar("Observation")
-_Observation_co = TypeVar("Observation_co", covariant=True)
-_Action = TypeVar("Action")
-_Reward = TypeVar("Reward")
-Reward_co = TypeVar("Reward_co", covariant=True)
+_Observation = TypeVar("_Observation")
+_Observation_co = TypeVar("_Observation_co", covariant=True)
+_Action = TypeVar("_Action")
+_Reward = TypeVar("_Reward")
+_Reward_co = TypeVar("_Reward_co", covariant=True)
 T_co = TypeVar("T_co", covariant=True)
 T = TypeVar("T")
 
@@ -43,14 +43,14 @@ class _Space(Protocol[T_co]):
 
 
 @runtime_checkable
-class _Env(Protocol[Observation, _Action, Reward_co]):
-    observation_space: _Space[Observation]
+class _Env(Protocol[_Observation, _Action, _Reward_co]):
+    observation_space: _Space[_Observation]
     action_space: _Space[_Action]
 
-    def reset(self) -> Observation:
+    def reset(self) -> _Observation:
         raise NotImplementedError
 
-    def step(self, action: _Action) -> Tuple[Observation, Reward_co, bool, dict]:
+    def step(self, action: _Action) -> Tuple[_Observation, _Reward_co, bool, dict]:
         raise NotImplementedError
 
     def seed(self, seed: Optional[int]) -> List[int]:
@@ -64,12 +64,12 @@ class _Env(Protocol[Observation, _Action, Reward_co]):
         return self
 
 @runtime_checkable
-class _VectorEnv(_Env[Observation, _Action, Reward_co], Protocol):
+class _VectorEnv(_Env[_Observation, _Action, _Reward_co], Protocol):
     num_envs: int
 
     def step(  # type: ignore
         self, action: _Action
-    ) -> Tuple[Observation, Reward_co, np.ndarray, Sequence[dict]]:
+    ) -> Tuple[_Observation, _Reward_co, np.ndarray, Sequence[dict]]:
         pass
 
 # import gym

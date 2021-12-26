@@ -1,4 +1,4 @@
-from .typed_gym import _Env, _VectorEnv, Observation, _Action, _Reward
+from .typed_gym import _Env, _VectorEnv, _Observation, _Action, _Reward
 import gym
 
 

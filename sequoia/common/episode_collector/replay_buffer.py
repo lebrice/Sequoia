@@ -20,7 +20,7 @@ from typing import (
 
 from .episode import Episode, Observation, Action, Reward, T_co, T, Transition
 from .episode_collector import EpisodeCollector
-from .env_dataloader import EnvDataLoader
+from .env_dataloader import OnPolicyEpisodeLoader
 
 T = TypeVar("T")
 

@@ -18,7 +18,7 @@ from gym.spaces.utils import flatdim, flatten, flatten_space
 from pytorch_lightning import LightningModule
 from sequoia.common.batch import Batch
 from sequoia.common.config import Config
-from sequoia.common.episode_collector import EnvDataLoader, EnvDataset
+from sequoia.common.episode_collector import OnPolicyEpisodeLoader, OnPolicyEpisodeDataset
 from sequoia.common.episode_collector.episode import Episode, Transition
 from sequoia.common.episode_collector.policy import EpsilonGreedyPolicy
 from sequoia.common.gym_wrappers.transform_wrappers import TransformAction

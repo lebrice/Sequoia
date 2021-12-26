@@ -57,5 +57,4 @@ def test_max_episodes(env_fn):
 def test_max_episodes(env_fn):
     env = env_fn()
     episode_collector = EpisodeCollector(env, policy=RandomPolicy(), max_episodes=10)
-
     ep = next(episode_collector)

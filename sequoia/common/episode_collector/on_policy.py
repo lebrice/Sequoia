@@ -23,7 +23,7 @@ from .episode_collector import EpisodeCollector
 import gym
 
 
-class EnvDataset(
+class OnPolicyEpisodeDataset(
     gym.Wrapper, IterableDataset[Episode[_Observation_co, _Action, _Reward]]
 ):
     def __init__(
@@ -54,10 +54,10 @@ class EnvDataset(
         self,
         other: Union[
             _Env[_Observation_co, _Action, _Reward],
-            "EnvDataset[Episode[_Observation_co, _Action, _Reward]]",
+            "OnPolicyEpisodeDataset[Episode[_Observation_co, _Action, _Reward]]",
         ],
-    ) -> "EnvDataset[Episode[_Observation_co, _Action, _Reward]]":
-        if not isinstance(other, (EnvDataset, gym.Env)):
+    ) -> "OnPolicyEpisodeDataset[Episode[_Observation_co, _Action, _Reward]]":
+        if not isinstance(other, (OnPolicyEpisodeDataset, gym.Env)):
             raise NotImplementedError(other)
         # TODO: Maybe create a ChainDataset that has a Send method, which sends to the current
         # iterator.
@@ -74,9 +74,9 @@ class EnvDataset(
         )
 
 
-class EnvDataLoader(DataLoader[Episode[_Observation_co, _Action, _Reward]]):
+class OnPolicyEpisodeLoader(DataLoader[Episode[_Observation_co, _Action, _Reward]]):
     def __init__(
-        self, dataset: EnvDataset[_Observation_co, _Action, _Reward], **kwargs
+        self, dataset: OnPolicyEpisodeDataset[_Observation_co, _Action, _Reward], **kwargs
     ):
         batch_size = getattr(dataset, "num_envs", None)
         super().__init__(

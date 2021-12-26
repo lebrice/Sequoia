@@ -307,15 +307,15 @@ class BaseMethod(Method, Serializable, Parseable, target_setting=Setting):
             valid_dataloader = valid_env
         else:
             # RL:
-            from sequoia.common.episode_collector.env_dataloader import EnvDataLoader, EnvDataset
+            from sequoia.common.episode_collector.env_dataloader import OnPolicyEpisodeLoader, OnPolicyEpisodeDataset
             # TODO: Remove the GymDataLoader wrapper.
             # TODO: Rework the `forward` of BaseModel: Shouldn't really output anything except the actions, no?
             policy = lambda obs, action_space: self.model(obs).actions
 
-            train_dataset = EnvDataset(train_env, policy=policy)
-            valid_dataset = EnvDataset(valid_env, policy=policy)  # todo: pass detach(self.model) (model with no-grad forward pass)
-            train_dataloader = EnvDataLoader(train_dataset)
-            valid_dataloader = EnvDataLoader(valid_dataset)
+            train_dataset = OnPolicyEpisodeDataset(train_env, policy=policy)
+            valid_dataset = OnPolicyEpisodeDataset(valid_env, policy=policy)  # todo: pass detach(self.model) (model with no-grad forward pass)
+            train_dataloader = OnPolicyEpisodeLoader(train_dataset)
+            valid_dataloader = OnPolicyEpisodeLoader(valid_dataset)
 
         success = self.trainer.fit(
             model=self.model, train_dataloader=train_dataloader, val_dataloaders=valid_dataloader,

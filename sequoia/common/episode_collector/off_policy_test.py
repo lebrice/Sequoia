@@ -5,7 +5,7 @@ from sequoia.common.episode_collector.episode import Episode, Transition
 from sequoia.common.gym_wrappers.convert_tensors import ConvertToFromTensors
 from .experience_replay import ExperienceReplayLoader
 from gym import spaces
-from sequoia.common.typed_gym import _Env, _Space
+from sequoia.common.typed_gym import _Env, _Space, _Observation
 import numpy as np
 
 
@@ -172,15 +172,18 @@ def test_with_typed_objects_and_tensors():
     # TODO: First, add tests for the env dataset / dataloader / experience replay with envs that
     # have typed objects (e.g.) Observation/Action/Reward, tensors, etc.
     env = gym.make("CartPole-v0")
-    from sequoia.methods.models.base_model.rl.base_model_rl import UseObjectsWrapper
+    from sequoia.methods.models.base_model.rl.base_model_rl import UseObjectsWrapper, Observation
     env = UseObjectsWrapper(env)
     env = ConvertToFromTensors(env, device="cpu")
     
     from .experience_replay import ExperienceReplayLoader
     # from .replay_buffer import ReplayBuffer, EnvDataLoader
     
-    def policy(obs: int, action_space: _Space[int]) -> int:
-        assert False, obs
+    def policy(obs: Observation, action_space: _Space[int]) -> int:
+        assert isinstance(obs, Observation)
+        assert isinstance(obs.observation, Tensor) 
+        assert obs in env.observation_space
+        # assert False, (action_space, action_space.sample())
         return action_space.sample()
 
     max_episodes = 2

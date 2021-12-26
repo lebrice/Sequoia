@@ -37,11 +37,12 @@ def get_num_envs(env: _Env) -> Optional[int]:
     else:
         return None
 
+from gym.vector.utils import batch_space
 
 # TODO: There's a difference between a buffer with Episode as the item, and a buffer with Transition as the item!
 
 
-class ExperienceReplayLoader(DataLoader[Transition[Observation, Action, Reward]]):
+class OffPolicyTransitionsLoader(DataLoader[Transition[Observation, Action, Reward]]):
     def __init__(
         self,
         env: _Env[Observation, Action, Reward],
@@ -90,7 +91,7 @@ class ExperienceReplayLoader(DataLoader[Transition[Observation, Action, Reward]]
             max_steps=max_steps,
             max_episodes=max_episodes,
         )
-        # NOTE: Some thigns can't be changed here.
+        # NOTE: Some things can't be changed here.
         kwargs.update(num_workers=0, collate_fn=None)
         super().__init__(
             dataset=dataset, batch_size=batch_size, **kwargs
@@ -105,7 +106,6 @@ class ExperienceReplayLoader(DataLoader[Transition[Observation, Action, Reward]]
             self.seed(seed)
 
         # The space of the batches that this will yield.
-        from gym.vector.utils import batch_space
         self.item_space = batch_space(item_space, n=batch_size)
 
     def seed(self, seed: Optional[int]) -> List[int]:
