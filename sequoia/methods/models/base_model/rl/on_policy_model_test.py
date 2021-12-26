@@ -54,12 +54,14 @@ def test_cartpole_manual():
     # for just that single misaligned step?
     model.n_policy_updates = 0
     for i, episode in enumerate(itertools.islice(train_dl, max_episodes)):
-        loss = model.training_step(episode, batch_idx=i)
+        step_output = model.training_step(episode, batch_idx=i)
+        loss = step_output["loss"]
 
         is_update_step = episodes_per_update == 1 or (i > 0 and i % episodes_per_update == 0)
+        
         loss.backward(retain_graph=not is_update_step)
 
-        print(loss)
+        print(step_output)
 
         assert set(episode.model_versions) == {model.n_policy_updates}
 
@@ -100,7 +102,8 @@ def test_cartpole_manual():
 
 @pytest.mark.timeout(5)
 @pytest.mark.parametrize("train_seed", [123, 222])
-def test_cartpole_pl(train_seed: int):
+@pytest.mark.parametrize("recompute_forward_passes", [True, False])
+def test_cartpole_pl(train_seed: int, recompute_forward_passes: bool):
     env = gym.make("CartPole-v0")
     val_seed = 456
     # seed everything.
@@ -125,7 +128,9 @@ def test_cartpole_pl(train_seed: int):
         val_env=val_env,
         episodes_per_train_epoch=episodes_per_epoch,
         episodes_per_val_epoch=episodes_per_val_epoch,
+        recompute_forward_passes=recompute_forward_passes,
     )
+
     trainer = Trainer(
         max_epochs=1,
         accumulate_grad_batches=episodes_per_update,
@@ -133,17 +138,28 @@ def test_cartpole_pl(train_seed: int):
         logger=False,
     )
     trainer.fit(model)
+    n_updates = model.global_step
 
     assert model.n_training_steps == episodes_per_epoch
+    if recompute_forward_passes:
+        # We are recomputing the first episode after each update.
+        assert model.recomputed_forward_passes == n_updates
+        assert model.wasted_forward_passes == 0
+    else:
+        # We are 'wasting'' the first episode after each model update.
+        assert model.recomputed_forward_passes == 0
+        assert model.wasted_forward_passes == n_updates
+
     assert model.n_validation_steps == episodes_per_val_epoch
     assert model.global_step == episodes_per_epoch // episodes_per_update
-    
-    
-    assert False, dict(
-        n_training_steps=model.n_training_steps,
-        wasted_forward_passes=model.wasted_forward_passes,
-        recomputed_forward_passes=model.recomputed_forward_passes,
-        n_forward_passes=model.n_forward_passes,
-        global_step=model.global_step,
-        n_policy_updates=model.n_policy_updates,
-    )
+    assert model.n_policy_updates == n_updates
+
+    # NOTE: Now need to add metrics into the log dict.
+    # assert False, dict(
+    #     n_training_steps=model.n_training_steps,
+    #     wasted_forward_passes=model.wasted_forward_passes,
+    #     recomputed_forward_passes=model.recomputed_forward_passes,
+    #     n_forward_passes=model.n_forward_passes,
+    #     global_step=model.global_step,
+    #     n_policy_updates=model.n_policy_updates,
+    # )

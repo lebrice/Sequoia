@@ -14,7 +14,7 @@ from sequoia.common.batch import Batch
 from sequoia.common.config import Config
 from sequoia.common.episode_collector import (OnPolicyEpisodeDataset,
                                               OnPolicyEpisodeLoader)
-from sequoia.common.episode_collector.episode import Episode, Transition
+from sequoia.common.episode_collector.episode import Episode, Transition, StackedEpisode
 from sequoia.common.episode_collector.policy import EpsilonGreedyPolicy
 from sequoia.common.gym_wrappers.transform_wrappers import (
     TransformAction, TransformObservation)
@@ -132,6 +132,7 @@ class OnPolicyModel(LightningModule):
         episodes_per_val_epoch: int = 10,
         steps_per_train_epoch: int = None,
         steps_per_val_epoch: int = None,
+        recompute_forward_passes: bool = True,
     ):
         """NOTE: This assumes that the train/val envs have already been wrapped properly etc."""
         super().__init__()
@@ -156,6 +157,7 @@ class OnPolicyModel(LightningModule):
         self.steps_per_train_epoch = steps_per_train_epoch
         self.episodes_per_val_epoch = episodes_per_val_epoch
         self.steps_per_val_epoch = steps_per_val_epoch
+        self.recompute_forward_passes = recompute_forward_passes
 
         # Number of updates so far:
         self.n_policy_updates: int = 0
@@ -176,7 +178,7 @@ class OnPolicyModel(LightningModule):
 
     def training_step(
         self,
-        episode: Episode[_Observation_co, _Action, _Reward],
+        episode: StackedEpisode[_Observation_co, _Action, _Reward],
         batch_idx: int,
     ) -> Tensor:
         """Calculate a loss for a given episode.
@@ -184,6 +186,8 @@ class OnPolicyModel(LightningModule):
         NOTE: The actions in the episode are *currently* from the same model that is being trained.
         accumulate_grad_batches controls the update frequency.
         """
+        self.n_training_steps += 1
+        
         episode_model_versions = set(episode.model_versions)
         if episode_model_versions == {self.n_policy_updates}:
             logger.debug(f"Batch {batch_idx}: all good, data is 100% on-policy.")
@@ -194,7 +198,6 @@ class OnPolicyModel(LightningModule):
             if episode is None:
                 return None
 
-        self.n_training_steps += 1
         selected_action_logits = episode.actions.action_logits
 
         loss = vanilla_policy_gradient(
@@ -202,6 +205,11 @@ class OnPolicyModel(LightningModule):
             log_probs=selected_action_logits,
             gamma=self.hp.gamma,
         )
+        return {
+            "loss": loss,
+            "episode_length": len(episode),
+            "return": sum(episode.rewards.reward),
+        }
         return loss
 
     def validation_step(
@@ -235,8 +243,9 @@ class OnPolicyModel(LightningModule):
         ## Option 1 (Simplest): Drop that episode (return None loss)
         ## Pros: Simple
         ## Cons: Wasteful, can't be used when update frequency == 1, otherwise no training.
-        # self.wasted_forward_passes += 1
-        # return None
+        if not self.recompute_forward_passes:
+            self.wasted_forward_passes += 1
+            return None
 
         # Option 2: Recompute the forward pass for that episode:
         # assert False, (episode.model_versions, self.n_updates, episode.actions)
