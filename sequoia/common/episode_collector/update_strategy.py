@@ -6,20 +6,20 @@ from dataclasses import replace
 from typing import Protocol
 from sequoia.utils.generic_functions import detach, stack
 
-from .episode import Episode, Observation_co, Action, Reward
+from .episode import Episode, _Observation_co, _Action, _Reward
 from .policy import Policy
 
 
-class PolicyUpdateStrategy(Protocol[Observation_co, Action, Reward]):
+class PolicyUpdateStrategy(Protocol[_Observation_co, _Action, _Reward]):
     """Strategy for what to do with ongoing episodes when the policy is updated."""
 
     @abstractmethod
     def __call__(
         self,
-        unfinished_episodes: List[Episode[Observation_co, Action, Reward]],
-        old_policy: Policy[Observation_co, Action],
-        new_policy: Policy[Observation_co, Action],
-    ) -> List[Episode[Observation_co, Action, Reward]]:
+        unfinished_episodes: List[Episode[_Observation_co, _Action, _Reward]],
+        old_policy: Policy[_Observation_co, _Action],
+        new_policy: Policy[_Observation_co, _Action],
+    ) -> List[Episode[_Observation_co, _Action, _Reward]]:
         raise NotImplementedError
 
 

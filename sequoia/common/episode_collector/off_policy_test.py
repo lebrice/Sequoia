@@ -3,7 +3,8 @@ import gym
 
 from sequoia.common.episode_collector.episode import Episode, Transition
 from sequoia.common.gym_wrappers.convert_tensors import ConvertToFromTensors
-from .experience_replay import ExperienceReplayLoader
+# from .experience_replay import ExperienceReplayLoader
+from .off_policy import OffPolicyTransitionsDataset, OffPolicyTransitionsLoader
 from gym import spaces
 from sequoia.common.typed_gym import _Env, _Space, _Observation
 import numpy as np
@@ -79,18 +80,16 @@ def test_experience_replay_simple():
         # return action_space.sample()
     # TODO: First, add tests for the env dataset / dataloader / experience replay with envs that
     # have typed objects (e.g.) Observation/Action/Reward, tensors, etc.
-    
-    loader = ExperienceReplayLoader(
+    dataset = OffPolicyTransitionsDataset(
         env,
-        batch_size=batch_size,
         buffer_size=100,
         max_episodes=10,
         policy=policy,
         seed=seed,
     )
+    loader = OffPolicyTransitionsLoader(dataset=dataset, batch_size=10)
     for i, batch in enumerate(loader):
         print(batch.done)
-        
         if any(batch.done):
             assert False, batch
         assert isinstance(batch, Transition)
@@ -172,7 +171,7 @@ def test_with_typed_objects_and_tensors():
     # TODO: First, add tests for the env dataset / dataloader / experience replay with envs that
     # have typed objects (e.g.) Observation/Action/Reward, tensors, etc.
     env = gym.make("CartPole-v0")
-    from sequoia.methods.models.base_model.rl.base_model_rl import UseObjectsWrapper, Observation
+    from sequoia.methods.models.base_model.rl.on_policy_model import UseObjectsWrapper, Observation
     env = UseObjectsWrapper(env)
     env = ConvertToFromTensors(env, device="cpu")
     

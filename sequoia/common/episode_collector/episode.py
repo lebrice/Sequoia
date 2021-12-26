@@ -1,71 +1,42 @@
-from typing import (
-    Generic,
-    List,
-    Optional,
-    TypeVar,
-    MutableSequence,
-    Union,
-    Dict,
-    overload,
-)
 from dataclasses import dataclass, field
-from typing import Sequence
+from typing import Dict, Generic, List, MutableSequence, Optional, Sequence, Tuple, TypeVar, Union
 
+import numpy as np
+from gym import spaces
+from gym.vector import VectorEnv
+from sequoia.common.batch import Batch
+from sequoia.common.spaces.typed_dict import TypedDictSpace
+from sequoia.common.typed_gym import (
+    _Action,
+    _Env,
+    _Observation,
+    _Observation_co,
+    _Reward,
+    _Reward_co,
+    _Space,
+)
+from sequoia.utils.generic_functions import stack
 from torch.utils import data
 
-# from typed_gym import Env, Space, VectorEnv
+from .utils import get_num_envs, get_reward_space
 
-Observation = TypeVar("Observation")
-Observation_co = TypeVar("Observation_co", covariant=True)
-Action = TypeVar("Action")
-Reward = TypeVar("Reward")
-Reward_co = TypeVar("Reward_co", covariant=True)
 T_co = TypeVar("T_co", covariant=True)
 T = TypeVar("T")
 
-from sequoia.utils.generic_functions import stack
-from sequoia.common.batch import Batch
-
-from sequoia.common.spaces.typed_dict import TypedDictSpace
-from sequoia.common.typed_gym import _Env, _Space
-
-from gym import spaces
-from gym.vector import VectorEnv
-import numpy as np
-from typing import Tuple
-
-
-def get_reward_space(env: _Env[Observation, Action, Reward]) -> _Space[Reward]:
-    if hasattr(env, "reward_space") and env.reward_space is not None:
-        return env.reward_space
-    reward_range: Tuple[float, float] = getattr(env, "reward_range", (-np.inf, np.inf))
-    num_envs = env.num_envs if isinstance(env.unwrapped, VectorEnv) else None
-    return spaces.Box(
-        reward_range[0],
-        reward_range[1],
-        dtype=float,
-        shape=(num_envs) if num_envs is not None else (),
-    )
-
-
-def get_num_envs(env: _Env) -> Optional[int]:
-    if isinstance(env.unwrapped, VectorEnv):
-        return env.num_envs
-    else:
-        return None
-
 
 @dataclass(frozen=True)
-class Transition(Batch, Generic[Observation_co, Action, Reward]):
-    observation: Observation_co
-    action: Action
-    reward: Reward
-    next_observation: Observation_co
+class Transition(Batch, Generic[_Observation_co, _Action, _Reward]):
+    observation: _Observation_co
+    action: _Action
+    reward: _Reward
+    next_observation: _Observation_co
     info: Optional[Dict] = None
     done: bool = False
 
     @classmethod
-    def space_for_env(cls, env: _Env[Observation_co, Action, Reward]) -> _Space["Transition[Observation_co, Action, Reward]"]:
+    def space_for_env(
+        cls, env: _Env[_Observation_co, _Action, _Reward]
+    ) -> _Space["Transition[_Observation_co, _Action, _Reward]"]:
         # num_envs = get_num_envs(env)
         reward_space = get_reward_space(env)
         return TypedDictSpace(
@@ -81,20 +52,20 @@ class Transition(Batch, Generic[Observation_co, Action, Reward]):
         )
 
 
-# NOTE: Making `Episode` a Sequence[Transition[Observation,Action,Reward]] causes a bug in PL atm:
-# forward receives a Transition, rather than an Observation.
+# NOTE: Making `Episode` a Sequence[Transition[_Observation,_Action,_Reward]] causes a bug in PL atm:
+# forward receives a Transition, rather than an _Observation.
 
 
 @dataclass(frozen=True)
 class Episode(
-    Sequence[Transition[Observation, Action, Reward]],
-    Generic[Observation, Action, Reward],
+    Sequence[Transition[_Observation, _Action, _Reward]],
+    Generic[_Observation, _Action, _Reward],
 ):
-    observations: MutableSequence[Observation] = field(default_factory=list)
-    actions: MutableSequence[Action] = field(default_factory=list)
-    rewards: MutableSequence[Reward] = field(default_factory=list)
+    observations: MutableSequence[_Observation] = field(default_factory=list)
+    actions: MutableSequence[_Action] = field(default_factory=list)
+    rewards: MutableSequence[_Reward] = field(default_factory=list)
     infos: MutableSequence[dict] = field(default_factory=list)
-    last_observation: Optional[Observation] = None
+    last_observation: Optional[_Observation] = None
 
     model_versions: List[int] = field(default_factory=list)
 
@@ -104,7 +75,7 @@ class Episode(
         return n_obs if self.last_observation is not None else n_obs - 1
         # return n_obs
 
-    def stack(self) -> "Episode[Observation, Action, Reward]":
+    def stack(self) -> "Episode[_Observation, _Action, _Reward]":
         return Episode(
             observations=stack(self.observations),
             actions=stack(self.actions),
@@ -117,8 +88,8 @@ class Episode(
     def __getitem__(
         self, index: Union[int, slice]
     ) -> Union[
-        Transition[Observation, Action, Reward],
-        Sequence[Transition[Observation, Action, Reward]],
+        Transition[_Observation, _Action, _Reward],
+        Sequence[Transition[_Observation, _Action, _Reward]],
     ]:
         if not isinstance(index, int):
             raise NotImplementedError(index)
@@ -145,8 +116,9 @@ class Episode(
         )
 
 
-from sequoia.utils.generic_functions import set_slice, get_slice
 from dataclasses import fields
+
+from sequoia.utils.generic_functions import get_slice, set_slice
 
 
 @set_slice.register(Transition)
@@ -170,12 +142,12 @@ def _get_transition_slice(target: Transition, indices: Sequence[int]) -> Transit
 
 
 @dataclass(frozen=True)
-class StackedEpisode(Generic[Observation, Action, Reward]):
-    observations: Observation
-    actions: Action
-    rewards: Reward
+class StackedEpisode(Generic[_Observation, _Action, _Reward]):
+    observations: _Observation
+    actions: _Action
+    rewards: _Reward
     infos: Sequence[dict]
-    last_observation: Observation
+    last_observation: _Observation
     model_versions: Sequence[int]
 
     def __len__(self) -> int:

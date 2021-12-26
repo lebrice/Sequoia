@@ -45,7 +45,7 @@ class EpsilonGreedyPolicy(nn.Module, Policy[Observation, Action]):
 
     def seed(self, seed: Optional[int]) -> None:
         self.rng = np.random.RandomState(seed)
-    
+
     def __call__(self, observation: Observation, action_space: Space[Action]) -> Action:
         # Select a random action with probability epsilon.
         if self.rng.rand() < self.epsilon:

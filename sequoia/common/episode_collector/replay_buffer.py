@@ -18,9 +18,7 @@ from typing import (
     overload,
 )
 
-from .episode import Episode, Observation, Action, Reward, T_co, T, Transition
-from .episode_collector import EpisodeCollector
-from .env_dataloader import OnPolicyEpisodeLoader
+from .episode import Episode, T, Transition
 
 T = TypeVar("T")
 

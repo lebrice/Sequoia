@@ -5,7 +5,7 @@ from gym import spaces
 import gym
 from sequoia.common.gym_wrappers.convert_tensors import ConvertToFromTensors
 from sequoia.common.typed_gym import _Space
-from .experience_replay_test import SimpleEnv
+from .off_policy_test import SimpleEnv
 
 
 
@@ -13,7 +13,7 @@ def test_with_typed_objects_and_tensors():
     # TODO: First, add tests for the env dataset / dataloader / experience replay with envs that
     # have typed objects (e.g.) Observation/Action/Reward, tensors, etc.
     env = SimpleEnv()
-    from sequoia.methods.models.base_model.rl.base_model_rl import UseObjectsWrapper
+    from sequoia.methods.models.base_model.rl.on_policy_model import UseObjectsWrapper
     env = UseObjectsWrapper(env)
     env = ConvertToFromTensors(env, device="cpu")
     

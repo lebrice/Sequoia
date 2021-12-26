@@ -29,11 +29,11 @@ from sequoia.utils.generic_functions import detach, stack, get_slice
 
 from .episode import (
     Episode,
-    Observation,
-    Observation_co,
-    Action,
-    Reward,
-    Reward_co,
+    _Observation,
+    _Observation_co,
+    _Action,
+    _Reward,
+    _Reward_co,
     T,
     T_co,
 )
@@ -51,18 +51,18 @@ from sequoia.settings.base.environment import Environment
 
 class EpisodeCollector(
     Generator[
-        Episode[Observation, Action, Reward],
-        Optional[Policy[Observation, Action]],
+        Episode[_Observation, _Action, _Reward],
+        Optional[Policy[_Observation, _Action]],
         None,
     ]
 ):
     def __init__(
         self,
         env: Union[
-            Environment[Observation, Action, Reward],
-            "VectorEnv[Observation, Action, Reward]",
+            Environment[_Observation, _Action, _Reward],
+            "VectorEnv[_Observation, _Action, _Reward]",
         ],
-        policy: Policy[Observation, Action],
+        policy: Policy[_Observation, _Action],
         max_steps: Optional[int] = None,
         max_episodes: Optional[int] = None,
         what_to_do_after_update: PolicyUpdateStrategy = do_nothing_strategy,
@@ -78,11 +78,11 @@ class EpisodeCollector(
         # List of *current*, *ongoing* episodes, has length `env.num_envs` for vectorenvs, or 1 for
         # envs.
         # NOT a buffer of episodes.
-        self.ongoing_episodes: List[Episode[Observation, Action, Reward]] = []
+        self.ongoing_episodes: List[Episode[_Observation, _Action, _Reward]] = []
         self._generator: Optional[
             Generator[
-                Episode[Observation, Action, Reward],
-                Optional[Policy[Observation, Action]],
+                Episode[_Observation, _Action, _Reward],
+                Optional[Policy[_Observation, _Action]],
                 None,
             ]
         ] = None
@@ -106,7 +106,7 @@ class EpisodeCollector(
     def __next__(self):
         return next(self.generator)
 
-    def send(self, new_policy: Optional[Policy[Observation, Action]]) -> None:  # type: ignore
+    def send(self, new_policy: Optional[Policy[_Observation, _Action]]) -> None:  # type: ignore
         if new_policy is not None:
             self.on_policy_update(new_policy=new_policy)
         self.model_version += 1
@@ -116,6 +116,9 @@ class EpisodeCollector(
         return self.generator.throw(something)
         # raise something
 
+    def close(self) -> None:
+        self.generator.close()
+
     def _iter_env(self):
         """Yields full episodes from an environment."""
         for n_episodes in itertools.count():
@@ -123,7 +126,7 @@ class EpisodeCollector(
             done = False
             # note, can't have a non-frozen dataclass if we want to set `last_observation` at
             # the end.
-            episode: Episode[Observation, Action, Reward] = Episode(
+            episode: Episode[_Observation, _Action, _Reward] = Episode(
                 observations=[],
                 actions=[],
                 rewards=[],
@@ -154,7 +157,7 @@ class EpisodeCollector(
                     # episode.last_observation = obs
 
                     # Yield the episode, and if we get a new policy to use, then update it.
-                    new_policy: Optional[Policy[Observation, Action]]
+                    new_policy: Optional[Policy[_Observation, _Action]]
                     new_policy = yield episode.stack()
                     if new_policy:
                         # TODO: That doesn't really make sense in this case.. the episode will
@@ -180,8 +183,8 @@ class EpisodeCollector(
     def _iter_vectorenv(
         self,
     ) -> Generator[
-        Episode[Observation, Action, Reward],
-        Optional[Policy[Observation, Action]],
+        Episode[_Observation, _Action, _Reward],
+        Optional[Policy[_Observation, _Action]],
         None,
     ]:
         """Generator that yields complete episodes from a vectorized environment.
@@ -194,12 +197,12 @@ class EpisodeCollector(
         self.ongoing_episodes = [Episode() for _ in range(num_envs)]
         # IDEA: Create an iterator that uses the given policy and yields 'flattened' episodes.
         # NOTE: This is a lot easier to use with off-policy RL methods, for sure.
-        observations: Observation = self.env.reset()
+        observations: _Observation = self.env.reset()
         dones: np.ndarray = np.zeros(num_envs, dtype=bool)
 
         for n_total_steps in itertools.count(step=num_envs):
             # Get an action for each environment from the policy.
-            actions: Action = self.policy(
+            actions: _Action = self.policy(
                 observations, action_space=self.env.action_space
             )
             observations, rewards, dones, infos = self.env.step(actions)
@@ -222,7 +225,7 @@ class EpisodeCollector(
                     # A new policy to use can be passed to this generator via `send`.
                     # What to do with ongoing episodes is determined based on the value of
                     # `what_to_do_after_update`.
-                    new_policy: Optional[Policy[Observation, Action]]
+                    new_policy: Optional[Policy[_Observation, _Action]]
                     # NOTE: Not sure if we should stack or not.
                     new_policy = yield self.ongoing_episodes[i].stack()
                     self.num_episodes += 1
@@ -252,7 +255,7 @@ class EpisodeCollector(
                     print(f"Reached max total steps ({self.max_steps}), stopping.")
                     return
 
-    def on_policy_update(self, new_policy: Policy[Observation, Action]):
+    def on_policy_update(self, new_policy: Policy[_Observation, _Action]):
         # print(
         #     f"Using a new policy starting from episode {num_episodes} ({total_steps=})"
         # )
