@@ -1,9 +1,9 @@
 """ TODO: Maybe create a typed version of 'add_tensor_support' of gym_wrappers.convert_tensors
 """
-from abc import ABC
+from abc import ABC, abstractmethod
 from contextlib import contextmanager
 from inspect import isclass
-from typing import Any, Optional, Sequence, Union
+from typing import Any, Optional, Sequence, TypeVar, Union
 
 import gym
 from gym.spaces.utils import flatten_space
@@ -30,6 +30,7 @@ numpy_to_torch_dtypes = {
 }
 # Dict of torch dtype -> NumPy dtype
 torch_to_numpy_dtypes = {value: key for (key, value) in numpy_to_torch_dtypes.items()}
+T = TypeVar("T")
 
 
 def get_numpy_dtype_equivalent_to(torch_dtype: torch.dtype) -> np.dtype:
@@ -81,6 +82,7 @@ class TensorSpace(gym.Space, ABC):
 
     def __init__(self, *args, device: torch.device = None, **kwargs):
         # super().__init__(*args, **kwargs)
+
         self.device: Optional[torch.device] = torch.device(device) if device else None
         # Depending on the value passed to `dtype`
         dtype = kwargs.get("dtype")
@@ -106,6 +108,7 @@ class TensorSpace(gym.Space, ABC):
             raise NotImplementedError(f"Unsupported dtype {dtype} (of type {type(dtype)})")
         if "dtype" in kwargs:
             kwargs["dtype"] = self._numpy_dtype
+
         super().__init__(*args, **kwargs)
         self.dtype: torch.dtype = self._torch_dtype
 
@@ -115,6 +118,17 @@ class TensorSpace(gym.Space, ABC):
         self.dtype = self._numpy_dtype
         yield
         self.dtype = self._torch_dtype
+
+    # TODO: Add these in.
+    # @abstractmethod
+    # def to(self: T, device: Union[str, torch.device]) -> T:
+    #     """ Returns a new space, where the samples will be on device `device`. """
+
+    # @abstractmethod
+    # def to_(self, device: Union[str, torch.device]) -> None:
+    #     """ Modifies this space in-place, so the the samples will be on device `device`. """
+
+
 
 
 from gym.vector.utils import create_shared_memory
@@ -163,6 +177,15 @@ class TensorBox(TensorSpace, spaces.Box):
         self.low_tensor = torch.as_tensor(self.low, device=self.device)
         self.high_tensor = torch.as_tensor(self.high, device=self.device)
         self.dtype = self._torch_dtype
+        self.device = self.low_tensor.device
+
+    def to(self, device: Union[str, torch.device]):
+        return type(self)(low=self.low, high=self.high, shape=self.shape, dtype=self.dtype, device=device)
+
+    def to_(self, device: Union[str, torch.device]) -> None:
+        self.low_tensor = self.low_tensor.to(device=device)
+        self.high_tensor = self.high_tensor.to(device=device)
+        self.device = device
 
     def sample(self):
         self.dtype = self._numpy_dtype
@@ -213,6 +236,9 @@ def _(space: TensorBox):
 
 
 class TensorDiscrete(TensorSpace, spaces.Discrete):
+    def __init__(self, n: int, seed: int=None, start: int=0, device: torch.device=None):
+        super().__init__(n=n, seed=seed, start=start, device=device)
+
     def contains(self, v: Union[int, Tensor]) -> bool:
         if isinstance(v, Tensor):
             v = v.detach().cpu().numpy()
@@ -224,8 +250,13 @@ class TensorDiscrete(TensorSpace, spaces.Discrete):
         self.dtype = self._torch_dtype
         return torch.as_tensor(s, dtype=self.dtype, device=self.device)
 
-    def __repr__(self):
-        return f"{type(self).__name__}({self.n})"
+    def __repr__(self) -> str:
+        result_str = f"{type(self).__name__}({self.n}"
+        if self.start != 0:
+            result_str += f", start={self.start}"
+        if self.device.type != "cpu":
+            result_str += f", device={self.device}"
+        return result_str + ")"
 
 
 class TensorMultiDiscrete(TensorSpace, spaces.MultiDiscrete):
@@ -254,8 +285,10 @@ class TensorMultiDiscrete(TensorSpace, spaces.MultiDiscrete):
         return torch.as_tensor(s, dtype=self.dtype, device=self.device)
 
     def __repr__(self) -> str:
-        return f"type(self).__name__({self.nvec})"
-
+        result_str = f"{type(self).__name__}({self.nvec}"
+        if self.device.type != "cpu":
+            result_str += f", device={self.device}"
+        return result_str + ")"
 
 @batch_space.register(TensorDiscrete)
 def _batch_discrete_space(space: TensorDiscrete, n: int = 1) -> TensorMultiDiscrete:

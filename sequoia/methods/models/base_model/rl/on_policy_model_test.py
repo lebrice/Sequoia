@@ -1,3 +1,6 @@
+import logging
+
+from pytorch_lightning.utilities import seed
 from .on_policy_model import OnPolicyModel
 import gym
 import torch
@@ -57,8 +60,10 @@ def test_cartpole_manual():
         step_output = model.training_step(episode, batch_idx=i)
         loss = step_output["loss"]
 
-        is_update_step = episodes_per_update == 1 or (i > 0 and i % episodes_per_update == 0)
-        
+        is_update_step = episodes_per_update == 1 or (
+            i > 0 and i % episodes_per_update == 0
+        )
+
         loss.backward(retain_graph=not is_update_step)
 
         print(step_output)
@@ -105,55 +110,81 @@ def test_cartpole_manual():
 @pytest.mark.parametrize("recompute_forward_passes", [True, False])
 def test_cartpole_pl(train_seed: int, recompute_forward_passes: bool):
     env = gym.make("CartPole-v0")
-    val_seed = 456
-    # seed everything.
-    env.seed(train_seed)
-    env.action_space.seed(train_seed)
-    env.observation_space.seed(train_seed)
-    torch.manual_seed(train_seed)
-    if torch.cuda.is_available():
-        torch.cuda.manual_seed_all(train_seed)
-
     val_env = gym.make("CartPole-v0")
-    val_env.seed(val_seed)
-    val_env.action_space.seed(val_seed)
-    val_env.observation_space.seed(val_seed)
+    test_env = gym.make("CartPole-v0")
 
+    val_seed = train_seed * 2
+    test_seed = train_seed * 3
+
+    # seed everything.
+    from pytorch_lightning.utilities.seed import seed_everything
+
+    seed_everything(train_seed)
+
+    def seed_env(env: gym.Env, seed: int) -> None:
+        env.seed(seed)
+        env.action_space.seed(seed)
+        env.observation_space.seed(seed)
+
+    seed_env(env, train_seed)
+    seed_env(val_env, val_seed)
+    seed_env(test_env, test_seed)
+
+    max_epochs = 1
     episodes_per_update = 3
-    episodes_per_epoch = 100
+    episodes_per_epoch = 10
     episodes_per_val_epoch = 10
-
+    # from .on_policy_model import logger
+    # logger.setLevel(logging.DEBUG)
     model = OnPolicyModel(
         train_env=env,
         val_env=val_env,
+        test_env=test_env,
         episodes_per_train_epoch=episodes_per_epoch,
         episodes_per_val_epoch=episodes_per_val_epoch,
         recompute_forward_passes=recompute_forward_passes,
+        hparams=OnPolicyModel.HParams(episodes_per_update=episodes_per_update),
     )
 
     trainer = Trainer(
-        max_epochs=1,
-        accumulate_grad_batches=episodes_per_update,
+        max_epochs=max_epochs,
+        accumulate_grad_batches=model.hp.episodes_per_update,
         checkpoint_callback=False,
         logger=False,
+        # gpus=torch.cuda.device_count(),
     )
     trainer.fit(model)
-    n_updates = model.global_step
 
-    assert model.n_training_steps == episodes_per_epoch
+    n_updates = model.global_step
     if recompute_forward_passes:
         # We are recomputing the first episode after each update.
-        assert model.recomputed_forward_passes == n_updates
-        assert model.wasted_forward_passes == 0
+        assert model.n_recomputed_forward_passes == n_updates
+        assert model.n_wasted_forward_passes == 0
     else:
         # We are 'wasting'' the first episode after each model update.
-        assert model.recomputed_forward_passes == 0
-        assert model.wasted_forward_passes == n_updates
+        assert model.n_recomputed_forward_passes == 0
+        assert model.n_wasted_forward_passes == n_updates
 
-    assert model.n_validation_steps == episodes_per_val_epoch
+    # NOTE: Why 2 in sanity check?
+    from pytorch_lightning.trainer.states import RunningStage
+
+    assert model.steps_per_trainer_stage == {
+        RunningStage.SANITY_CHECKING: 2,
+        RunningStage.TRAINING: model.episodes_per_train_epoch * max_epochs
+        - model.n_wasted_forward_passes,
+        RunningStage.VALIDATING: model.episodes_per_val_epoch * max_epochs,
+    }
     assert model.global_step == episodes_per_epoch // episodes_per_update
     assert model.n_policy_updates == n_updates
 
+    test_results = trainer.test(model)
+    print(test_results)
+
+    # NOTE: The number of test steps == number of val steps per epoch atm.
+    episodes_per_test_epoch = model.episodes_per_val_epoch
+    assert (
+        model.steps_per_trainer_stage[RunningStage.TESTING] == episodes_per_test_epoch
+    )
     # NOTE: Now need to add metrics into the log dict.
     # assert False, dict(
     #     n_training_steps=model.n_training_steps,

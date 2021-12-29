@@ -1,45 +1,28 @@
-from collections import deque
-from gym.vector.utils import shared_memory
-from gym.vector.utils.shared_memory import create_shared_memory
 import numpy as np
-from torch.utils.data import DataLoader
 from typing import (
     Any,
-    Dict,
-    Generator,
     Iterable,
-    Iterator,
-    MutableSequence,
     Optional,
     Sequence,
     TypeVar,
-    List,
     Union,
     overload,
 )
 
-from .episode import Episode, T, Transition
+from .episode import T
+from sequoia.common.typed_gym import _Space
+from sequoia.utils.generic_functions import get_slice, set_slice
 
 T = TypeVar("T")
-
-from sequoia.methods.experience_replay import Buffer
-
-from collections.abc import Iterable as _Iterable
-from sequoia.common.typed_gym import _Space
-from sequoia.utils.generic_functions import get_slice, set_slice, stack, concatenate
 
 # NOTE: Usign this, but it would probably be easier to use arrays instead, no need for this to be
 # shared memory at all.
 # TODO: Register variants of these functions for writing/reading tensors rather than numpy arrays.
 from gym.vector.utils import (
     create_empty_array,
-    write_to_shared_memory,
-    read_from_shared_memory,
 )
 from torch.utils.data import IterableDataset
 
-from gym.vector.utils.spaces import batch_space
-import random
 
 Item = TypeVar("Item", covariant=True)
 

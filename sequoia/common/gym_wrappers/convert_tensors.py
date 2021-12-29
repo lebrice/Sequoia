@@ -6,6 +6,7 @@ import numpy as np
 import torch
 from gym import Space, spaces
 from torch import Tensor
+from sequoia.common.episode_collector.utils import get_reward_space
 
 from sequoia.common.spaces.image import Image, ImageTensorSpace
 from sequoia.common.spaces.named_tuple import NamedTupleSpace
@@ -49,18 +50,34 @@ class ConvertToFromTensors(IterableWrapper):
         self.action_space: Space = add_tensor_support(
             self.env.action_space, device=device
         )
-        self.reward_space: Space
-        if hasattr(self.env, "reward_space"):
-            self.reward_space = self.env.reward_space
-        else:
-            reward_range = getattr(self.env, "reward_range", (-np.inf, np.inf))
-            reward_shape: Tuple[int, ...] = ()
-            if self.is_vectorized:
-                reward_shape = (self.env.num_envs,)
-            self.reward_space = spaces.Box(
-                reward_range[0], reward_range[1], reward_shape, np.float32
-            )
+        self.reward_space: Space = get_reward_space(self.env)
+        # if hasattr(self.env, "reward_space"):
+        #     self.reward_space = self.env.reward_space
+        # else:
+        #     reward_range = getattr(self.env, "reward_range", (-np.inf, np.inf))
+        #     reward_shape: Tuple[int, ...] = ()
+        #     if self.is_vectorized:
+        #         reward_shape = (self.env.num_envs,)
+        #     self.reward_space = spaces.Box(
+        #         reward_range[0], reward_range[1], reward_shape, np.float32
+        #     )
         self.reward_space = add_tensor_support(self.reward_space, device=device)
+
+    # def to(self, device: Union[torch.device, str]):
+    #     """ Update the device of the tensors produced by this env."""
+    #     # NOTE: This might be dangerous, if it's called on a wrapped env, since it will return the
+    #     # wrapped env, instead of the wrapper!
+    #     return type(self)(env=self.env, device=device)
+
+    def to_(self, device: Union[torch.device, str]) -> None:
+        """ TODO: Update the device of the tensors produced by this env."""
+        self.device = device
+        observation_space = move_(self.observation_space, device)
+        action_space = move_(self.action_space, device)
+        reward_space = move_(self.reward_space, device)
+        assert observation_space is None
+        assert action_space is None # bug: This is returning something, which is weird!
+        assert reward_space is None
 
     def reset(self, *args, **kwargs):
         obs = self.env.reset(*args, **kwargs)
@@ -131,6 +148,8 @@ def add_tensor_support(space: S, device: torch.device = None) -> S:
 
     Returns the modified Space.
     """
+    # TODO: Raise an error instead.
+    raise NotImplementedError(f"Don't know how to add tensor support to space {space} yet.")
     # Save the original methods so we can use them.
     sample = space.sample
     contains = space.contains

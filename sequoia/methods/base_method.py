@@ -307,7 +307,7 @@ class BaseMethod(Method, Serializable, Parseable, target_setting=Setting):
             valid_dataloader = valid_env
         else:
             # RL:
-            from sequoia.common.episode_collector.env_dataloader import OnPolicyEpisodeLoader, OnPolicyEpisodeDataset
+            from sequoia.common.episode_collector.on_policy import OnPolicyEpisodeLoader, OnPolicyEpisodeDataset
             # TODO: Remove the GymDataLoader wrapper.
             # TODO: Rework the `forward` of BaseModel: Shouldn't really output anything except the actions, no?
             policy = lambda obs, action_space: self.model(obs).actions

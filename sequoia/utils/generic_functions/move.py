@@ -1,7 +1,7 @@
 """Defines a singledispatch function to move objects to a given device.
 """
 from functools import singledispatch
-from typing import Dict, Sequence, TypeVar, Union
+from typing import Any, Dict, Sequence, TypeVar, Union
 from sequoia.utils.generic_functions._namedtuple import is_namedtuple
 import torch
 
@@ -34,3 +34,34 @@ def move_sequence(x: Sequence[T], device: Union[str, torch.device]) -> Sequence[
     if is_namedtuple(x):
         return type(x)(*[move(v, device) for v in x])
     return type(x)(move(v, device) for v in x)
+
+
+
+@singledispatch
+def move_(x: Any, device: Union[str, torch.device]) -> None:
+    """Moves x *in-place* to the specified device if possible. else x is unchanged.
+
+    Returns None.
+    """
+    if hasattr(x, "to_") and callable(x.to_) and device:
+        x.to_(device=device)
+
+
+from gym import spaces
+from collections.abc import Mapping as MappingABC
+
+
+@move_.register(dict)
+@move_.register(spaces.Dict)
+@move_.register(MappingABC)
+def _move_dict_inplace(x: Dict[K, V], device: Union[str, torch.device]) -> None:
+    for k, v in x.items():
+        move_(v, device)
+
+
+@move_.register(list)
+@move_.register(tuple)
+@move_.register(set)
+def _move_sequence_inplace(x: Sequence[T], device: Union[str, torch.device]) -> None:
+    for v in x:
+        move_(v, device)

@@ -26,7 +26,7 @@ from enum import Enum, auto
 # from typed_gym import Env, Space, VectorEnv
 from functools import singledispatch
 from sequoia.utils.generic_functions import detach, stack, get_slice
-
+from logging import getLogger as get_logger
 from .episode import (
     Episode,
     _Observation,
@@ -47,6 +47,7 @@ from .update_strategy import (
 
 from gym.vector import VectorEnv
 from sequoia.settings.base.environment import Environment
+logger = get_logger(__name__)
 
 
 class EpisodeCollector(
@@ -66,6 +67,7 @@ class EpisodeCollector(
         max_steps: Optional[int] = None,
         max_episodes: Optional[int] = None,
         what_to_do_after_update: PolicyUpdateStrategy = do_nothing_strategy,
+        starting_model_version: int = 0,
     ) -> None:
         self.env = env
         self.policy = policy
@@ -87,7 +89,7 @@ class EpisodeCollector(
             ]
         ] = None
 
-        self.model_version: int = 0
+        self.model_version: int = starting_model_version
 
     @property
     def generator(self):
@@ -150,6 +152,8 @@ class EpisodeCollector(
                 episode.rewards.append(reward)
                 episode.infos.append(info)
                 episode.model_versions.append(self.model_version)
+                # IDEA: How about we use the ID of the policy?
+                # episode.model_versions.append(id(self.policy))
 
                 if done:
                     # TODO: FrozenInstanceError if the Episode class is frozen!
@@ -173,11 +177,11 @@ class EpisodeCollector(
                     break  # Go to the next episode.
 
                 if self.max_steps and self.total_steps >= self.max_steps:
-                    print(f"Reached maximum number of steps. Breaking.")
+                    logger.debug(f"Reached maximum number of steps. Breaking.")
                     break  # stop the current episode
 
             if self.max_episodes and n_episodes == self.max_episodes - 1:
-                print(f"Reached max number of episodes.")
+                logger.debug(f"Reached max number of episodes.")
                 break
 
     def _iter_vectorenv(

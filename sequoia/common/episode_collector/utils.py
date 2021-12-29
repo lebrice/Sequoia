@@ -15,7 +15,7 @@ def get_reward_space(env: _Env[_Observation, _Action, _Reward]) -> _Space[_Rewar
         reward_range[0],
         reward_range[1],
         dtype=float,
-        shape=(num_envs) if num_envs is not None else (),
+        shape=(num_envs,) if num_envs is not None else (),
     )
 
 

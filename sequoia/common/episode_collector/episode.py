@@ -76,7 +76,7 @@ class Episode(
         # return n_obs
 
     def stack(self) -> "Episode[_Observation, _Action, _Reward]":
-        return Episode(
+        return StackedEpisode(
             observations=stack(self.observations),
             actions=stack(self.actions),
             rewards=stack(self.rewards),
