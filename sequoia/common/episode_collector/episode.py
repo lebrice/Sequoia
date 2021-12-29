@@ -142,7 +142,7 @@ def _get_transition_slice(target: Transition, indices: Sequence[int]) -> Transit
 
 
 @dataclass(frozen=True)
-class StackedEpisode(Generic[_Observation, _Action, _Reward]):
+class StackedEpisode(Batch, Generic[_Observation, _Action, _Reward]):
     observations: _Observation
     actions: _Action
     rewards: _Reward
@@ -154,3 +154,31 @@ class StackedEpisode(Generic[_Observation, _Action, _Reward]):
         """Length of the episode, as-in number of transitions."""
         n_obs = len(self.observations)
         return n_obs if self.last_observation is not None else n_obs - 1
+
+    def __getitem__(
+        self, index: Union[int, slice]
+    ) -> Union[
+        Transition[_Observation, _Action, _Reward],
+        Sequence[Transition[_Observation, _Action, _Reward]],
+    ]:
+        if not isinstance(index, int):
+            return super().__getitem__(index)
+
+        obs = get_slice(self.observations, index)
+        action = get_slice(self.actions, index)
+        next_obs = (
+            self.last_observation
+            if self.last_observation is not None and index == len(self.observations) - 1
+            else self.observations[index + 1]
+        )
+        reward = self.rewards[index]
+        info = self.infos[index] if self.infos else {}
+        done = index == (len(self.observations) - 1)
+        return Transition(
+            observation=obs,
+            action=action,
+            next_observation=next_obs,
+            reward=reward,
+            info=info,
+            done=done,
+        )

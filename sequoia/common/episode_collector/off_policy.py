@@ -20,6 +20,7 @@ T = TypeVar("T")
 def make_env_loader(
     env: _Env[_Observation_co, _Action, _Reward],
     policy: Policy[_Observation_co, _Action],
+    batch_size: int,
     buffer_size: int = 10_000,
     max_episodes: int = None,
     max_steps: int = None,
@@ -33,7 +34,7 @@ def make_env_loader(
         buffer_size=buffer_size,
         seed=seed,
     )
-    loader = OffPolicyTransitionsLoader(dataset=dataset)
+    loader = OffPolicyTransitionsLoader(dataset=dataset, batch_size=batch_size)
     return loader
 
 

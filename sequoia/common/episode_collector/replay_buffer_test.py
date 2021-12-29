@@ -1,34 +1,56 @@
 # TODO: Need tests for putting fancier objects in the ReplayBuffer.
-from sequoia.common.episode_collector.episode import Transition
+import pytest
 from .replay_buffer import ReplayBuffer
-from gym import spaces
-import gym
-from sequoia.common.gym_wrappers.convert_tensors import ConvertToFromTensors
 from sequoia.common.typed_gym import _Space
-from .off_policy_test import SimpleEnv
+from typing import TypeVar
+
+T = TypeVar("T")
 
 
+@pytest.mark.xfail(reason="WIP")
+def test_sampling_is_correct():
+    """
+    TODO: test that sampling from the buffer does indeed give a uniform representation of all the
+    data seen so far (even when adding multiple batches).
+    
+    BUG: There is probably a bug in the replay buffer implementation, where the 'counter' used in
+    the probability of adding a value is only local to a single count to `append`. Should instead
+    be somekind of `n_seen_so_far` like in the Replay Buffer of @pclucas.
+    """
 
-def test_with_typed_objects_and_tensors():
+from gym import spaces
+
+
+@pytest.mark.xfail(reason="WIP")
+@pytest.mark.parametrize("item_space", [
+    spaces.Discrete(10),
+    spaces.Box(0, 1, (3, 3)),
+    spaces.Tuple([spaces.Discrete(10), spaces.Box(0, 1, (3, 3))]),
+    spaces.Dict(a=spaces.Discrete(10), b=spaces.Box(0, 1, (3, 3))),
+])
+def test_replay_buffer(item_space: _Space[T]):
     # TODO: First, add tests for the env dataset / dataloader / experience replay with envs that
     # have typed objects (e.g.) Observation/Action/Reward, tensors, etc.
-    env = SimpleEnv()
-    from sequoia.methods.models.base_model.rl.base_model_rl import UseObjectsWrapper
-    env = UseObjectsWrapper(env)
-    env = ConvertToFromTensors(env, device="cpu")
-    
-    from .replay_buffer import ReplayBuffer
-    from .episode_collector import EpisodeCollector
-    
-    
-    def policy(obs: int, action_space: _Space[int]) -> int:
-        return action_space.sample()
+    capacity = 10
 
-    max_episodes = 2
-    loader = ReplayBuffer(item_Space=Transition.space_for_env(env), batch_size=3, policy=policy, max_episodes=max_episodes)
-    i = 0
-    for i, transitions in enumerate(loader):
-        assert False, transitions
-        # assert False, episode[len(episode)-1]
+    buffer = ReplayBuffer[T](item_space=item_space, capacity=capacity, seed=123)
+    assert len(buffer) == 0
 
-    assert i == max_episodes - 1
+    item = item_space.sample()
+    buffer.append(item)
+    assert len(buffer) == 1
+    assert buffer[0] is item
+    assert item in buffer
+
+    assert buffer.sample(1) is item
+    
+    other_items = [item_space.sample() for _ in range(1, capacity)]
+    buffer.add_reservoir(other_items)
+    assert len(buffer) == capacity
+    assert buffer.full
+
+    for i, item in zip(range(1, capacity), other_items):
+        assert buffer[i] == item
+        assert item in buffer
+    
+    raise NotImplementedError(f"Test that the ReplayBuffer works even with spaces that are a bit more complex.")
