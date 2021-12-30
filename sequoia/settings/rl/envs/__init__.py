@@ -24,9 +24,7 @@ register_classic_control_variants(sequoia_registry)
 ATARI_PY_INSTALLED = False
 try:
     from gym.envs import atari
-    AtariEnv = atari.AtariEnv
-
-    ATARI_PY_INSTALLED = True
+    ATARI_PY_INSTALLED = "Breakout-v0" in registry.env_specs
 except (gym.error.DependencyNotInstalled, ImportError):
     class AtariEnv(gym.Env):
         pass

@@ -17,7 +17,7 @@ import tqdm
 import wandb
 from gym import spaces
 from gym.vector import VectorEnv
-from gym.vector.utils.spaces import batch_space
+from sequoia.common.spaces.utils import batch_space
 from simple_parsing import field
 from torch import Tensor
 from wandb.wandb_run import Run

@@ -3,7 +3,7 @@ from typing import List, Optional
 import gym
 import numpy as np
 from gym import Space
-from gym.vector.utils.spaces import batch_space
+from sequoia.common.spaces.utils import batch_space
 from sequoia.methods import Method
 from sequoia.settings import Actions, Environment, Observations, Setting
 

@@ -120,7 +120,7 @@ def __eq__(self, other: Union["NamedTupleSpace", Any]) -> bool:
 spaces.Tuple.__eq__ = __eq__
 
 
-from gym.vector.utils import batch_space
+from sequoia.common.spaces.utils import batch_space
 from gym.spaces.utils import flatten, flatten_space
 
 @batch_space.register(NamedTupleSpace)

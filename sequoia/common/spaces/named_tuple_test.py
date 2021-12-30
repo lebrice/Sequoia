@@ -2,7 +2,7 @@ import gym
 import numpy as np
 from gym import Space, spaces
 from gym.spaces import Box, Discrete
-from gym.vector.utils import batch_space
+from sequoia.common.spaces.utils import batch_space
 import pytest
 
 from .named_tuple import NamedTuple, NamedTupleSpace

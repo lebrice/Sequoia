@@ -5,7 +5,7 @@ import gym
 import numpy as np
 from gym import spaces
 from gym.spaces import Box, Discrete
-from gym.vector.utils import batch_space
+from sequoia.common.spaces.utils import batch_space
 
 from .typed_dict import TypedDictSpace
 

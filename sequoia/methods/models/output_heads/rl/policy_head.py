@@ -40,7 +40,7 @@ import numpy as np
 import torch
 from gym import Space, spaces
 from gym.spaces.utils import flatdim
-from gym.vector.utils.numpy_utils import concatenate, create_empty_array
+from sequoia.common.spaces.utils import concatenate, create_empty_array
 from simple_parsing import list_field
 from torch import LongTensor, Tensor, nn
 from torch.distributions import Distribution

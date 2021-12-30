@@ -3,7 +3,7 @@ from __future__ import annotations
 from typing import Iterator, List, Optional, TypeVar
 
 import gym
-from gym.vector.utils import batch_space
+from sequoia.common.spaces.utils import batch_space
 
 # TODO: There's a difference between a buffer with Episode as the item, and a buffer with Transition as the item!
 from sequoia.common.typed_gym import _Action, _Env, _Observation_co, _Reward

@@ -9,7 +9,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 import pytest
 from gym import spaces
-from gym.vector.utils import batch_space
+from sequoia.common.spaces.utils import batch_space
 from sequoia.common.config import Config
 from sequoia.common.spaces import TypedDictSpace
 from sequoia.common.spaces.sparse import Sparse

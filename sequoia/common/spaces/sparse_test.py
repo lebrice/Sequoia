@@ -88,7 +88,7 @@ def test_contains(base_space: gym.Space, sparsity: float):
     assert all(sample in space for sample in samples)
 
 
-from gym.vector.utils import batch_space, concatenate
+from sequoia.common.spaces.utils import batch_space, concatenate
 
 
 @pytest.mark.parametrize("base_space", base_spaces)
@@ -158,7 +158,7 @@ def test_change_persists_after_full_import():
     """ When re-importing the `concatenate` function from
     `gym.vector.utils.numpy_utils`, the changes are preserved.
     """
-    from gym.vector.utils.numpy_utils import concatenate
+    from sequoia.common.spaces.utils import concatenate
     from .sparse import Sparse
     assert hasattr(gym.vector.utils.numpy_utils.concatenate, "registry")
     assert hasattr(gym.vector.utils.batch_space, "registry")

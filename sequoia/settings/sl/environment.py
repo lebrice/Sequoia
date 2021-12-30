@@ -9,7 +9,7 @@ import gym
 import numpy as np
 import torch
 from gym import spaces
-from gym.vector.utils import batch_space
+from sequoia.common.spaces.utils import batch_space
 from torch import Tensor
 from torch.utils.data import DataLoader, Dataset, IterableDataset
 from torch.utils.data.dataloader import _BaseDataLoaderIter

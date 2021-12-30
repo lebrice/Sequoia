@@ -23,7 +23,7 @@ from sequoia.utils.generic_functions import move
 from sequoia.settings.rl.wrappers import TypedObjectsWrapper
 from gym import spaces
 from gym.utils import colorize
-from gym.vector.utils import batch_space
+from sequoia.common.spaces.utils import batch_space
 from gym.wrappers import TimeLimit
 from sequoia.common.spaces.typed_dict import TypedDictSpace
 from simple_parsing import list_field

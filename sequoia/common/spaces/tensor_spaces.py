@@ -7,11 +7,10 @@ from typing import Any, Optional, Sequence, TypeVar, Union
 
 import gym
 from gym.spaces.utils import flatten_space
-from gym.vector.utils.numpy_utils import create_empty_array
 import numpy as np
 import torch
 from gym import spaces
-from gym.vector.utils.spaces import batch_space
+from .utils import batch_space
 from torch import Tensor
 
 # Dict of NumPy dtype -> torch dtype (when the correspondence exists)
@@ -130,9 +129,7 @@ class TensorSpace(gym.Space, ABC):
 
 
 
-
-from gym.vector.utils import create_shared_memory
-
+from .utils import create_shared_memory, create_empty_array
 
 @create_shared_memory.register(TensorSpace)
 def _create_tensorspace_shared_memory(space: TensorSpace, *args, **kwargs):
@@ -236,8 +233,8 @@ def _(space: TensorBox):
 
 
 class TensorDiscrete(TensorSpace, spaces.Discrete):
-    def __init__(self, n: int, seed: int=None, start: int=0, device: torch.device=None):
-        super().__init__(n=n, seed=seed, start=start, device=device)
+    def __init__(self, n: int, seed: int=None, device: torch.device=None, **kwargs):
+        super().__init__(n=n, seed=seed, device=device, **kwargs)
 
     def contains(self, v: Union[int, Tensor]) -> bool:
         if isinstance(v, Tensor):
@@ -289,6 +286,7 @@ class TensorMultiDiscrete(TensorSpace, spaces.MultiDiscrete):
         if self.device.type != "cpu":
             result_str += f", device={self.device}"
         return result_str + ")"
+
 
 @batch_space.register(TensorDiscrete)
 def _batch_discrete_space(space: TensorDiscrete, n: int = 1) -> TensorMultiDiscrete:

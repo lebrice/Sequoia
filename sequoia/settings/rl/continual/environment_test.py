@@ -5,7 +5,7 @@ import pytest
 import torch
 from gym import spaces
 from gym.envs.classic_control import CartPoleEnv
-from gym.vector.utils import batch_space
+from sequoia.common.spaces.utils import batch_space
 from sequoia.common.gym_wrappers import EnvDataset, PixelObservationWrapper
 from sequoia.conftest import param_requires_atari_py
 from sequoia.utils import take

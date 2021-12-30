@@ -25,11 +25,8 @@ import gym.vector.utils.shared_memory
 import numpy as np
 import torch
 from gym import spaces
-from gym.vector.utils import (batch_space, concatenate, create_empty_array,
-                              create_shared_memory)
-from gym.vector.utils.numpy_utils import concatenate
 from torch import Tensor
-
+from .utils import batch_space, concatenate
 from .space import Space, T
 
 

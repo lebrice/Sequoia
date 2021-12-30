@@ -11,7 +11,7 @@ import gym
 from simple_parsing.helpers.serialization.serializable import Serializable
 import tqdm
 import wandb
-from gym.vector.utils import batch_space
+from sequoia.common.spaces.utils import batch_space
 from simple_parsing import field
 from torch import Tensor
 

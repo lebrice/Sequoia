@@ -66,6 +66,8 @@ class _Env(Protocol[_Observation, _Action, _Reward_co]):
 @runtime_checkable
 class _VectorEnv(_Env[_Observation, _Action, _Reward_co], Protocol):
     num_envs: int
+    single_observation_space: _Space
+    single_action_space: _Space
 
     def step(  # type: ignore
         self, action: _Action

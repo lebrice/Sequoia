@@ -19,6 +19,19 @@ def get_reward_space(env: _Env[_Observation, _Action, _Reward]) -> _Space[_Rewar
     )
 
 
+def get_single_reward_space(env: _Env[_Observation, _Action, _Reward]) -> _Space[_Reward]:
+    if hasattr(env, "single_reward_space") and env.single_reward_space is not None:
+        return env.single_reward_space
+    reward_range: Tuple[float, float] = getattr(env, "reward_range", (-np.inf, np.inf))
+    num_envs = env.num_envs if isinstance(env.unwrapped, VectorEnv) else None
+    return spaces.Box(
+        reward_range[0],
+        reward_range[1],
+        dtype=float,
+        shape=(),
+    )
+
+
 def get_num_envs(env: _Env) -> Optional[int]:
     if isinstance(env.unwrapped, VectorEnv):
         return env.num_envs

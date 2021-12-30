@@ -35,9 +35,9 @@ from copy import deepcopy
 import numpy as np
 import gym
 from gym import Space, spaces
-from gym.vector.utils import batch_space, concatenate
+from .utils import batch_space, concatenate
 
-from .sparse import batch_space, concatenate
+
 
 M = TypeVar("M", bound=Mapping[str, Any])
 S = TypeVar("S")
@@ -51,7 +51,7 @@ except ImportError:
     from typing_inspect import get_origin
 
 
-class TypedDictSpace(spaces.Dict, Mapping[str, Space], Generic[M]):
+class TypedDictSpace(spaces.Dict, Generic[M]):
     """ Subclass of `spaces.Dict` that allows custom dtypes and uses type annotations.
 
     ## Examples:
@@ -364,9 +364,7 @@ from gym.vector.utils.shared_memory import (
     read_from_shared_memory as read_from_shared_memory_,
 )
 
-
 @batch_space.register(TypedDictSpace)
-# @register_variant(gym.vector.utils, "batch_space")
 def _batch_typed_dict_space(space: TypedDictSpace, n: int = 1) -> spaces.Dict:
     return type(space)(
         {key: batch_space(subspace, n=n) for (key, subspace) in space.spaces.items()},
@@ -375,7 +373,6 @@ def _batch_typed_dict_space(space: TypedDictSpace, n: int = 1) -> spaces.Dict:
 
 
 @concatenate.register(TypedDictSpace)
-# @register_variant(gym.vector.utils, "concatenate")
 def _concatenate_typed_dicts(
     space: TypedDictSpace,
     items: Union[list, tuple],

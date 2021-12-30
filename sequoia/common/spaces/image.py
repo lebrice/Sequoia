@@ -4,7 +4,7 @@ from typing import Optional, Tuple, Union
 
 import numpy as np
 from gym import spaces
-from gym.vector.utils import batch_space
+from sequoia.common.spaces.utils import batch_space
 
 import torch
 

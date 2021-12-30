@@ -1,6 +1,6 @@
 from .universal_encoder import create_encoder
 from gym import Space, spaces
-from gym.vector.utils import batch_space
+from sequoia.common.spaces.utils import batch_space
 import numpy as np
 
 from sequoia.common.gym_wrappers.convert_tensors import add_tensor_support

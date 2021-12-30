@@ -8,7 +8,7 @@ import torch
 from gym import spaces
 from gym.spaces.utils import flatdim
 from gym.vector import SyncVectorEnv
-from gym.vector.utils import batch_space
+from sequoia.common.spaces.utils import batch_space
 from sequoia.common.gym_wrappers import (
     AddDoneToObservation,
     ConvertToFromTensors,

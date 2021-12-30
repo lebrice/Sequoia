@@ -8,7 +8,7 @@ import gym
 import numpy as np
 from gym import Space, spaces
 from gym.vector import VectorEnv
-from gym.vector.utils import batch_space
+from sequoia.common.spaces.utils import batch_space
 from torch import Tensor
 from sequoia.common.spaces import TypedDictSpace
 

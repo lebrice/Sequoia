@@ -453,7 +453,7 @@ class Setting(
         works correctly.
         """
         # Check that the env's spaces are batched versions of the settings'.
-        from gym.vector.utils import batch_space
+        from sequoia.common.spaces.utils import batch_space
         from sequoia.settings.sl import PassiveEnvironment
 
         batch_size = self.batch_size
