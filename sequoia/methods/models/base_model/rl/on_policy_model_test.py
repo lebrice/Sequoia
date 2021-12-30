@@ -7,6 +7,9 @@ import torch
 from pytorch_lightning.trainer import Trainer
 import itertools
 import pytest
+from sequoia.common.gym_wrappers.convert_tensors import ConvertToFromTensors
+from pytorch_lightning.utilities.seed import seed_everything
+from sequoia.conftest import param_requires_cuda
 
 
 def test_cartpole_manual():
@@ -16,10 +19,8 @@ def test_cartpole_manual():
     val_env = gym.make("CartPole-v0")
     train_seed = 123
     val_seed = 456
-    from sequoia.common.gym_wrappers.convert_tensors import ConvertToFromTensors
 
     # seed everything.
-    from pytorch_lightning.utilities.seed import seed_everything
 
     seed_everything(123)
 
@@ -40,9 +41,6 @@ def test_cartpole_manual():
         DiscreteAction,
         Rewards,
     )
-
-    # train_env = TypedObjectsWrapper(env=env, observations_type=Observation, actions_type=DiscreteAction, rewards_type=Rewards)
-    # train_env = ConvertToFromTensors(train_env, device="cpu")
 
     model = OnPolicyModel(train_env=env, val_env=val_env)
     optimizer = model.configure_optimizers()
@@ -105,12 +103,10 @@ def test_cartpole_manual():
 #     assert False
 
 
-
-
 @pytest.mark.timeout(5)
 @pytest.mark.parametrize("train_seed", [123, 222])
 @pytest.mark.parametrize("recompute_forward_passes", [True, False])
-@pytest.mark.parametrize("use_gpus", [False, True])
+@pytest.mark.parametrize("use_gpus", [False, param_requires_cuda(True)])
 def test_cartpole_pl(train_seed: int, recompute_forward_passes: bool, use_gpus: bool):
     env = gym.make("CartPole-v0")
     val_env = gym.make("CartPole-v0")
@@ -203,8 +199,11 @@ def test_cartpole_pl(train_seed: int, recompute_forward_passes: bool, use_gpus: 
 @pytest.mark.parametrize("train_seed", [123, 222])
 @pytest.mark.parametrize("recompute_forward_passes", [True, False])
 @pytest.mark.parametrize("num_envs", [1, 2, 3])
-@pytest.mark.parametrize("use_gpus", [False, True])
-def test_vecenv_cartpole_pl(train_seed: int, recompute_forward_passes: bool, num_envs: int, use_gpus: bool):
+@pytest.mark.parametrize("use_gpus", [False, param_requires_cuda(True)])
+def test_vecenv_cartpole_pl(
+    train_seed: int, recompute_forward_passes: bool, num_envs: int, use_gpus: bool
+):
+    """ TODO: There is still a bug with PL about tryign to call backward twice, so we need to make a more fine-grained tests as in above perhaps. """
     env = gym.vector.make("CartPole-v0", num_envs=num_envs)
     val_env = gym.vector.make("CartPole-v0", num_envs=num_envs)
     test_env = gym.vector.make("CartPole-v0", num_envs=num_envs)
@@ -241,7 +240,6 @@ def test_vecenv_cartpole_pl(train_seed: int, recompute_forward_passes: bool, num
         recompute_forward_passes=recompute_forward_passes,
         hparams=OnPolicyModel.HParams(episodes_per_update=episodes_per_update),
     )
-
     trainer = Trainer(
         max_epochs=max_epochs,
         accumulate_grad_batches=model.hp.episodes_per_update,

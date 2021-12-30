@@ -1,32 +1,16 @@
-import argparse
 import json
 import logging
-import os
 import sys
-
-from argparse import ArgumentParser
-from dataclasses import replace
 from pathlib import Path
-from typing import (
-    Any,
-    Dict,
-    Iterable,
-    List,
-    Optional,
-    Tuple,
-    Type,
-    Union,
-    get_type_hints,
-)
+from typing import Any, Iterable, List, Optional, Type, get_type_hints
 
 import gym
 import pytest
-from simple_parsing import Serializable
+import torch
 
-from sequoia.methods.trainer import TrainerConfig
 from sequoia.common.config import Config
-from sequoia.settings import Method, Setting
-
+from sequoia.methods.trainer import TrainerConfig
+from sequoia.settings import Method
 
 logger = logging.getLogger(__file__)
 
@@ -45,6 +29,7 @@ def skip_param(*args, reason: str):
 
 def skipif_param(condition, *args, reason: str):
     return pytest.param(*args, marks=pytest.mark.skipif(condition, reason=reason))
+
 
 import numpy as np
 
@@ -290,10 +275,10 @@ class DummyEnvironment(gym.Env):
 
 
 from sequoia.settings.rl.envs import (
+    ATARI_PY_INSTALLED,
     METAWORLD_INSTALLED,
     MONSTERKONG_INSTALLED,
     MTENV_INSTALLED,
-    ATARI_PY_INSTALLED,
     MUJOCO_INSTALLED,
 )
 
@@ -333,6 +318,7 @@ def param_requires_mtenv(*args):
         not MTENV_INSTALLED, *args, reason="mtenv is required for this parameter.",
     )
 
+
 # Metaworld needs mujoco
 metaworld_required = pytest.mark.skipif(
     not METAWORLD_INSTALLED, reason="metaworld is required for this test."
@@ -355,5 +341,13 @@ mujoco_required = pytest.mark.skipif(
 def param_requires_mujoco(*args):
     return skipif_param(
         not MUJOCO_INSTALLED, *args, reason="mujoco-py is required for this parameter.",
+    )
+
+
+def param_requires_cuda(*args):
+    return skipif_param(
+        not torch.cuda.is_available(),
+        *args,
+        reason="CUDA is required for this parameter.",
     )
 

@@ -20,7 +20,7 @@ from sequoia.common.typed_gym import (
     _Reward,
 )
 from .episode import Episode
-from .episode_collector import EpisodeCollector
+from .episode_collector import EpisodeCollector, PolicyUpdateStrategy, do_nothing_strategy, redo_forward_pass_strategy
 import gym
 
 
@@ -30,6 +30,7 @@ def make_env_loader(
     max_episodes: int = None,
     max_steps: int = None,
     seed: int = None,
+    what_to_do_after_update: PolicyUpdateStrategy = redo_forward_pass_strategy,
 ) -> OnPolicyEpisodeLoader[_Observation_co, _Action, _Reward]:
     if seed is not None:
         env.seed(seed)
@@ -40,6 +41,7 @@ def make_env_loader(
         policy=policy,
         max_iter_steps=max_steps,
         max_iter_episodes=max_episodes,
+        what_to_do_after_update=what_to_do_after_update,
     )
     loader = OnPolicyEpisodeLoader(dataset=dataset)
     return loader
@@ -54,12 +56,14 @@ class OnPolicyEpisodeDataset(
         policy: Policy[_Observation_co, _Action],
         max_iter_steps: Optional[int] = None,
         max_iter_episodes: Optional[int] = None,
+        what_to_do_after_update: PolicyUpdateStrategy = do_nothing_strategy,
     ) -> None:
         super().__init__(env=env)
         self.env = env
         self.max_iter_steps = max_iter_steps
         self.max_iter_episodes = max_iter_episodes
         self.policy = policy
+        self.what_to_do_after_update = what_to_do_after_update
         self._episode_generator = self._create_generator()
 
     def _create_generator(self) -> EpisodeCollector:
@@ -68,9 +72,10 @@ class OnPolicyEpisodeDataset(
             policy=self.policy,
             max_steps=self.max_iter_steps,
             max_episodes=self.max_iter_episodes,
+            what_to_do_after_update=self.what_to_do_after_update,
         )
 
-    def __iter__(self) -> Iterator[Episode[Observation, _Action, _Reward]]:
+    def __iter__(self) -> Iterator[Episode[_Observation_co, _Action, _Reward]]:
         if self._episode_generator is not None:
             self._episode_generator.close()
         # note: No access to the max_steps or max_episodes args of EpisodeCollector for now.

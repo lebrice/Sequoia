@@ -127,6 +127,13 @@ class TensorSpace(gym.Space, ABC):
     # def to_(self, device: Union[str, torch.device]) -> None:
     #     """ Modifies this space in-place, so the the samples will be on device `device`. """
 
+from sequoia.utils.generic_functions.to_from_tensor import from_tensor
+
+
+@from_tensor.register(TensorSpace)
+def from_tensor(space: TensorSpace, sample: Union[Tensor, Any]) -> Union[Tensor, Any]:
+    # Do nothing: The samples from this space are supposed to be tensors.
+    return sample
 
 
 from .utils import create_shared_memory, create_empty_array

@@ -16,6 +16,8 @@ from sequoia.utils.logging_utils import get_logger
 from collections import abc
 from dataclasses import dataclass, is_dataclass, replace
 from .utils import IterableWrapper, StepResult
+from sequoia.utils.generic_functions.move import move_
+
 
 logger = get_logger(__file__)
 
@@ -87,21 +89,9 @@ class ConvertToFromTensors(IterableWrapper):
         return to_tensor(self.observation_space, observation, device=self.device)
 
     def action(self, action):
-        if isinstance(self.action_space, spaces.MultiDiscrete) and is_dataclass(action):
-            # TODO: Fixme, the actions don't currently fit their space!
-            action_np = replace(action, y_pred=from_tensor(self.action_space, action.y_pred))
-            # FIXME: for now, unwrapping the actions
-            action = action_np["y_pred"]
-            return action
-        return from_tensor(self.action_space, action)
+        return from_tensor(self.env.action_space, action)
 
     def reward(self, reward):
-        # FIXME: This doesn't exactly work when our 'reward space' isn't a dict and
-        # 'reward' is a Batch object, and might also be the same with the actions above
-        if isinstance(self.reward_space, spaces.MultiDiscrete) and is_dataclass(reward):
-            return replace(
-                reward, y=to_tensor(self.reward_space, reward.y, device=self.device)
-            )
         return to_tensor(self.reward_space, reward, device=self.device)
 
     def step(self, action: Tensor) -> StepResult:

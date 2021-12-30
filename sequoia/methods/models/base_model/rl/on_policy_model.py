@@ -91,10 +91,6 @@ class DiscreteAction(Action[int]):
         return self.logits[self.action]
 
 
-class DiscreteActionSpace(TypedDictSpace[DiscreteAction]):
-    action: spaces.Discrete
-    logits: spaces.Box
-
 
 @dataclass(frozen=True)
 class DiscreteActionBatch(Batch, Sequence[DiscreteAction]):
@@ -113,11 +109,6 @@ class DiscreteActionBatch(Batch, Sequence[DiscreteAction]):
         # NOTE: This is hella ugly. But does what it's supposed to, and is likely quicker:
         return self.logits.gather(-1, self.action.unsqueeze(-1)).squeeze(-1)
         # return torch.stack([logit[action] for logit, action in zip(self.logits, self.action)])
-
-
-class DiscreteActionBatchSpace(TypedDictSpace[DiscreteActionBatch]):
-    action: spaces.MultiDiscrete
-    logits: spaces.Box
 
 
 @stack.register(DiscreteAction)
@@ -234,13 +225,21 @@ class OnPolicyModel(LightningModule):
         logits = self.net(observation.observation)
         action = logits.argmax(-1)
         self.n_forward_passes += 1
-        return replace(random_action, logits=logits, action=action)
+        action = replace(random_action, logits=logits, action=action)
+        return action
 
     def to(self, *args: Any, **kwargs: Any):
         device_before = self.device
         result = super().to(*args, **kwargs)
         # TODO: Fix the mismatch between the train env's device and the model's device.
-        # self.train_env.to_(device=self.device)
+        self.train_env : ConvertToFromTensors
+        self.val_env : Optional[ConvertToFromTensors]
+        self.test_env : Optional[ConvertToFromTensors]
+        self.train_env.to_(device=self.device)
+        if self.val_env is not None:
+            self.val_env.to_(device=self.device)
+        if self.test_env is not None:
+            self.test_env.to_(device=self.device)
         return result
 
     def on_post_move_to_device(self) -> None:
@@ -268,6 +267,13 @@ class OnPolicyModel(LightningModule):
             logger.debug(
                 f"Incrementing the number of policy updates to {self.n_policy_updates}."
             )
+            # TODO: For a VectorEnv, it will become important to actually notify the DataLoader /
+            # EpisodeCollector that the model was updated, since we will have episodes with a part
+            # of the old model and part of the newer model! (Before, with a single env, we could get
+            # away with not updating the EpisodeCollector, since there is just a shared reference,
+            # but not anymore!)
+            # self.deploy_new_policies()
+            
             episode = self.handle_off_policy_data(episode)
             if episode is None:
                 # NOTE: Not counting the number of wasted updates in that case.
@@ -389,7 +395,7 @@ class OnPolicyModel(LightningModule):
             isinstance(env.observation_space, TypedDictSpace)
             and issubclass(env.observation_space.dtype, Observation)
             and isinstance(env.action_space, TypedDictSpace)
-            and issubclass(env.action_space.dtype, DiscreteAction)
+            and issubclass(env.action_space.dtype, (DiscreteAction, DiscreteActionBatch))
             and hasattr(env, "reward_space")
             and isinstance(env.reward_space, TypedDictSpace)
             and issubclass(env.reward_space.dtype, Rewards)
@@ -404,7 +410,11 @@ class OnPolicyModel(LightningModule):
             # recursively/iteratively call this function (or some kind of singledispatchmethod) that
             # adds the required wrappers for a given env, until the env matches what we want above.
             # Use this on something like CartPole for example.
-            env = UseObjectsWrapper(env)
+            # TODO: Weird bug with the ordering of these two:
+            if isinstance(env.unwrapped, VectorEnv):
+                env = UseObjectsVectorEnvWrapper(env)
+            else:
+                env = UseObjectsWrapper(env)
             env = ConvertToFromTensors(env, device=self.device)
             return env
 
@@ -418,8 +428,11 @@ class OnPolicyModel(LightningModule):
         single_action_space = getattr(
             self.train_env, "single_action_space", self.train_env.action_space
         )
-        input_dims = flatdim(single_observation_space.observation)
+        assert isinstance(single_observation_space, TypedDictSpace)
+        assert isinstance(single_action_space, TypedDictSpace)
+        input_dims = flatdim(single_observation_space)
         logits_dims = flatdim(single_action_space.logits)
+        # Simple network architecture for now:
         return nn.Sequential(
             nn.Linear(input_dims, 32),
             nn.ReLU(),
@@ -586,11 +599,12 @@ class UseObjectsWrapper(Wrapper, _Env[Observation, DiscreteAction, Rewards]):
         )
 
 
-class UseObjectsVectorEnvWrapper(Wrapper, _VectorEnv[Observation, DiscreteActionBatch, Rewards]):
+class UseObjectsVectorEnvWrapper(Wrapper, _Env[Observation, DiscreteActionBatch, Rewards]):
     def __init__(self, env: _VectorEnv[Any, Any, Any]) -> None:
         super().__init__(env)
+        assert isinstance(env.observation_space, spaces.Box), "Assuming a Box obs space for now"
         assert isinstance(env.unwrapped, VectorEnv)
-        assert isinstance(env.action_space, spaces.Discrete)
+        assert isinstance(env.action_space, spaces.MultiDiscrete)
         assert isinstance(env.single_action_space, spaces.Discrete)
         reward_space = get_reward_space(env)
         single_reward_space = get_single_reward_space(env)
@@ -599,20 +613,27 @@ class UseObjectsVectorEnvWrapper(Wrapper, _VectorEnv[Observation, DiscreteAction
         assert len(set(env.action_space.nvec)) == 1
         n_actions = env.action_space.nvec[0]
         num_envs = env.num_envs
-        
+        # NOTE: Here we're setting the `single_[observation/action/reward]_space` attributes so that
+        # they remain consistent, i.e. so that `batch_space(env.single_action_space, env.num_envs)`
+        # remains always equivalen to `env.action_space`.
+        # NOTE: If obs is a dict, this will have to be changed.
         self.single_observation_space = TypedDictSpace(
             observation=env.single_observation_space, dtype=Observation
+        )
+        self.single_action_space = TypedDictSpace(
+            action=env.single_action_space,
+            logits=logits_space_for(env.single_action_space),
+            dtype=DiscreteAction,
+        )
+        self.single_reward_space = TypedDictSpace(
+            reward=single_reward_space,
+            dtype=Rewards,
         )
         self.observation_space = TypedDictSpace(
             observation=env.observation_space, dtype=Observation
         )
         # NOTE: using spaces.Box here, so the ConvertToTensors wrapper should be used *after* this
         # one.
-        self.single_action_space = TypedDictSpace(
-            action=env.single_action_space,
-            logits=logits_space_for(env.action_space),
-            dtype=DiscreteAction,
-        )
         self.action_space = TypedDictSpace(
             action=env.action_space,
             logits=logits_space_for(env.action_space),
@@ -623,10 +644,11 @@ class UseObjectsVectorEnvWrapper(Wrapper, _VectorEnv[Observation, DiscreteAction
             dtype=Rewards,
         )
 
-    def reset(self) -> Observation:
-        return self.observation_space.dtype(observation=self.env.reset())
+    def reset(self, **kwargs) -> Observation:
+        return self.observation_space.dtype(observation=self.env.reset(**kwargs))
 
     def step(self, action: DiscreteAction) -> Tuple[Observation, Rewards, bool, dict]:
+        # unwrap the action before passing it to the wrapped env:
         action = action.action
         obs, reward, done, info = self.env.step(action)
         return (

@@ -15,7 +15,7 @@ T = TypeVar("T")
 def from_tensor(space: Space, sample: Union[Tensor, Any]) -> Union[np.ndarray, Any]:
     """ Converts a Tensor into a sample from the given space. """
     if isinstance(sample, Tensor):
-        return sample.cpu().numpy()
+        return sample.detach().cpu().numpy()
     return sample
 
 
