@@ -259,7 +259,7 @@ class OnPolicyModel(LightningModule):
         if batch_idx > 0 and batch_idx % self.hp.episodes_per_update == 0:
             # NOTE: Not explicitly updating the policies anymore. Relying instead on the fact that
             # the DataLoaders hold a pointer to `self`, and so the updates are 'seen' immediately.
-            self.n_policy_updates += 1
+            # self.n_policy_updates += 1
 
             # This is the first batch after an update, so we invariably need to recompute the
             # forward passes (because the action logits were computed by the model from one step
@@ -280,6 +280,11 @@ class OnPolicyModel(LightningModule):
                 return None
 
         return self.shared_step(episode, batch_idx=batch_idx)
+
+    def on_before_zero_grad(self, optimizer: Optimizer) -> None:
+        super().on_before_zero_grad(optimizer)
+        self.n_policy_updates += 1
+        self.deploy_new_policies()
 
     def validation_step(
         self,
@@ -443,7 +448,7 @@ class OnPolicyModel(LightningModule):
 
     def train_dataloader(
         self,
-    ) -> DataLoader[Episode[Observation, DiscreteAction, Rewards]]:
+    ) -> OnPolicyEpisodeLoader[Observation, DiscreteAction, Rewards]:
         # note: might cause infinite recursion issues no?
         # TODO: Turn this on eventually. Just debugging atm.
         # train_policy = EpsilonGreedyPolicy(
@@ -558,16 +563,31 @@ def logits_space_for(action_space: spaces.Discrete) -> spaces.Box:
 
 
 @logits_space_for.register(spaces.MultiDiscrete)
-def _batched_logits_space(action_space: spaces.MultiDiscrete) -> spaces.Box:
+def _(action_space: spaces.MultiDiscrete) -> spaces.Box:
     assert len(set(action_space.nvec)) == 1
     return spaces.Box(-np.inf, np.inf, shape=(len(action_space.nvec), action_space.nvec[0]))
+
+
+from sequoia.common.spaces.tensor_spaces import TensorBox, TensorDiscrete, TensorMultiDiscrete
+
+
+@logits_space_for.register(TensorDiscrete)
+def _(action_space: TensorDiscrete) -> TensorBox:
+    return TensorBox(-np.inf, np.inf, (action_space.n,))
+
+
+@logits_space_for.register(TensorMultiDiscrete)
+def _(action_space: TensorMultiDiscrete) -> TensorBox:
+    assert False, action_space
+    assert len(set(action_space.nvec)) == 1
+    return TensorBox(-np.inf, np.inf, shape=(len(action_space.nvec), action_space.nvec[0]))
 
 
 # note: This is the same job as the `TypedObjectsWrapper`, basically.
 class UseObjectsWrapper(Wrapper, _Env[Observation, DiscreteAction, Rewards]):
     def __init__(self, env: _Env[Any, int, float]) -> None:
         super().__init__(env)
-        assert isinstance(env.action_space, spaces.Discrete)
+        assert isinstance(env.action_space, (spaces.Discrete, spaces.MultiDiscrete)), env.action_space
         reward_space = get_reward_space(env)
         assert isinstance(reward_space, spaces.Box)
 

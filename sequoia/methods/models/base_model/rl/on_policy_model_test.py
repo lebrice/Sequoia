@@ -11,6 +11,10 @@ from sequoia.common.gym_wrappers.convert_tensors import ConvertToFromTensors
 from pytorch_lightning.utilities.seed import seed_everything
 from sequoia.conftest import param_requires_cuda
 
+def seed_env(env: gym.Env, seed: int) -> None:
+    env.seed(seed)
+    env.action_space.seed(seed)
+    env.observation_space.seed(seed)
 
 def test_cartpole_manual():
     # env = gym.vector.make("CartPole-v0", num_envs=2, asynchronous=False)
@@ -23,14 +27,8 @@ def test_cartpole_manual():
     # seed everything.
 
     seed_everything(123)
-
-    env.seed(train_seed)
-    env.action_space.seed(train_seed)
-    env.observation_space.seed(train_seed)
-
-    val_env.seed(val_seed)
-    val_env.action_space.seed(val_seed)
-    val_env.observation_space.seed(val_seed)
+    seed_env(env, train_seed)
+    seed_env(val_env, val_seed)
 
     # Note: Have to wrap the env so it works for the model.
     from sequoia.settings.rl.wrappers import TypedObjectsWrapper
@@ -99,7 +97,6 @@ def test_cartpole_manual():
 #     env = create_gym_env("inverted_pendulum", batch_size=10, seed=123)
 #     # env = gym.make("brax.inverted_pendulum-v0", batch_size=10, seed=123)
 #     print(env.reset())
-
 #     assert False
 
 
@@ -119,12 +116,6 @@ def test_cartpole_pl(train_seed: int, recompute_forward_passes: bool, use_gpus: 
     from pytorch_lightning.utilities.seed import seed_everything
 
     seed_everything(train_seed)
-
-    def seed_env(env: gym.Env, seed: int) -> None:
-        env.seed(seed)
-        env.action_space.seed(seed)
-        env.observation_space.seed(seed)
-
     seed_env(env, train_seed)
     seed_env(val_env, val_seed)
     seed_env(test_env, test_seed)
@@ -195,6 +186,72 @@ def test_cartpole_pl(train_seed: int, recompute_forward_passes: bool, use_gpus: 
     # )
 
 
+@pytest.mark.parametrize("num_envs", [1, 2, 5])
+def test_cartpole_vecenv_manual(num_envs: int):
+    env = gym.vector.make("CartPole-v0", num_envs=num_envs, asynchronous=False)
+    val_env = gym.vector.make("CartPole-v0", num_envs=num_envs, asynchronous=False)
+    
+    train_seed = 123
+    val_seed = 456
+
+    # seed everything.
+
+    seed_everything(123)
+    seed_env(env, train_seed)
+    seed_env(val_env, val_seed)
+
+    # Note: Have to wrap the env so it works for the model.
+    from .on_policy_model import (
+        OnPolicyModel,
+        Observation,
+        DiscreteActionBatch,
+        DiscreteAction,
+        Rewards,
+    )
+
+    model = OnPolicyModel(train_env=env, val_env=val_env)
+    optimizer = model.configure_optimizers()
+    train_dl = model.train_dataloader()
+    episodes_per_update = 3
+    max_episodes = 10
+
+    # TODO: The `with_is_last` thingy over the top of the DataLoader is still causing issues!
+    # There's a delay of one step between the dataloader and the model. This is annoying.
+    # Could probably create an 'adapter' of some sort that recomputes the forward pass of the actions
+    # for just that single misaligned step?
+    assert model.n_policy_updates == 0
+
+    for i, episode in enumerate(itertools.islice(train_dl, max_episodes)):
+        step_output = model.training_step(episode, batch_idx=i)
+        loss = step_output["loss"]
+
+        is_update_step = episodes_per_update == 1 or (
+            i > 0 and i % episodes_per_update == 0
+        )
+        
+        print(i, episode.model_versions)
+        loss.backward(retain_graph=not is_update_step)
+
+        print(step_output)
+
+        assert set(episode.model_versions) == {model.n_policy_updates}
+
+        if is_update_step:
+            print(f"Update #{model.n_policy_updates} at step {i}")
+
+            # model.optimizer_step()
+            optimizer.step()
+
+            optimizer.zero_grad()
+            # Udpate the 'deployed' policy.
+            train_dl.send(model)
+
+            model.n_policy_updates += 1
+
+        assert i < max_episodes
+
+
+
 @pytest.mark.timeout(5)
 @pytest.mark.parametrize("train_seed", [123, 222])
 @pytest.mark.parametrize("recompute_forward_passes", [True, False])
@@ -215,11 +272,6 @@ def test_vecenv_cartpole_pl(
     from pytorch_lightning.utilities.seed import seed_everything
 
     seed_everything(train_seed)
-
-    def seed_env(env: gym.Env, seed: int) -> None:
-        env.seed(seed)
-        env.action_space.seed(seed)
-        env.observation_space.seed(seed)
 
     seed_env(env, train_seed)
     seed_env(val_env, val_seed)

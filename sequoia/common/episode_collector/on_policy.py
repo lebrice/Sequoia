@@ -66,7 +66,7 @@ class OnPolicyEpisodeDataset(
         self.what_to_do_after_update = what_to_do_after_update
         self._episode_generator = self._create_generator()
 
-    def _create_generator(self) -> EpisodeCollector:
+    def _create_generator(self) -> EpisodeCollector[_Observation_co, _Action, _Reward]:
         return EpisodeCollector(
             self.env,
             policy=self.policy,
@@ -111,14 +111,16 @@ class OnPolicyEpisodeDataset(
 
 class OnPolicyEpisodeLoader(DataLoader[Episode[_Observation_co, _Action, _Reward]]):
     def __init__(
-        self, dataset: OnPolicyEpisodeDataset[_Observation_co, _Action, _Reward], **kwargs
+        self, dataset: OnPolicyEpisodeDataset[_Observation_co, _Action, _Reward], batch_size: int, **kwargs
     ):
-        kwargs.update(batch_size=1, num_workers=0, collate_fn=None)
+        kwargs.update(batch_size=batch_size, num_workers=0, collate_fn=None)
         super().__init__(dataset=dataset, **kwargs)
+        self.dataset: OnPolicyEpisodeDataset[_Observation_co, _Action, _Reward]
         self.env = dataset
 
     def __iter__(self):
-        return iter(self.dataset)
+        return super().__iter__()
+        # return iter(self.dataset)
 
     def send(self, new_policy: Policy[_Observation_co, _Action]) -> None:
         return self.dataset.send(new_policy)

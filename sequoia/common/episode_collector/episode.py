@@ -75,7 +75,7 @@ class Episode(
         return n_obs if self.last_observation is not None else n_obs - 1
         # return n_obs
 
-    def stack(self) -> "Episode[_Observation, _Action, _Reward]":
+    def stack(self) -> "StackedEpisode[_Observation, _Action, _Reward]":
         return StackedEpisode(
             observations=stack(self.observations),
             actions=stack(self.actions),

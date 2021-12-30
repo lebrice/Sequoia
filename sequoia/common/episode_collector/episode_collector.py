@@ -22,6 +22,7 @@ from dataclasses import dataclass, field, replace
 from typing import Generator, Sequence, Tuple, Protocol, Any, Iterator, Type
 import numpy as np
 from enum import Enum, auto
+from gym import Space
 
 # from typed_gym import Env, Space, VectorEnv
 from functools import singledispatch
@@ -35,6 +36,7 @@ from .episode import (
     _Reward,
     _Reward_co,
     T,
+    StackedEpisode,
     T_co,
 )
 from .update_strategy import (
@@ -47,6 +49,7 @@ from .update_strategy import (
 
 from gym.vector import VectorEnv
 from sequoia.settings.base.environment import Environment
+
 logger = get_logger(__name__)
 
 
@@ -110,8 +113,9 @@ class EpisodeCollector(
 
     def send(self, new_policy: Optional[Policy[_Observation, _Action]]) -> None:  # type: ignore
         if new_policy is not None:
-            self.on_policy_update(new_policy=new_policy)
-        self.model_version += 1
+            self.generator.send(new_policy)
+            # self.on_policy_update(new_policy=new_policy)
+        # self.model_version += 1
 
     def throw(self, something):
         # TODO: No idea what to do here.
@@ -164,15 +168,20 @@ class EpisodeCollector(
                     new_policy: Optional[Policy[_Observation, _Action]]
                     new_policy = yield episode.stack()
                     if new_policy:
-                        # TODO: That doesn't really make sense in this case.. the episode will
+                        self.model_version += 1
+                        # NOTE: That doesn't really make sense in this case.. the episode will
                         # always be finished, since we only ever yield when an episode is
                         # finished..
+                        # NOTE: Need to yield None so that `send` returns None.
+                        yield
+
                         if self.what_to_do_after_update is not do_nothing_strategy:
-                            raise RuntimeError(
-                                f"Can't really use the strategy {self.what_to_do_after_update} with a single env!"
-                            )
+                            logger.debug(f"Can't really use the strategy {self.what_to_do_after_update} with a single env!")
+                            # raise RuntimeError(
+                            #     f"Can't really use the strategy {self.what_to_do_after_update} with a single env!"
+                            # )
                         # _ = what_to_do_after_update(unfinished_episodes=episode, old_policy=policy, new_policy=new_policy)
-                        policy = new_policy
+                        self.policy = new_policy
 
                     break  # Go to the next episode.
 
@@ -204,60 +213,126 @@ class EpisodeCollector(
         observations: _Observation = self.env.reset()
         dones: np.ndarray = np.zeros(num_envs, dtype=bool)
 
-        for n_total_steps in itertools.count(step=num_envs):
+        # The generator for the number of steps performed in this iteration. One is bounded, and the
+        # other is not.
+        if self.max_steps is None:
+            step_range = itertools.count(step=num_envs)
+        else:
+            step_range = range(0, self.max_steps, num_envs)
+
+        for n_total_steps in step_range:      
             # Get an action for each environment from the policy.
             actions: _Action = self.policy(
                 observations, action_space=self.env.action_space
             )
             observations, rewards, dones, infos = self.env.step(actions)
 
-            for i, (done, info) in enumerate(zip(dones, infos)):
-                # NOTE: Using `get_slice` rather than just indexing, since they could be
-                # something different, like a dict for example.
-                observation: Any = get_slice(observations, i)
-                # NOTE: THis 'actions' here, if we're using the 'detach_actions' update, it needs to also be detached, right?
-                action = get_slice(actions, i)
-                reward = get_slice(rewards, i)
+            # Quick loop for all the non-done episodes:
+            # Dict mapping from environment index to the episode that have ended at this step.
+            completed_episodes: Dict[int, StackedEpisode] = {}
 
-                self.ongoing_episodes[i].actions.append(action)  # type: ignore
-                self.ongoing_episodes[i].rewards.append(reward)  # type: ignore
-                self.ongoing_episodes[i].infos.append(info)
-                self.ongoing_episodes[i].model_versions.append(self.model_version)
+            for env_idx, (done, info) in enumerate(zip(dones, infos)):
+                observation: Any = get_slice(observations, env_idx)
+                action = get_slice(actions, env_idx)
+                reward = get_slice(rewards, env_idx)
 
-            for i, (done, info) in enumerate(zip(dones, infos)):
-                if done:
-                    # A new policy to use can be passed to this generator via `send`.
-                    # What to do with ongoing episodes is determined based on the value of
-                    # `what_to_do_after_update`.
-                    new_policy: Optional[Policy[_Observation, _Action]]
-                    # NOTE: Not sure if we should stack or not.
-                    new_policy = yield self.ongoing_episodes[i].stack()
-                    self.num_episodes += 1
+                # NOTE: Maybe we should yield a list of episodes that are done at each step?
+                if not done:
+                    # Episode isn't done yet. We can add the 
+                    self.ongoing_episodes[env_idx].observations.append(observation)
+                    self.ongoing_episodes[env_idx].actions.append(action)  # type: ignore
+                    self.ongoing_episodes[env_idx].rewards.append(reward)  # type: ignore
+                    self.ongoing_episodes[env_idx].infos.append(info)
+                    self.ongoing_episodes[env_idx].model_versions.append(self.model_version)
+                else:
+                    # Episode is done. Observation is the first of the next episode.
+                    self.ongoing_episodes[env_idx].rewards.append(reward)  # type: ignore
+                    self.ongoing_episodes[env_idx].infos.append(info)
+                    self.ongoing_episodes[env_idx].model_versions.append(self.model_version)
 
-                    if new_policy is not None:
-                        self.on_policy_update(new_policy)
-                        # NOTE: Yielding nothing here, so send doesn't return anything.
-                        yield  # type: ignore
+                    completed_episode = self.ongoing_episodes[env_idx].stack()
+                    completed_episodes[env_idx] = completed_episode
 
-                    # End of episode: reset the flag, put an empty new episode at that index.
-                    dones[i] = False
-                    self.ongoing_episodes[i] = Episode()
+                    # End of episode: Put an empty new episode at that index.
+                    self.ongoing_episodes[env_idx] = Episode()
+                    self.ongoing_episodes[env_idx].observations.append(observation)
+                    self.ongoing_episodes[env_idx].actions.append(action)  # type: ignore
 
-                    if self.max_episodes and self.num_episodes >= self.max_episodes:
-                        print(f"Reached max episodes ({self.max_episodes}), stopping.")
-                        # NOTE: Stopping here, rather than in the outside for loop, so that
-                        # even if we have mroe than a single episode with `done=True`, we only
-                        # yield the right number of episodes.
-                        return
+            if not completed_episodes:
+                # No episode ended, go to the next step.
+                continue
 
-                # In both cases (both empty and non-empty Episode object), add the observation
-                # to it.
-                self.ongoing_episodes[i].observations.append(observation)
+            single_action_space = getattr(
+                self.env, "single_action_space", self.env.action_space
+            )
+            # Here's where we're at now:
+            # We have *only* the ongoing episodes in `self.ongoing_episodes`, and *only* the
+            # completed episodes in `completed_episodes`.
+            # TODO: For each of these episodes, if we wanted to be clever about it, we'd actually
+            # yield the list of episodes that are completed, and so we'd waste less on-policy data.
+            # The 'batch size' of the DataLoader could then become the number of episodes per
+            # update-ish?
+            # TODO (better): Keep this as-is, and yield episodes one-at-a-time, but change the
+            # OnPolicyModel so that instead of relying on `accumulate_grad_batches`, it instead has
+            # the dataloader accumulate the episodes in a buffer before yielding them. Then, change
+            # the training_step logic so that it calculates a loss using a list of epiodes.
+            while completed_episodes:
+                # NOTE: Using a while loop and popping items out, because we might modify
+                # the following `completed_episodes` when a new policy comes up. 
+                # NOTE: pop order doesn't really matter, but going from lowest to highest.
+                # env_idx, completed_episode = completed_episodes.popitem()
+                logger.debug(f"Completed episodes to yield from envs: {completed_episodes.keys()}")
+                logger.debug(f"{self.num_episodes=}: {self.max_episodes=}")
 
-                # Assume that the individual envs don't close for now.
-                if self.max_steps and n_total_steps >= self.max_steps:
-                    print(f"Reached max total steps ({self.max_steps}), stopping.")
+                env_idx = min(completed_episodes)
+                completed_episode = completed_episodes.pop(env_idx)
+
+                new_policy: Optional[Policy[_Observation, _Action]]
+
+                if self.max_episodes and self.num_episodes >= self.max_episodes:
+                    logger.info(f"Reached max episodes ({self.max_episodes}), stopping.")
+                    # NOTE: Stopping here, rather than in the outside for loop, so that
+                    # even if we have more than one episode with `done=True`, we only
+                    # yield the right number of episodes in total.
                     return
+
+                new_policy = yield completed_episode
+                self.num_episodes += 1
+
+
+                if new_policy is None:
+                    # No policy update, yield the next completed episode if there is one.
+                    continue
+                
+                # NOTE: Need to yield None here, so that `send` returns None.
+                yield  # type: ignore
+
+                # Increment this flag, which is left in the episode objects for convenience.
+                self.model_version += 1
+
+                assert self.what_to_do_after_update in {redo_forward_pass_strategy, do_nothing_strategy, detach_actions_strategy}
+                # Update all the ongoing episodes:
+                self.ongoing_episodes = self.what_to_do_after_update(
+                    unfinished_episodes=self.ongoing_episodes,
+                    old_policy=self.policy,
+                    new_policy=new_policy,
+                    new_policy_version=self.model_version,
+                    single_action_space=single_action_space,
+                )
+                # ALSO: Update all the completed episodes that haven't yet been yielded.
+                updated_completed_episodes = self.what_to_do_after_update(
+                    unfinished_episodes=completed_episodes.values(),
+                    old_policy=self.policy,
+                    new_policy=new_policy,
+                    new_policy_version=self.model_version,
+                    single_action_space=single_action_space,
+                )
+                # Update the `completed_episodes` dict so that the next complete episodes to be
+                # yielded are also updated correctly.
+                completed_episodes = dict(zip(completed_episodes.keys(), updated_completed_episodes))
+                # Update the `self.policy` attribute:
+                self.policy = new_policy
+
 
     def on_policy_update(self, new_policy: Policy[_Observation, _Action]):
         # print(
@@ -265,16 +340,15 @@ class EpisodeCollector(
         # )
         if isinstance(self.env, VectorEnv):
             len_before = [len(ep.actions) for ep in self.ongoing_episodes]
-            self.ongoing_episodes = self.what_to_do_after_update(
-                self.ongoing_episodes, old_policy=self.policy, new_policy=new_policy
+            single_action_space: Space[_Action] = getattr(
+                self.env, "single_action_space", self.env.action_space
             )
-            if self.what_to_do_after_update in {
-                detach_actions_strategy,
-                redo_forward_pass_strategy,
-            }:
-                # print(f"Also detaching actions just in case.")
-                actions = detach(actions)  # type: ignore
-
+            self.ongoing_episodes = self.what_to_do_after_update(
+                self.ongoing_episodes,
+                old_policy=self.policy,
+                new_policy=new_policy,
+                single_action_space=single_action_space,
+            )
             len_after = [len(ep.actions) for ep in self.ongoing_episodes]
             assert len_before == len_after
             self.policy = new_policy
