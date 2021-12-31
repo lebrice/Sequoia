@@ -96,6 +96,10 @@ def test_redo_forward_passes(env_fn: Callable[[], VectorEnv], update_interval: i
             # Pretend like we're updating the model.
             episode_collector.send(RandomPolicy())
             updates_so_far += 1
+        
+        assert len(episode.observations) == len(episode.actions) == len(episode.rewards), (
+            len(episode.observations), len(episode.actions), len(episode.rewards), len(episode.infos)
+        )
 
         # Check that the max episodes has been respected:
         assert i < max_episodes

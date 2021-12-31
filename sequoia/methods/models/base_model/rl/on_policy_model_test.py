@@ -221,20 +221,20 @@ def test_cartpole_vecenv_manual(num_envs: int):
     # for just that single misaligned step?
     assert model.n_policy_updates == 0
 
-    for i, episode in enumerate(itertools.islice(train_dl, max_episodes)):
-        step_output = model.training_step(episode, batch_idx=i)
+    for i, episodes in enumerate(itertools.islice(train_dl, max_episodes)):
+        step_output = model.training_step(episodes, batch_idx=i)
         loss = step_output["loss"]
 
         is_update_step = episodes_per_update == 1 or (
             i > 0 and i % episodes_per_update == 0
         )
-        
-        print(i, episode.model_versions)
+
+        print(i, [episode.model_versions for episode in episodes])
         loss.backward(retain_graph=not is_update_step)
 
         print(step_output)
-
-        assert set(episode.model_versions) == {model.n_policy_updates}
+        for episode in episodes:
+            assert set(episode.model_versions) == {model.n_policy_updates}
 
         if is_update_step:
             print(f"Update #{model.n_policy_updates} at step {i}")

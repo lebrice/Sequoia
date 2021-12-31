@@ -55,9 +55,7 @@ logger = get_logger(__name__)
 
 class EpisodeCollector(
     Generator[
-        Episode[_Observation, _Action, _Reward],
-        Optional[Policy[_Observation, _Action]],
-        None,
+        Episode[_Observation, _Action, _Reward], Optional[Policy[_Observation, _Action]], None,
     ]
 ):
     def __init__(
@@ -97,9 +95,7 @@ class EpisodeCollector(
     @property
     def generator(self):
         if self._generator is None:
-            if isinstance(self.env, VectorEnv) or isinstance(
-                self.env.unwrapped, VectorEnv
-            ):
+            if isinstance(self.env, VectorEnv) or isinstance(self.env.unwrapped, VectorEnv):
                 self._generator = self._iter_vectorenv()
             else:
                 self._generator = self._iter_env()
@@ -176,7 +172,9 @@ class EpisodeCollector(
                         yield
 
                         if self.what_to_do_after_update is not do_nothing_strategy:
-                            logger.debug(f"Can't really use the strategy {self.what_to_do_after_update} with a single env!")
+                            logger.debug(
+                                f"Can't really use the strategy {self.what_to_do_after_update} with a single env!"
+                            )
                             # raise RuntimeError(
                             #     f"Can't really use the strategy {self.what_to_do_after_update} with a single env!"
                             # )
@@ -196,9 +194,7 @@ class EpisodeCollector(
     def _iter_vectorenv(
         self,
     ) -> Generator[
-        Episode[_Observation, _Action, _Reward],
-        Optional[Policy[_Observation, _Action]],
-        None,
+        Episode[_Observation, _Action, _Reward], Optional[Policy[_Observation, _Action]], None,
     ]:
         """Generator that yields complete episodes from a vectorized environment.
 
@@ -220,11 +216,9 @@ class EpisodeCollector(
         else:
             step_range = range(0, self.max_steps, num_envs)
 
-        for n_total_steps in step_range:      
+        for n_total_steps in step_range:
             # Get an action for each environment from the policy.
-            actions: _Action = self.policy(
-                observations, action_space=self.env.action_space
-            )
+            actions: _Action = self.policy(observations, action_space=self.env.action_space)
             observations, rewards, dones, infos = self.env.step(actions)
 
             # Quick loop for all the non-done episodes:
@@ -238,7 +232,7 @@ class EpisodeCollector(
 
                 # NOTE: Maybe we should yield a list of episodes that are done at each step?
                 if not done:
-                    # Episode isn't done yet. We can add the 
+                    # Episode isn't done yet. We can add the
                     self.ongoing_episodes[env_idx].observations.append(observation)
                     self.ongoing_episodes[env_idx].actions.append(action)  # type: ignore
                     self.ongoing_episodes[env_idx].rewards.append(reward)  # type: ignore
@@ -246,12 +240,14 @@ class EpisodeCollector(
                     self.ongoing_episodes[env_idx].model_versions.append(self.model_version)
                 else:
                     # Episode is done. Observation is the first of the next episode.
-                    # NOTE: For VectorEnvs, this is actually also for the next episode.
                     # BUG: `stack` actually has an issue with the terminal observation.
                     if "terminal_observation" in info:
                         last_observation = info["terminal_observation"]
                         self.ongoing_episodes[env_idx].last_observation = last_observation
-
+                    
+                    # self.ongoing_episodes[env_idx].infos.append(info)
+                    # TODO: Not sure about adding this or not:
+                    # self.ongoing_episodes[env_idx].model_versions.append(self.model_version)
                     completed_episode = self.ongoing_episodes[env_idx].stack()
                     completed_episodes[env_idx] = completed_episode
 
@@ -260,16 +256,14 @@ class EpisodeCollector(
                     self.ongoing_episodes[env_idx].observations.append(observation)
                     self.ongoing_episodes[env_idx].actions.append(action)  # type: ignore
                     self.ongoing_episodes[env_idx].rewards.append(reward)  # type: ignore
-                    self.ongoing_episodes[env_idx].infos.append(info)
+                    self.ongoing_episodes[env_idx].infos.append({})
                     self.ongoing_episodes[env_idx].model_versions.append(self.model_version)
 
             if not completed_episodes:
                 # No episode ended, go to the next step.
                 continue
 
-            single_action_space = getattr(
-                self.env, "single_action_space", self.env.action_space
-            )
+            single_action_space = getattr(self.env, "single_action_space", self.env.action_space)
             # Here's where we're at now:
             # We have *only* the ongoing episodes in `self.ongoing_episodes`, and *only* the
             # completed episodes in `completed_episodes`.
@@ -283,7 +277,7 @@ class EpisodeCollector(
             # the training_step logic so that it calculates a loss using a list of epiodes.
             while completed_episodes:
                 # NOTE: Using a while loop and popping items out, because we might modify
-                # the following `completed_episodes` when a new policy comes up. 
+                # the following `completed_episodes` when a new policy comes up.
                 # NOTE: pop order doesn't really matter, but going from lowest to highest.
                 # env_idx, completed_episode = completed_episodes.popitem()
                 logger.debug(f"Completed episodes to yield from envs: {completed_episodes.keys()}")
@@ -304,21 +298,24 @@ class EpisodeCollector(
                 new_policy = yield completed_episode
                 self.num_episodes += 1
 
-
                 if new_policy is None:
                     # No policy update, yield the next completed episode if there is one.
                     continue
-                
+
                 # NOTE: Need to yield None here, so that `send` returns None.
                 yield  # type: ignore
 
                 # Increment this flag, which is left in the episode objects for convenience.
                 self.model_version += 1
 
-                assert self.what_to_do_after_update in {redo_forward_pass_strategy, do_nothing_strategy, detach_actions_strategy}
+                assert self.what_to_do_after_update in {
+                    redo_forward_pass_strategy,
+                    do_nothing_strategy,
+                    detach_actions_strategy,
+                }
                 # Update all the ongoing episodes:
                 self.ongoing_episodes = self.what_to_do_after_update(
-                    unfinished_episodes=self.ongoing_episodes,
+                    episodes=self.ongoing_episodes,
                     old_policy=self.policy,
                     new_policy=new_policy,
                     new_policy_version=self.model_version,
@@ -326,7 +323,7 @@ class EpisodeCollector(
                 )
                 # ALSO: Update all the completed episodes that haven't yet been yielded.
                 updated_completed_episodes = self.what_to_do_after_update(
-                    unfinished_episodes=completed_episodes.values(),
+                    episodes=completed_episodes.values(),
                     old_policy=self.policy,
                     new_policy=new_policy,
                     new_policy_version=self.model_version,
@@ -334,10 +331,11 @@ class EpisodeCollector(
                 )
                 # Update the `completed_episodes` dict so that the next complete episodes to be
                 # yielded are also updated correctly.
-                completed_episodes = dict(zip(completed_episodes.keys(), updated_completed_episodes))
+                completed_episodes = dict(
+                    zip(completed_episodes.keys(), updated_completed_episodes)
+                )
                 # Update the `self.policy` attribute:
                 self.policy = new_policy
-
 
     def on_policy_update(self, new_policy: Policy[_Observation, _Action]):
         # print(

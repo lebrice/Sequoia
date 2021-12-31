@@ -109,17 +109,23 @@ class OnPolicyEpisodeDataset(
         raise NotImplementedError("TODO: Justify this use-case, even though we *could* add it.")
         return type(self)(env=ConcatEnvsWrapper(envs=[self.env, other]), policy=self.policy)
 
+def foo(values):
+    return values
+    assert False, len(values)
+    assert False, (args, kwargs)
 
-class OnPolicyEpisodeLoader(DataLoader[Episode[_Observation_co, _Action, _Reward]]):
+class OnPolicyEpisodeLoader(DataLoader[StackedEpisode[_Observation_co, _Action, _Reward]]):
     def __init__(
         self, dataset: OnPolicyEpisodeDataset[_Observation_co, _Action, _Reward], batch_size: int, **kwargs
     ):
-        kwargs.update(batch_size=batch_size, num_workers=0, collate_fn=None)
+        kwargs.update(batch_size=batch_size, num_workers=0, collate_fn=foo)
         super().__init__(dataset=dataset, **kwargs)
         self.dataset: OnPolicyEpisodeDataset[_Observation_co, _Action, _Reward]
         self.env = dataset
 
     def __iter__(self):
+        # NOTE: Testing this out!
+
         return super().__iter__()
         # return iter(self.dataset)
 

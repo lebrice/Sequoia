@@ -91,7 +91,6 @@ class DiscreteAction(Action[int]):
         return self.logits[self.action]
 
 
-
 @dataclass(frozen=True)
 class DiscreteActionBatch(Batch, Sequence[DiscreteAction]):
     action: Sequence[int]
@@ -109,6 +108,10 @@ class DiscreteActionBatch(Batch, Sequence[DiscreteAction]):
         # NOTE: This is hella ugly. But does what it's supposed to, and is likely quicker:
         return self.logits.gather(-1, self.action.unsqueeze(-1)).squeeze(-1)
         # return torch.stack([logit[action] for logit, action in zip(self.logits, self.action)])
+
+
+from sequoia.common.spaces.utils import register_batch_type_to_use_for_item_type
+register_batch_type_to_use_for_item_type(item_type=DiscreteAction, batch_type=DiscreteActionBatch)
 
 
 @stack.register(DiscreteAction)
@@ -308,20 +311,30 @@ class OnPolicyModel(LightningModule):
 
     def shared_step(
         self,
-        episode: StackedEpisode[_Observation_co, _Action, _Reward],
+        episodes: List[StackedEpisode[Observation, DiscreteActionBatch, Rewards]],
         batch_idx: int,
         dataloader_idx: int = 0,
     ) -> Tensor:
         """ Perform a single loss computation. """
-        selected_action_logits = episode.actions.action_logits
-        loss = vanilla_policy_gradient(
-            rewards=episode.rewards.reward,
-            log_probs=selected_action_logits,
-            gamma=self.hp.gamma,
-        )
+        loss: Union[float, Tensor] = 0.
+        for episode_index, episode in enumerate(episodes):
+            assert isinstance(episode.actions, DiscreteActionBatch), episode.actions
+
+            selected_action_logits = episode.actions.action_logits
+            assert len(episode.observations.observation) == len(episode.actions.action) == len(episode.rewards.reward), (
+                episode_index, len(episode.observations.observation), len(episode.actions.action), len(episode.rewards.reward)
+            )
+            episode_loss = vanilla_policy_gradient(
+                rewards=episode.rewards.reward,
+                log_probs=selected_action_logits,
+                gamma=self.hp.gamma,
+            )
+            logger.debug(f"Episode #{episode_index} has loss of {episode_loss}")
+            loss += episode_loss
+
         metrics = dict(
-            mean_episode_length=len(episode),
-            mean_episode_reward=sum(episode.rewards.reward),
+            mean_episode_length=np.mean([episode.length for episode in episodes]),
+            mean_episode_reward=np.mean([sum(episode.rewards.reward) for episode in episodes])
         )
         if self.trainer:
             stage = self.trainer.state.stage

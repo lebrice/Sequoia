@@ -3,12 +3,12 @@ nested objects.
 
 """
 from functools import singledispatch
-from typing import Any, Dict, List, Sequence, Tuple, TypeVar
+from typing import Any, Dict, List, Mapping, Sequence, Tuple, TypeVar
 
 import numpy as np
 import torch
 from torch import Tensor
-
+from sequoia.common.spaces.utils import get_batch_type_for_item_type, get_item_type_for_batch_type
 # from ._namedtuple import is_namedtuple, NamedTuple
 
 K = TypeVar("K")
@@ -24,9 +24,10 @@ def get_slice(value: Sequence[T], indices: Sequence[int]) -> T:
         return None
     return value[indices]
 
+from collections import abc as _abc
 
-@get_slice.register(dict)
-def _get_dict_slice(value: Dict[K, V], indices: Sequence[int]) -> Dict[K, V]:
+@get_slice.register(_abc.Mapping)
+def _get_dict_slice(value: Mapping[K, V], indices: Sequence[int]) -> Mapping[K, V]:
     return type(value)(
         (k, get_slice(v, indices)) for k, v in  value.items()
     ) 
@@ -48,14 +49,19 @@ def _get_dict_slice(value: Dict[K, V], indices: Sequence[int]) -> Dict[K, V]:
 
 from sequoia.common.batch import Batch
 
+
 @get_slice.register(Batch)
 def _get_batch_slice(value: Batch, indices: Sequence[int]) -> Batch:
-    return value.slice(indices)
+    # return value.slice(indices)
+    if isinstance(indices, int) or len(indices) == 1:
+        slice_type = get_item_type_for_batch_type(value) or type(value)
+    else:
+        slice_type = type(value)
+    return slice_type(**{
+        field_name: get_slice(field_value, indices) if field_value is not None else None
+        for field_name, field_value in value.items()
+    })
     # assert False, f"Removing this in favor of just doing Batch[:, indices]. "
-    # return type(value)(**{
-    #     field_name: get_slice(field_value, indices) if field_value is not None else None
-    #     for field_name, field_value in value.as_dict().items()
-    # })
 
 
 

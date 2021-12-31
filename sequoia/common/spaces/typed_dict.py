@@ -38,7 +38,6 @@ from gym import Space, spaces
 from .utils import batch_space, concatenate
 
 
-
 M = TypeVar("M", bound=Mapping[str, Any])
 S = TypeVar("S")
 Dataclass = TypeVar("Dataclass")
@@ -142,9 +141,7 @@ class TypedDictSpace(spaces.Dict, Generic[M]):
      [4 4]], (4, 2), int64))
     """
 
-    def __init__(
-        self, spaces: Mapping[str, Space] = None, dtype: Type[M] = dict, **spaces_kwargs
-    ):
+    def __init__(self, spaces: Mapping[str, Space] = None, dtype: Type[M] = dict, **spaces_kwargs):
         """Creates the TypedDict space.
         
         Can either pass a dict of spaces, or pass the spaces as keyword arguments.
@@ -200,9 +197,7 @@ class TypedDictSpace(spaces.Dict, Generic[M]):
                 else:
                     origin = get_origin(type_annotation)
                     is_space = (
-                        origin is not None
-                        and isclass(origin)
-                        and issubclass(origin, gym.Space)
+                        origin is not None and isclass(origin) and issubclass(origin, gym.Space)
                     )
 
                 # NOTE: emulate a 'required argument' when there is a type
@@ -226,9 +221,7 @@ class TypedDictSpace(spaces.Dict, Generic[M]):
         # regular dict.
         spaces = OrderedDict()  # Need to use this for 3.6.x
         spaces.update(spaces_from_annotations)
-        spaces.update(
-            spaces_from_args
-        )  # Arguments overwrite the spaces from the annotations.
+        spaces.update(spaces_from_args)  # Arguments overwrite the spaces from the annotations.
 
         if not spaces:
             raise TypeError(
@@ -306,7 +299,7 @@ class TypedDictSpace(spaces.Dict, Generic[M]):
 
         # NOTE: Modifying this so that we allow samples with more values, as long as it
         # has all the required keys.
-        if not isinstance(x, (dict, MappingABC)) or not all(k in x for k in self.spaces):            
+        if not isinstance(x, (dict, MappingABC)) or not all(k in x for k in self.spaces):
             return False
         for k, space in self.spaces.items():
             if k not in x:
@@ -331,52 +324,26 @@ class TypedDictSpace(spaces.Dict, Generic[M]):
 
 
 from functools import singledispatch
+from .utils import get_batch_type_for_item_type
 
-
-def _is_singledispatch(module_function):
-    return hasattr(module_function, "registry")
-
-
-def register_variant(module, module_fn_name: str):
-    """ Converts a function from the given module to a singledispatch callable,
-    and registers the wrapped function as the callable to use for Sparse spaces.
-    
-    The module function must have the space as the first argument for this to
-    work.
-    """
-    module_function = getattr(module, module_fn_name)
-
-    # Convert the function to a singledispatch callable.
-    if not _is_singledispatch(module_function):
-        module_function = singledispatch(module_function)
-        setattr(module, module_fn_name, module_function)
-    # Register the function as the callable to use when the first arg is a
-    # Sparse object.
-    def wrapper(function):
-        module_function.register(TypedDictSpace, function)
-        return function
-
-    return wrapper
-
-
-import gym.vector.utils
-from gym.vector.utils.shared_memory import (
-    read_from_shared_memory as read_from_shared_memory_,
-)
 
 @batch_space.register(TypedDictSpace)
 def _batch_typed_dict_space(space: TypedDictSpace, n: int = 1) -> spaces.Dict:
-    return type(space)(
+    # Check if there is a registered dtype to use for the batched samples.
+    # If there isn't, then use the same dtype for a single space as for the batched space.
+    batched_space_type: Type[TypedDictSpace] = (
+        get_batch_type_for_item_type(type(space)) or type(space)
+    )
+    batched_space_dtype: Type[Mapping] = get_batch_type_for_item_type(space.dtype) or space.dtype
+    return batched_space_type(
         {key: batch_space(subspace, n=n) for (key, subspace) in space.spaces.items()},
-        dtype=space.dtype,
+        dtype=batched_space_dtype,
     )
 
 
 @concatenate.register(TypedDictSpace)
 def _concatenate_typed_dicts(
-    space: TypedDictSpace,
-    items: Union[list, tuple],
-    out: Union[tuple, dict, np.ndarray],
+    space: TypedDictSpace, items: Union[list, tuple], out: Union[tuple, dict, np.ndarray],
 ) -> Dict:
     return space.dtype(
         **{
@@ -385,11 +352,14 @@ def _concatenate_typed_dicts(
         }
     )
 
+
 from gym.vector.utils import create_empty_array
 
+
 @create_empty_array.register(TypedDictSpace)
-def _create_empty_typeddict(space: TypedDictSpace, n: int=1, fn=np.zeros):
-    return space.dtype(**create_empty_array.dispatch(spaces.Dict)(space, n=n, fn=fn))
+def _create_empty_typeddict(space: TypedDictSpace, n: int = 1, fn=np.zeros):
+    empty_array_dtype = get_batch_type_for_item_type(space.dtype) or space.dtype
+    return empty_array_dtype(**create_empty_array.dispatch(spaces.Dict)(space, n=n, fn=fn))
 
 
 def _add_field_to_dataclass(
