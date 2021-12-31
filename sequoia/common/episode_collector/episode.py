@@ -1,5 +1,16 @@
 from dataclasses import dataclass, field
-from typing import Dict, Generic, List, MutableSequence, Optional, Sequence, Tuple, TypeVar, Union
+from typing import (
+    Dict,
+    Generic,
+    List,
+    MutableSequence,
+    Optional,
+    Sequence,
+    Tuple,
+    TypeVar,
+    Union,
+)
+from gym.spaces.space import Space
 
 import numpy as np
 from gym import spaces
@@ -41,12 +52,16 @@ class Transition(Batch, Generic[_Observation_co, _Action, _Reward]):
         reward_space = get_reward_space(env)
         return TypedDictSpace(
             spaces={
-                "observation": getattr(env, "single_observation_space", env.observation_space),
+                "observation": getattr(
+                    env, "single_observation_space", env.observation_space
+                ),
                 "action": getattr(env, "single_action_space", env.action_space),
                 "reward": getattr(env, "single_reward_space", reward_space),
                 "next_observation": env.observation_space,
                 "info": spaces.Dict(),
-                "done": spaces.Box(False, True, dtype=bool, shape=()),  # note: single bool.
+                "done": spaces.Box(
+                    False, True, dtype=bool, shape=()
+                ),  # note: single bool.
             },
             dtype=cls,
         )
@@ -56,7 +71,7 @@ class Transition(Batch, Generic[_Observation_co, _Action, _Reward]):
 # forward receives a Transition, rather than an _Observation.
 
 
-@dataclass(frozen=True)
+@dataclass
 class Episode(
     Sequence[Transition[_Observation, _Action, _Reward]],
     Generic[_Observation, _Action, _Reward],
@@ -80,7 +95,9 @@ class Episode(
             observations=stack(self.observations),
             actions=stack(self.actions),
             rewards=stack(self.rewards),
-            infos=stack(self.infos),  # TODO: List of empty dicts in case infos is empty.
+            infos=np.array(
+                self.infos
+            ),  # TODO: List of empty dicts in case infos is empty.
             last_observation=self.last_observation,
             model_versions=stack(self.model_versions),
         )
@@ -122,7 +139,9 @@ from sequoia.utils.generic_functions import get_slice, set_slice
 
 
 @set_slice.register(Transition)
-def _set_transition_slice(target: Transition, indices: Sequence[int], values: Transition):
+def _set_transition_slice(
+    target: Transition, indices: Sequence[int], values: Transition
+):
     for f in fields(target):
         k = f.name
         target_v = getattr(target, k)
@@ -182,3 +201,34 @@ class StackedEpisode(Batch, Generic[_Observation, _Action, _Reward]):
             info=info,
             done=done,
         )
+
+
+
+from gym.vector.utils import create_empty_array
+
+class EpisodeBatch(Sequence[StackedEpisode[_Observation_co, _Action, _Reward]]):
+    """ IDEA: What about creating a kind of immutable object that holds stacked observations,
+    actions, rewards, last_observations, etc, in a more efficient way than a simple List[Episode]?
+
+    For example, say we create empty arrays for 1000 obs/actions/rewards, and then each "episode"
+    indexes inside these arrays?
+    
+    NOTE: This sounds cool, but isn't really needed atm.
+    """
+
+    # observations: _Observation_co
+    # actions: _Action
+    # rewards: _Reward
+    episode_start_indices: List[int]
+
+    def __init__(
+        self,
+        observation_space: Space[_Observation_co],
+        action_space: Space[_Action],
+        reward_space: Space[_Reward],
+        capacity: int = 50,
+    ) -> None:
+        super().__init__()
+
+        self._observations = create_empty_array(observation_space, n=capacity)
+

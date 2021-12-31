@@ -232,7 +232,7 @@ class EpisodeCollector(
             completed_episodes: Dict[int, StackedEpisode] = {}
 
             for env_idx, (done, info) in enumerate(zip(dones, infos)):
-                observation: Any = get_slice(observations, env_idx)
+                observation = get_slice(observations, env_idx)
                 action = get_slice(actions, env_idx)
                 reward = get_slice(rewards, env_idx)
 
@@ -246,9 +246,11 @@ class EpisodeCollector(
                     self.ongoing_episodes[env_idx].model_versions.append(self.model_version)
                 else:
                     # Episode is done. Observation is the first of the next episode.
-                    self.ongoing_episodes[env_idx].rewards.append(reward)  # type: ignore
-                    self.ongoing_episodes[env_idx].infos.append(info)
-                    self.ongoing_episodes[env_idx].model_versions.append(self.model_version)
+                    # NOTE: For VectorEnvs, this is actually also for the next episode.
+                    # BUG: `stack` actually has an issue with the terminal observation.
+                    if "terminal_observation" in info:
+                        last_observation = info["terminal_observation"]
+                        self.ongoing_episodes[env_idx].last_observation = last_observation
 
                     completed_episode = self.ongoing_episodes[env_idx].stack()
                     completed_episodes[env_idx] = completed_episode
@@ -257,6 +259,9 @@ class EpisodeCollector(
                     self.ongoing_episodes[env_idx] = Episode()
                     self.ongoing_episodes[env_idx].observations.append(observation)
                     self.ongoing_episodes[env_idx].actions.append(action)  # type: ignore
+                    self.ongoing_episodes[env_idx].rewards.append(reward)  # type: ignore
+                    self.ongoing_episodes[env_idx].infos.append(info)
+                    self.ongoing_episodes[env_idx].model_versions.append(self.model_version)
 
             if not completed_episodes:
                 # No episode ended, go to the next step.

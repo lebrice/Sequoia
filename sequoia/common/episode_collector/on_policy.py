@@ -7,7 +7,7 @@ from torch.utils.data.dataloader import (
     _collate_fn_t,
     _worker_init_fn_t,
 )
-from typing import Optional, Sequence, Union, Iterator, Optional
+from typing import List, Optional, Sequence, Union, Iterator, Optional
 
 from torch.utils.data.dataset import IterableDataset
 from sequoia.common.episode_collector.policy import Policy
@@ -19,7 +19,7 @@ from sequoia.common.typed_gym import (
     _Reward,
     _Reward,
 )
-from .episode import Episode
+from .episode import Episode, StackedEpisode
 from .episode_collector import EpisodeCollector, PolicyUpdateStrategy, do_nothing_strategy, redo_forward_pass_strategy
 import gym
 
@@ -29,6 +29,7 @@ def make_env_loader(
     policy: Policy[_Observation_co, _Action],
     max_episodes: int = None,
     max_steps: int = None,
+    batch_size: int = 1,
     seed: int = None,
     what_to_do_after_update: PolicyUpdateStrategy = redo_forward_pass_strategy,
 ) -> OnPolicyEpisodeLoader[_Observation_co, _Action, _Reward]:
@@ -43,7 +44,7 @@ def make_env_loader(
         max_iter_episodes=max_episodes,
         what_to_do_after_update=what_to_do_after_update,
     )
-    loader = OnPolicyEpisodeLoader(dataset=dataset)
+    loader = OnPolicyEpisodeLoader(dataset=dataset, batch_size=batch_size)
     return loader
 
 
