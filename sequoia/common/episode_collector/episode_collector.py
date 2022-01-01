@@ -1,73 +1,45 @@
-from typing import Generic, Generator, Iterable
-
-from abc import abstractmethod
-import collections
 import itertools
-from typing import (
-    Callable,
-    Dict,
-    Generic,
-    Iterable,
-    List,
-    Mapping,
-    Optional,
-    TypeVar,
-    MutableSequence,
-    Union,
-    overload,
-    runtime_checkable,
-)
-import gym
-from dataclasses import dataclass, field, replace
-from typing import Generator, Sequence, Tuple, Protocol, Any, Iterator, Type
-import numpy as np
-from enum import Enum, auto
-from gym import Space
 
 # from typed_gym import Env, Space, VectorEnv
-from functools import singledispatch
-from sequoia.utils.generic_functions import detach, stack, get_slice
 from logging import getLogger as get_logger
-from .episode import (
-    Episode,
-    _Observation,
-    _Observation_co,
-    _Action,
-    _Reward,
-    _Reward_co,
-    T,
-    StackedEpisode,
-    T_co,
-)
+from typing import Dict, Generator, List, Optional, Union
+
+import numpy as np
+from gym import Space
+from gym.vector import VectorEnv
+from sequoia.settings.base.environment import Environment
+from sequoia.utils.generic_functions import get_slice
+from sequoia.common.typed_gym import _Env, _VectorEnv
+from .episode import Episode, StackedEpisode, _Action, _Observation, _Reward
 from .update_strategy import (
     Policy,
     PolicyUpdateStrategy,
-    do_nothing_strategy,
     detach_actions_strategy,
+    do_nothing_strategy,
     redo_forward_pass_strategy,
 )
-
-from gym.vector import VectorEnv
-from sequoia.settings.base.environment import Environment
 
 logger = get_logger(__name__)
 
 
 class EpisodeCollector(
     Generator[
-        Episode[_Observation, _Action, _Reward], Optional[Policy[_Observation, _Action]], None,
+        StackedEpisode[_Observation, _Action, _Reward],
+        Optional[Policy[_Observation, _Action]],
+        None,
     ]
 ):
     def __init__(
         self,
         env: Union[
-            Environment[_Observation, _Action, _Reward],
-            "VectorEnv[_Observation, _Action, _Reward]",
+            _Env[_Observation, _Action, _Reward], "_VectorEnv[_Observation, _Action, _Reward]",
         ],
         policy: Policy[_Observation, _Action],
         max_steps: Optional[int] = None,
         max_episodes: Optional[int] = None,
-        what_to_do_after_update: PolicyUpdateStrategy = do_nothing_strategy,
+        what_to_do_after_update: PolicyUpdateStrategy[
+            _Observation, _Action, _Reward
+        ] = do_nothing_strategy,
         starting_model_version: int = 0,
     ) -> None:
         self.env = env
@@ -84,7 +56,7 @@ class EpisodeCollector(
         self.ongoing_episodes: List[Episode[_Observation, _Action, _Reward]] = []
         self._generator: Optional[
             Generator[
-                Episode[_Observation, _Action, _Reward],
+                StackedEpisode[_Observation, _Action, _Reward],
                 Optional[Policy[_Observation, _Action]],
                 None,
             ]
@@ -202,7 +174,7 @@ class EpisodeCollector(
         a single environment.
         """
         assert isinstance(self.env.unwrapped, VectorEnv), self.env
-        num_envs = self.env.num_envs
+        num_envs: int = self.env.unwrapped.num_envs
         self.ongoing_episodes = [Episode() for _ in range(num_envs)]
         # IDEA: Create an iterator that uses the given policy and yields 'flattened' episodes.
         # NOTE: This is a lot easier to use with off-policy RL methods, for sure.
@@ -244,7 +216,7 @@ class EpisodeCollector(
                     if "terminal_observation" in info:
                         last_observation = info["terminal_observation"]
                         self.ongoing_episodes[env_idx].last_observation = last_observation
-                    
+
                     # self.ongoing_episodes[env_idx].infos.append(info)
                     # TODO: Not sure about adding this or not:
                     # self.ongoing_episodes[env_idx].model_versions.append(self.model_version)

@@ -58,10 +58,11 @@ class _Env(Protocol[_Observation, _Action, _Reward_co]):
         seeds.extend(self.action_space.seed(seed))
         seeds.extend(self.observation_space.seed(seed))
         return seeds
-    
+
     @property
-    def unwrapped(self) -> "Env":
+    def unwrapped(self) -> "_Env[Any, Any, Any]":
         return self
+
 
 @runtime_checkable
 class _VectorEnv(_Env[_Observation, _Action, _Reward_co], Protocol):
@@ -73,6 +74,7 @@ class _VectorEnv(_Env[_Observation, _Action, _Reward_co], Protocol):
         self, action: _Action
     ) -> Tuple[_Observation, _Reward_co, np.ndarray, Sequence[dict]]:
         pass
+
 
 # import gym
 # VectorEnv.register(gym.vector.VectorEnv)

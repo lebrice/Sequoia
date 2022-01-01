@@ -20,7 +20,12 @@ from sequoia.common.typed_gym import (
     _Reward,
 )
 from .episode import Episode, StackedEpisode
-from .episode_collector import EpisodeCollector, PolicyUpdateStrategy, do_nothing_strategy, redo_forward_pass_strategy
+from .episode_collector import (
+    EpisodeCollector,
+    PolicyUpdateStrategy,
+    do_nothing_strategy,
+    redo_forward_pass_strategy,
+)
 import gym
 
 
@@ -109,25 +114,37 @@ class OnPolicyEpisodeDataset(
         raise NotImplementedError("TODO: Justify this use-case, even though we *could* add it.")
         return type(self)(env=ConcatEnvsWrapper(envs=[self.env, other]), policy=self.policy)
 
-def foo(values):
-    return values
-    assert False, len(values)
-    assert False, (args, kwargs)
+
+import itertools
+
 
 class OnPolicyEpisodeLoader(DataLoader[StackedEpisode[_Observation_co, _Action, _Reward]]):
     def __init__(
-        self, dataset: OnPolicyEpisodeDataset[_Observation_co, _Action, _Reward], batch_size: int, **kwargs
+        self,
+        dataset: OnPolicyEpisodeDataset[_Observation_co, _Action, _Reward],
+        batch_size: int,
+        **kwargs
     ):
-        kwargs.update(batch_size=batch_size, num_workers=0, collate_fn=foo)
+        kwargs.update(batch_size=batch_size, num_workers=0, collate_fn=list)
         super().__init__(dataset=dataset, **kwargs)
         self.dataset: OnPolicyEpisodeDataset[_Observation_co, _Action, _Reward]
         self.env = dataset
 
     def __iter__(self):
-        # NOTE: Testing this out!
-
+        # NOTE: Testing this out, seems to work so far. However, not sure if there is some kind of
+        # buffer that delays stuff, so I'll probably just do it myself just to be sure.
         return super().__iter__()
-        # return iter(self.dataset)
+
+        # batches = 0
+        # assert self.batch_size is not None
+        # for batch in itertools.count():
+        #     buffer = []
+        #     for i, episode in zip(range(self.batch_size), self.dataset):
+        #         buffer.append(episode)
+        #     new_policy = yield buffer
+
+        #     if new_policy is not None:
+        #         self.dataset.send(new_policy)
 
     def send(self, new_policy: Policy[_Observation_co, _Action]) -> None:
         return self.dataset.send(new_policy)
