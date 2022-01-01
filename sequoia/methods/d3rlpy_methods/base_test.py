@@ -59,7 +59,7 @@ class BaseOfflineRLMethodTests:
         results = setting_online.apply(method)
 
         # Difficult to set a meaningful threshold for 1 step fit
-        assert isinstance(results.objective, float) or isinstance(results.objective, int)
+        assert isinstance(results.objective, (int, float))
 
 
 class TestDQNMethod(BaseOfflineRLMethodTests):

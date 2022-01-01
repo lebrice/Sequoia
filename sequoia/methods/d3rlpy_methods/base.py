@@ -32,7 +32,7 @@ class BaseOfflineRLMethod(Method, target_setting=OfflineRLSetting):
                  train_steps_per_epoch=1_000_000,
                  test_steps=1_000,
                  scorers: dict = None,
-                 use_gpu: bool = False):
+                 use_gpu: bool = False, **kwargs):
         super().__init__()
         self.train_steps = train_steps
         self.train_steps_per_epoch = train_steps_per_epoch
@@ -40,8 +40,12 @@ class BaseOfflineRLMethod(Method, target_setting=OfflineRLSetting):
         self.scorers = scorers
         self.offline_metrics = None
 
+        # Option 1: Move this to configure, each algo implements its own configure
+        # Option 2: Add kwargs to this constructor
+        #
         # TODO: add support for all algo params, not just common ones
-        self.algo = type(self).Algo(use_gpu=use_gpu)
+
+        self.algo = type(self).Algo(use_gpu=use_gpu, **kwargs)
 
     def configure(self, setting: OfflineRLSetting) -> None:
         super().configure(setting)
@@ -52,7 +56,7 @@ class BaseOfflineRLMethod(Method, target_setting=OfflineRLSetting):
             valid_env: Union[Environment[Observations, Actions, Rewards], MDPDataset]) -> None:
         """
         Fit self.algo on training and evaluation environment
-        Works for both sequoia environments and d3rlpy datasets
+        Works for both gym environments and d3rlpy datasets
         """
         if isinstance(self.setting, OfflineRLSetting):
             self.offline_metrics = self.algo.fit(train_env,
@@ -61,8 +65,8 @@ class BaseOfflineRLMethod(Method, target_setting=OfflineRLSetting):
                                  n_steps_per_epoch=self.train_steps_per_epoch,
                                  scorers=self.scorers)
         else:
-            train_env, valid_env = RecordEpisodeStatistics(OfflineRLWrapper(train_env)), \
-                                   RecordEpisodeStatistics(OfflineRLWrapper(valid_env))
+            train_env = RecordEpisodeStatistics(OfflineRLWrapper(train_env))
+            valid_env = RecordEpisodeStatistics(OfflineRLWrapper(valid_env))
             self.algo.fit_online(env=train_env, eval_env=valid_env, n_steps=self.train_steps)
 
     def get_actions(self, obs: Union[np.ndarray, Observations], action_space: Space) -> np.ndarray:
@@ -75,6 +79,7 @@ class BaseOfflineRLMethod(Method, target_setting=OfflineRLSetting):
         action = np.asarray(self.algo.predict(obs)).squeeze(axis=0)
         return action
 
+
 """
 D3RLPY Methods: target OfflineRL and TraditionalRL assumptions
 """
@@ -82,6 +87,9 @@ D3RLPY Methods: target OfflineRL and TraditionalRL assumptions
 
 class DQNMethod(BaseOfflineRLMethod):
     Algo: ClassVar[Type[AlgoBase]] = DQN
+
+    # def __init__(dqn arguments...):
+        # super().__init__(dqn arguments)
 
 
 class DoubleDQNMethod(BaseOfflineRLMethod):

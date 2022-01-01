@@ -20,13 +20,13 @@ class OfflineRLResults(Results):
 
     # TODO: Write these methods
     def summary(self) -> str:
-        pass
+        return f"Offline RL results: {self.objective_name} = {self.objective}"
 
     def make_plots(self) -> Dict[str, plt.Figure]:
-        pass
+        return {}
 
     def to_log_dict(self, verbose: bool = False) -> Dict[str, Any]:
-        pass
+        return {}
 
     # Metrics from online testing
     test_rewards: list
@@ -38,7 +38,6 @@ class OfflineRLResults(Results):
     @property
     def objective(self):
         return sum(self.test_rewards) / len(self.test_rewards)
-
 
 
 # TODO: smarter way to do this, like a dict { 'offline_datasets_from_d3rlpy': set() } ?
