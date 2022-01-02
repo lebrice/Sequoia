@@ -53,8 +53,8 @@ class OfflineRLSetting(Setting):
     dataset: choice of dataset for the current setting
     val_size: size of the validation set, x out of 1
 
-    create_mask: bool = False
-    mask_size: int = 1
+    create_mask: flag to create binary mask for bootstrapping
+    mask_size: ensemble size for binary mask
 
     """
     available_datasets: ClassVar[list] = list(offline_datasets_from_d3rlpy) + list(other_datasets)
