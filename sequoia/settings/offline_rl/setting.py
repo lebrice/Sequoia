@@ -47,6 +47,16 @@ other_datasets = {}
 
 @dataclass
 class OfflineRLSetting(Setting):
+    """
+
+    available_datasets: A list of available offline rl datasets
+    dataset: choice of dataset for the current setting
+    val_size: size of the validation set, x out of 1
+
+    create_mask: bool = False
+    mask_size: int = 1
+
+    """
     available_datasets: ClassVar[list] = list(offline_datasets_from_d3rlpy) + list(other_datasets)
     dataset: str = choice(available_datasets, default="cartpole-replay")
     val_size: int = 0.2

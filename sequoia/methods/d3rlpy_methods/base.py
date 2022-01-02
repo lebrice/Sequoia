@@ -60,10 +60,10 @@ class BaseOfflineRLMethod(Method, target_setting=OfflineRLSetting):
         """
         if isinstance(self.setting, OfflineRLSetting):
             self.offline_metrics = self.algo.fit(train_env,
-                                 eval_episodes=valid_env,
-                                 n_steps=self.train_steps,
-                                 n_steps_per_epoch=self.train_steps_per_epoch,
-                                 scorers=self.scorers)
+                                                 eval_episodes=valid_env,
+                                                 n_steps=self.train_steps,
+                                                 n_steps_per_epoch=self.train_steps_per_epoch,
+                                                 scorers=self.scorers)
         else:
             train_env = RecordEpisodeStatistics(OfflineRLWrapper(train_env))
             valid_env = RecordEpisodeStatistics(OfflineRLWrapper(valid_env))
@@ -89,7 +89,7 @@ class DQNMethod(BaseOfflineRLMethod):
     Algo: ClassVar[Type[AlgoBase]] = DQN
 
     # def __init__(dqn arguments...):
-        # super().__init__(dqn arguments)
+    # super().__init__(dqn arguments)
 
 
 class DoubleDQNMethod(BaseOfflineRLMethod):
@@ -146,4 +146,3 @@ class BCQMethod(BaseOfflineRLMethod):
 
 class DiscreteBCQMethod(BaseOfflineRLMethod):
     Algo: ClassVar[Type[AlgoBase]] = DiscreteBCQ
-
