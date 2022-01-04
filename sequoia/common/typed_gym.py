@@ -34,7 +34,7 @@ class _Space(Protocol[T_co]):
 
     def contains(self, value: Any) -> bool:
         raise NotImplementedError
-    
+
     def __contains__(self, item: Any) -> bool:
         return self.contains(item)
 

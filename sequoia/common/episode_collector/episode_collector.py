@@ -32,7 +32,8 @@ class EpisodeCollector(
     def __init__(
         self,
         env: Union[
-            _Env[_Observation, _Action, _Reward], "_VectorEnv[_Observation, _Action, _Reward]",
+            _Env[_Observation, _Action, _Reward],
+            "_VectorEnv[_Observation, _Action, _Reward]",
         ],
         policy: Policy[_Observation, _Action],
         max_steps: Optional[int] = None,
@@ -166,7 +167,9 @@ class EpisodeCollector(
     def _iter_vectorenv(
         self,
     ) -> Generator[
-        Episode[_Observation, _Action, _Reward], Optional[Policy[_Observation, _Action]], None,
+        Episode[_Observation, _Action, _Reward],
+        Optional[Policy[_Observation, _Action]],
+        None,
     ]:
         """Generator that yields complete episodes from a vectorized environment.
 
@@ -288,7 +291,6 @@ class EpisodeCollector(
                 # Update all the ongoing episodes:
                 self.ongoing_episodes = self.what_to_do_after_update(
                     self.ongoing_episodes,
-                    old_policy=self.policy,
                     new_policy=new_policy,
                     new_policy_version=self.model_version,
                     single_action_space=single_action_space,
@@ -296,7 +298,6 @@ class EpisodeCollector(
                 # ALSO: Update all the completed episodes that haven't yet been yielded.
                 updated_completed_episodes = self.what_to_do_after_update(
                     completed_episodes.values(),
-                    old_policy=self.policy,
                     new_policy=new_policy,
                     new_policy_version=self.model_version,
                     single_action_space=single_action_space,

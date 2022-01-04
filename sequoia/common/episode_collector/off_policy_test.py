@@ -8,6 +8,8 @@ from gym import spaces
 from sequoia.common.typed_gym import _Env, _Space, _Observation
 import numpy as np
 
+from .episode_collector import EpisodeCollector
+
 
 class SimpleEnv(gym.Env, _Env[int, int, float]):
     def __init__(self, target: int = 500, start_state: int = 0) -> None:
@@ -43,29 +45,32 @@ def test_simple_env():
             assert done
 
 
-def test_replay_buffer_with_simple_env():
+def test_episode_collector_simple_env():
     env = SimpleEnv()
-    from .episode_collector import EpisodeCollector
     # from .replay_buffer import ReplayBuffer, EnvDataLoader
-    
+
     def policy(obs: int, action_space: _Space[int]) -> int:
         return 1
-    
+
     max_episodes = 2
-    
+
     generator = EpisodeCollector(env=env, policy=policy, max_episodes=max_episodes)
+
+    # TODO: Use a replay buffer in this test here.
     i = 0
     episode: Episode
     for i, episode in enumerate(generator):
-        assert len(episode) == 500
+        assert episode.length == 500
         assert np.array_equal(episode.observations, np.arange(500))
-        assert np.array_equal(episode.rewards, - np.arange(500)[::-1])
+        assert np.array_equal(episode.rewards, -np.arange(500)[::-1])
         assert np.array_equal(episode.actions, np.ones(500))
         assert episode.last_observation == 500
         assert i < max_episodes
     assert i == max_episodes - 1
 
-    assert episode[499] == Transition(observation=499, action=1, reward=0, next_observation=500, info={}, done=True)
+    assert episode[499] == Transition(
+        observation=499, action=1, reward=0, next_observation=500, info={}, done=True
+    )
 
 
 import pytest
@@ -84,9 +89,10 @@ def test_experience_replay_simple():
     def policy(obs: int, action_space: _Space[int]) -> int:
         return 1
         # return action_space.sample()
+
     # TODO: First, add tests for the env dataset / dataloader / experience replay with envs that
     # have typed objects (e.g.) Observation/Action/Reward, tensors, etc.
-    
+
     loader = make_env_loader(
         env,
         batch_size=batch_size,
@@ -97,7 +103,7 @@ def test_experience_replay_simple():
     )
     for i, batch in enumerate(loader):
         print(batch.done)
-        
+
         if any(batch.done):
             assert False, batch
         assert isinstance(batch, Transition)
@@ -137,7 +143,7 @@ def test_experience_replay_with_tensor_env():
     device = "cpu"
 
     env = ConvertToFromTensors(env, device=device)
-    
+
     seed = 123
     batch_size = 10
     buffer_size = 100
@@ -160,7 +166,7 @@ def test_experience_replay_with_tensor_env():
         assert batch in loader.item_space
         assert isinstance(batch.observation, Tensor)
         print(batch.done)
-        
+
         assert batch.shapes == {
             "action": (10,),
             "done": (10,),
@@ -179,7 +185,6 @@ def test_experience_replay_with_tensor_env():
         }
 
 
-
 @pytest.mark.xfail(reason="WIP")
 def test_with_typed_objects_and_tensors():
     # TODO: First, add tests for the env dataset / dataloader / experience replay with envs that
@@ -191,15 +196,17 @@ def test_with_typed_objects_and_tensors():
 
     env = gym.make("CartPole-v0")
     from sequoia.methods.models.base_model.rl.on_policy_model import UseObjectsWrapper, Observation
+
     env = UseObjectsWrapper(env)
     env = ConvertToFromTensors(env, device="cpu")
-    
+
     from .off_policy import OffPolicyTransitionsLoader
+
     # from .replay_buffer import ReplayBuffer, EnvDataLoader
-    
+
     def policy(obs: Observation, action_space: _Space[int]) -> int:
         assert isinstance(obs, Observation)
-        assert isinstance(obs.observation, Tensor) 
+        assert isinstance(obs.observation, Tensor)
         assert obs in env.observation_space
         # assert False, (action_space, action_space.sample())
         return action_space.sample()
@@ -209,7 +216,7 @@ def test_with_typed_objects_and_tensors():
     i = 0
     for i, transitions in enumerate(loader):
         raise NotImplementedError(
-            F"TODO: check that everything works fine with the structured objects that the OnPolicyModel adds."
+            f"TODO: check that everything works fine with the structured objects that the OnPolicyModel adds."
         )
         # assert False, episode[len(episode)-1]
 

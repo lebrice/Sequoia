@@ -1,13 +1,19 @@
 from abc import abstractmethod
 from dataclasses import replace
-from functools import lru_cache, singledispatch
+from functools import singledispatch
 from logging import getLogger as get_logger
-from typing import List, Protocol
+from typing import List, Protocol, TypeVar
 
+import numpy as np
+import torch
 from gym import Space
-from numpy import mod, single
+from torch import Tensor
+
+from sequoia.common.spaces.utils import batch_space
+from sequoia.common.typed_gym import _Space
 from sequoia.utils.generic_functions import detach, stack
 from sequoia.utils.generic_functions.slicing import get_slice, set_slice
+from sequoia.utils.generic_functions.stack import stack, unstack
 
 from .episode import Episode, StackedEpisode, _Action, _Observation_co, _Reward
 from .policy import Policy
@@ -24,7 +30,7 @@ class PolicyUpdateStrategy(Protocol[_Observation_co, _Action, _Reward]):
         unfinished_episodes: List[Episode[_Observation_co, _Action, _Reward]],
         old_policy: Policy[_Observation_co, _Action],
         new_policy: Policy[_Observation_co, _Action],
-        single_action_space: Space[_Action],
+        single_action_space: _Space[_Action],
         new_policy_version: int,
     ) -> List[Episode[_Observation_co, _Action, _Reward]]:
         raise NotImplementedError
@@ -39,20 +45,13 @@ def detach_actions_strategy(unfinished_episodes: List[Episode], *args, **kwargs)
     return [replace(episode, actions=detach(episode.actions)) for episode in unfinished_episodes]
 
 
-from typing import TypeVar
-
-from sequoia.common.spaces.utils import batch_space
-from sequoia.utils.generic_functions.stack import stack, unstack
-import numpy as np
-
 _Episode = TypeVar("_Episode", Episode, StackedEpisode)
 
 
 def redo_forward_pass_strategy(
     episodes: List[_Episode],
-    old_policy: Policy[_Observation_co, _Action],
     new_policy: Policy[_Observation_co, _Action],
-    single_action_space: Space[_Action],
+    single_action_space: _Space[_Action],
     new_policy_version: int,
 ) -> List[_Episode]:
     # NOTE: Using list(new_actions) so that we can use 'append' after.
@@ -77,7 +76,6 @@ def redo_forward_pass_strategy(
         if all(versions_differ):
             new_episode = replace_actions(
                 old_episode,
-                old_policy=old_policy,
                 new_policy=new_policy,
                 single_action_space=single_action_space,
                 new_policy_version=new_policy_version,
@@ -119,9 +117,8 @@ def redo_forward_pass_strategy(
 @singledispatch
 def replace_actions(
     old_episode: Episode[_Observation_co, _Action, _Reward],
-    old_policy: Policy[_Observation_co, _Action],
     new_policy: Policy[_Observation_co, _Action],
-    single_action_space: Space[_Action],
+    single_action_space: _Space[_Action],
     new_policy_version: int,
 ) -> Episode[_Observation_co, _Action, _Reward]:
     stacked_observations = stack(old_episode.observations)
@@ -149,9 +146,8 @@ def replace_actions(
 @replace_actions.register(StackedEpisode)
 def _replace_stacked_actions(
     old_episode: StackedEpisode[_Observation_co, _Action, _Reward],
-    old_policy: Policy[_Observation_co, _Action],
     new_policy: Policy[_Observation_co, _Action],
-    single_action_space: Space[_Action],
+    single_action_space: _Space[_Action],
     new_policy_version: int,
 ) -> StackedEpisode[_Observation_co, _Action, _Reward]:
 
@@ -166,6 +162,12 @@ def _replace_stacked_actions(
     # NOTE: Use a generic 'unstack' function here.
     # Need to unstack the actions so that we can add more stuff to the episode after.
     # (Since in `Episode` objects have list fields.)
+
+    if isinstance(old_episode.model_versions, Tensor):
+        new_model_versions = torch.ones_like(old_episode.model_versions) * new_policy_version
+    else:
+        new_model_versions = np.array([new_policy_version for _ in range(n_actions)])
+
     new_episode = replace(
         old_episode,
         actions=new_stacked_actions,

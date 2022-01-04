@@ -1,16 +1,14 @@
+import enum
 from collections import defaultdict
 from dataclasses import dataclass, replace
-import enum
-from functools import partial, singledispatch
+from functools import singledispatch
 from logging import getLogger as get_logger
 from typing import (
     Any,
-    Callable,
     DefaultDict,
     Dict,
     Generic,
     List,
-    NoReturn,
     Optional,
     Sequence,
     SupportsFloat,
@@ -18,58 +16,37 @@ from typing import (
     TypeVar,
     Union,
 )
-from pytorch_lightning.callbacks.base import Callback
-from pytorch_lightning.trainer.states import RunningStage
-from simple_parsing.helpers.fields import choice
 
 import torch
 from gym import Wrapper, spaces
 from gym.spaces.utils import flatdim, flatten, flatten_space
 from gym.vector import VectorEnv
-from sequoia.common.episode_collector.update_strategy import (
-    PolicyUpdateStrategy,
-    detach_actions_strategy,
-    redo_forward_pass_strategy,
-)
-from sequoia.common.episode_collector.utils import get_reward_space, get_single_reward_space
-from sequoia.common.spaces.space import Space
-from sequoia.common.spaces.utils import batch_space
-from pytorch_lightning import LightningModule, Trainer
-from torch import random
-from sequoia.common.batch import Batch
-from sequoia.common.config import Config
-from sequoia.common.episode_collector import (
-    OnPolicyEpisodeDataset,
-    OnPolicyEpisodeLoader,
-)
-from sequoia.common.episode_collector.episode import Episode, Transition, StackedEpisode
-from sequoia.common.episode_collector.policy import EpsilonGreedyPolicy
-from sequoia.common.gym_wrappers.transform_wrappers import (
-    TransformAction,
-    TransformObservation,
-)
-from sequoia.common.spaces.typed_dict import TypedDictSpace
-from sequoia.common.typed_gym import (
-    _Action,
-    _Env,
-    _Observation_co,
-    _Reward,
-    _Space,
-    _VectorEnv,
-    detach,
-)
-from sequoia.utils.generic_functions import move, stack
+from pytorch_lightning import LightningModule
+from pytorch_lightning.trainer.states import RunningStage
 from simple_parsing.helpers.hparams.hyperparameters import HyperParameters
 from torch import Tensor, nn
 from torch.optim import Adam
 from torch.optim.optimizer import Optimizer
 from torch.utils.data.dataloader import DataLoader
 
-import torch
-from typing import NoReturn, overload
-
+from sequoia.common.batch import Batch
+from sequoia.common.config import Config
+from sequoia.common.episode_collector import OnPolicyEpisodeLoader
+from sequoia.common.episode_collector.episode import Episode, StackedEpisode
 from sequoia.common.episode_collector.on_policy import make_env_loader
+from sequoia.common.episode_collector.update_strategy import (
+    detach_actions_strategy,
+    redo_forward_pass_strategy,
+)
+from sequoia.common.episode_collector.utils import get_reward_space, get_single_reward_space
 from sequoia.common.gym_wrappers.convert_tensors import ConvertToFromTensors
+from sequoia.common.gym_wrappers.transform_wrappers import TransformObservation
+from sequoia.common.spaces.typed_dict import TypedDictSpace
+from sequoia.common.typed_gym import (
+    _Env,
+    _Space,
+    _VectorEnv,
+)
 
 logger = get_logger(__name__)
 
@@ -89,7 +66,7 @@ class Action(Batch, Generic[T_co]):
 
 
 @dataclass(frozen=True)
-class Rewards(Batch, Generic[F]):
+class Reward(Batch, Generic[F]):
     reward: F
 
 
@@ -131,7 +108,9 @@ class OnPolicyModel(LightningModule):
         episodes_per_update: int = 10
 
         # Wether to just recompute the forward pass for the actions of a previous update.
-        what_to_do_with_off_policy_data: WhatToDoWithOffPolicyData = WhatToDoWithOffPolicyData.detach
+        what_to_do_with_off_policy_data: WhatToDoWithOffPolicyData = (
+            WhatToDoWithOffPolicyData.detach
+        )
 
     def __init__(
         self,
@@ -161,21 +140,21 @@ class OnPolicyModel(LightningModule):
         self.config = config or Config()
 
         # TODO: Figure this out: Have the train env as a property?
-        self._train_env: _Env[Observation, DiscreteAction, Rewards] = self.wrap_env(train_env)
-        self._val_env: Optional[_Env[Observation, DiscreteAction, Rewards]] = None
-        self._test_env: Optional[_Env[Observation, DiscreteAction, Rewards]] = None
+        self._train_env: _Env[Observation, DiscreteAction, Reward] = self.wrap_env(train_env)
+        self._val_env: Optional[_Env[Observation, DiscreteAction, Reward]] = None
+        self._test_env: Optional[_Env[Observation, DiscreteAction, Reward]] = None
 
         if val_env is not None:
             self._val_env = self.wrap_env(val_env)
         if test_env is not None:
             self._test_env = self.wrap_env(test_env)
 
-        self._train_dataloader: OnPolicyEpisodeLoader[Observation, DiscreteAction, Rewards]
+        self._train_dataloader: OnPolicyEpisodeLoader[Observation, DiscreteAction, Reward]
         self._val_dataloader: Optional[
-            OnPolicyEpisodeLoader[Observation, DiscreteAction, Rewards]
+            OnPolicyEpisodeLoader[Observation, DiscreteAction, Reward]
         ] = None
         self._test_dataloader: Optional[
-            OnPolicyEpisodeLoader[Observation, DiscreteAction, Rewards]
+            OnPolicyEpisodeLoader[Observation, DiscreteAction, Reward]
         ] = None
 
         self.net = self.create_network()
@@ -194,7 +173,9 @@ class OnPolicyModel(LightningModule):
         self.n_wasted_forward_passes = 0
 
     def forward(
-        self, observation: Observation[Tensor], action_space: _Space[DiscreteAction],
+        self,
+        observation: Observation[Tensor],
+        action_space: _Space[DiscreteAction],
     ) -> DiscreteAction:
         random_action = action_space.sample()
         # TODO: The action space passed here should already produce Tensors on the right device.
@@ -228,7 +209,9 @@ class OnPolicyModel(LightningModule):
         # Maybe do this here instead? Doesn't seem to be called though.
 
     def training_step(
-        self, episodes: List[StackedEpisode[Observation, DiscreteAction, Rewards]], batch_idx: int,
+        self,
+        episodes: List[StackedEpisode[Observation, DiscreteAction, Reward]],
+        batch_idx: int,
     ) -> Optional[Dict[str, Union[Tensor, Any]]]:
         """Calculate a loss for a given episode.
 
@@ -265,28 +248,30 @@ class OnPolicyModel(LightningModule):
         return self.shared_step(on_policy_episodes, batch_idx=batch_idx)
 
     def validation_step(
-        self, episodes: List[StackedEpisode[Observation, DiscreteAction, Rewards]], batch_idx: int,
+        self,
+        episodes: List[StackedEpisode[Observation, DiscreteAction, Reward]],
+        batch_idx: int,
     ) -> Dict[str, Union[Tensor, Any]]:
-        """ Calculate a loss for a given episode.
-        """
+        """Calculate a loss for a given episode."""
         # TODO: In this case here, should we care if the episode is on-policy or not?
         return self.shared_step(episodes, batch_idx=batch_idx)
 
     def test_step(
-        self, episodes: List[StackedEpisode[Observation, DiscreteAction, Rewards]], batch_idx: int,
+        self,
+        episodes: List[StackedEpisode[Observation, DiscreteAction, Reward]],
+        batch_idx: int,
     ) -> Dict[str, Union[Tensor, Any]]:
-        """ Calculate a test loss for a given episode.
-        """
+        """Calculate a test loss for a given episode."""
         # TODO: In this case here, should we care if the episode is on-policy or not?
         return self.shared_step(episodes, batch_idx=batch_idx)
 
     def shared_step(
         self,
-        episodes: List[StackedEpisode[Observation, DiscreteAction, Rewards]],
+        episodes: List[StackedEpisode[Observation, DiscreteAction, Reward]],
         batch_idx: int,
         dataloader_idx: int = 0,
     ) -> Dict[str, Union[Tensor, Any]]:
-        """ Perform a single loss computation. """
+        """Perform a single loss computation."""
         loss: Union[float, Tensor] = 0.0
         for episode_index, episode in enumerate(episodes):
             assert isinstance(episode.actions, DiscreteAction), episode.actions
@@ -325,8 +310,8 @@ class OnPolicyModel(LightningModule):
         return step_output
 
     def handle_off_policy_data(
-        self, episode: StackedEpisode[Observation, DiscreteAction, Rewards]
-    ) -> Optional[StackedEpisode[Observation, DiscreteAction, Rewards]]:
+        self, episode: StackedEpisode[Observation, DiscreteAction, Reward]
+    ) -> Optional[StackedEpisode[Observation, DiscreteAction, Reward]]:
         """Handle potentially partly-off-policy data. This is often necessary because of the
         dataloading of pytorch-lightning, which creates a 1-batch delay between the dataloader and the model updates.
 
@@ -351,7 +336,7 @@ class OnPolicyModel(LightningModule):
             )
             updated_episodes = redo_forward_pass_strategy(
                 episodes=[episode],
-                old_policy=None,
+                old_policy=None,  # unused anyway: Probably need to redesign this a bit.
                 new_policy=self,
                 new_policy_version=self.global_step,
                 single_action_space=single_action_space,
@@ -361,15 +346,15 @@ class OnPolicyModel(LightningModule):
             return updated_episodes[0]
 
     @property
-    def train_env(self) -> _Env[Observation, DiscreteAction, Rewards]:
+    def train_env(self) -> _Env[Observation, DiscreteAction, Reward]:
         return self._train_env
 
     @property
-    def val_env(self) -> _Env[Observation, DiscreteAction, Rewards]:
+    def val_env(self) -> _Env[Observation, DiscreteAction, Reward]:
         return self._val_env
 
     @property
-    def test_env(self) -> _Env[Observation, DiscreteAction, Rewards]:
+    def test_env(self) -> _Env[Observation, DiscreteAction, Reward]:
         return self._test_env
 
     def set_train_env(self, env: _Env) -> None:
@@ -378,9 +363,9 @@ class OnPolicyModel(LightningModule):
         #     and issubclass(env.observation_space.dtype, Observation)):
         self._train_env = self.wrap_env(env)
 
-    def wrap_env(self, env: _Env[Any, Any, Any]) -> _Env[Observation, Action, Rewards]:
+    def wrap_env(self, env: _Env[Any, Any, Any]) -> _Env[Observation, DiscreteAction, Reward]:
         """Adds wrappers around the given env, to make it compatible with this model.
-        
+
         TODO: If we decide that the model should receive compatible envs, then make this a
         classmethod
         """
@@ -393,7 +378,7 @@ class OnPolicyModel(LightningModule):
             and issubclass(env.action_space.dtype, (DiscreteAction, DiscreteAction))
             and hasattr(env, "reward_space")
             and isinstance(env.reward_space, TypedDictSpace)  # type: ignore
-            and issubclass(env.reward_space.dtype, Rewards)  # type: ignore
+            and issubclass(env.reward_space.dtype, Reward)  # type: ignore
         ):
             # All good. (env is probably already wrapped).
             return env
@@ -436,7 +421,9 @@ class OnPolicyModel(LightningModule):
             nn.Linear(32, logits_dims),
         )
 
-    def train_dataloader(self,) -> OnPolicyEpisodeLoader[Observation, DiscreteAction, Rewards]:
+    def train_dataloader(
+        self,
+    ) -> OnPolicyEpisodeLoader[Observation, DiscreteAction, Reward]:
         # note: might cause infinite recursion issues no?
         # TODO: Turn this on eventually. Just debugging atm.
         # train_policy = EpsilonGreedyPolicy(
@@ -456,7 +443,7 @@ class OnPolicyModel(LightningModule):
 
     def val_dataloader(
         self,
-    ) -> Optional[DataLoader[Episode[Observation, DiscreteAction, Rewards]]]:
+    ) -> Optional[DataLoader[Episode[Observation, DiscreteAction, Reward]]]:
         if self.val_env is None:
             return None
         # dataset = EnvDataset(self.val_env, policy=self)
@@ -476,7 +463,7 @@ class OnPolicyModel(LightningModule):
 
     def test_dataloader(
         self,
-    ) -> Optional[DataLoader[Episode[Observation, DiscreteAction, Rewards]]]:
+    ) -> Optional[DataLoader[Episode[Observation, DiscreteAction, Reward]]]:
         if self.test_env is None:
             return None
         # dataset = EnvDataset(self.val_env, policy=self)
@@ -580,7 +567,7 @@ def _(action_space: TensorMultiDiscrete) -> TensorBox:
 
 
 # note: This is the same job as the `TypedObjectsWrapper`, basically.
-class UseObjectsWrapper(Wrapper, _Env[Observation, DiscreteAction, Rewards]):
+class UseObjectsWrapper(Wrapper, _Env[Observation, DiscreteAction, Reward]):
     def __init__(self, env: _Env[Any, int, float]) -> None:
         super().__init__(env)
         assert isinstance(
@@ -598,12 +585,15 @@ class UseObjectsWrapper(Wrapper, _Env[Observation, DiscreteAction, Rewards]):
             logits=logits_space_for(env.action_space),
             dtype=DiscreteAction,
         )
-        self.reward_space = TypedDictSpace(reward=reward_space, dtype=Rewards,)
+        self.reward_space = TypedDictSpace(
+            reward=reward_space,
+            dtype=Reward,
+        )
 
     def reset(self) -> Observation:
         return self.observation_space.dtype(observation=self.env.reset())
 
-    def step(self, action: DiscreteAction) -> Tuple[Observation, Rewards, bool, dict]:
+    def step(self, action: DiscreteAction) -> Tuple[Observation, Reward, bool, dict]:
         action = action.action
         obs, reward, done, info = self.env.step(action)
         return (
@@ -614,7 +604,7 @@ class UseObjectsWrapper(Wrapper, _Env[Observation, DiscreteAction, Rewards]):
         )
 
 
-class UseObjectsVectorEnvWrapper(Wrapper, _Env[Observation, DiscreteAction, Rewards]):
+class UseObjectsVectorEnvWrapper(Wrapper, _Env[Observation, DiscreteAction, Reward]):
     def __init__(self, env: _VectorEnv[Any, Any, Any]) -> None:
         super().__init__(env)
         assert isinstance(env.observation_space, spaces.Box), "Assuming a Box obs space for now"
@@ -640,7 +630,10 @@ class UseObjectsVectorEnvWrapper(Wrapper, _Env[Observation, DiscreteAction, Rewa
             logits=logits_space_for(env.single_action_space),
             dtype=DiscreteAction,
         )
-        self.single_reward_space = TypedDictSpace(reward=single_reward_space, dtype=Rewards,)
+        self.single_reward_space = TypedDictSpace(
+            reward=single_reward_space,
+            dtype=Reward,
+        )
         self.observation_space = TypedDictSpace(
             observation=env.observation_space, dtype=Observation
         )
@@ -651,12 +644,15 @@ class UseObjectsVectorEnvWrapper(Wrapper, _Env[Observation, DiscreteAction, Rewa
             logits=logits_space_for(env.action_space),
             dtype=DiscreteAction,
         )
-        self.reward_space = TypedDictSpace(reward=reward_space, dtype=Rewards,)
+        self.reward_space = TypedDictSpace(
+            reward=reward_space,
+            dtype=Reward,
+        )
 
     def reset(self, **kwargs) -> Observation:
         return self.observation_space.dtype(observation=self.env.reset(**kwargs))
 
-    def step(self, action: DiscreteAction) -> Tuple[Observation, Rewards, bool, dict]:
+    def step(self, action: DiscreteAction) -> Tuple[Observation, Reward, bool, dict]:
         # unwrap the action before passing it to the wrapped env:
         action = action.action
         obs, reward, done, info = self.env.step(action)
