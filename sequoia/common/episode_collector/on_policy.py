@@ -160,13 +160,50 @@ class OnPolicyEpisodeLoader(DataLoader[StackedEpisode[_Observation_co, _Action, 
         dataset: OnPolicyEpisodeDataset[_Observation_co, _Action, _Reward],
         batch_size: int,
         empty_batch_interval: int = 0,
-        **kwargs
+        **kwargs,
     ):
         kwargs.update(batch_size=batch_size, num_workers=0, collate_fn=list)
         super().__init__(dataset=dataset, **kwargs)
         self.dataset: OnPolicyEpisodeDataset[_Observation_co, _Action, _Reward]
+        if empty_batch_interval:
+            if not (isinstance(empty_batch_interval, int) and empty_batch_interval >= 2):
+                raise RuntimeError(
+                    f"Empty batch interval must be int >= 2, but got {empty_batch_interval}"
+                )
         self.empty_batch_interval = empty_batch_interval
         self.env = dataset
+
+    def _accumulate_and_yield(self):
+        assert self.batch_size is not None
+        batches_so_far = 0
+        dataset_iterator = iter(self.dataset)
+        buffer = []
+        while True:
+            # Try to collect another episode and add it to the buffer.
+            try:
+                episode = next(dataset_iterator)
+            except StopIteration:
+                break
+            else:
+                buffer.append(episode)
+
+            if len(buffer) < self.batch_size:
+                # If the buffer isn't full, go to the next step.
+                continue
+
+            # Buffer is now full.
+            new_policy = yield buffer
+            buffer = []
+
+            if new_policy is not None:
+                self.dataset.send(new_policy)
+
+        if len(buffer) == self.batch_size or (
+            not self.drop_last and 0 < len(buffer) < self.batch_size
+        ):
+            new_policy = yield buffer
+            if new_policy is not None:
+                self.dataset.send(new_policy)
 
     def __iter__(self):
         # NOTE: Testing this out, seems to work so far. However, not sure if there is some kind of
@@ -181,46 +218,29 @@ class OnPolicyEpisodeLoader(DataLoader[StackedEpisode[_Observation_co, _Action, 
         assert self.batch_size is not None
         episodes_so_far = 0
         batches_so_far = 0
-        dataset_iterator = iter(self.dataset)
-
-        buffer = []
-        while True:
-            try:
-                episode = next(dataset_iterator)
-            except StopIteration:
-                break
-            buffer.append(episode)
-            episodes_so_far += 1
-
-            if len(buffer) < self.batch_size:
-                continue
-
-            # Buffer is now full.
-            new_policy = yield buffer
-            if new_policy is not None:
-                self.dataset.send(new_policy)
-
+        epoch_iterator = self._accumulate_and_yield()
+        for batch_idx in itertools.count():
+            # STUPID idea that might just work: Yield an empty batch here, so that the model
+            # consuming this performs an update, and so the next batch can use the updated
+            # policy, instead of yielding a batch that is "stale".
             if (
-                self.empty_batch_interval
-                and batches_so_far > 0
-                and batches_so_far % self.empty_batch_interval == 0
+                batch_idx > 0
+                and self.empty_batch_interval
+                and batch_idx % self.empty_batch_interval == 0
             ):
-                # STUPID idea that might just work: Yield an empty batch here, so that the model
-                # consuming this performs an update, and so the next batch can use the updated
-                # policy, instead of yielding a batch that is "stale".
                 new_policy = yield []
+                batches_so_far += 1
                 if new_policy is not None:
                     self.dataset.send(new_policy)
-
-            buffer = []
-            batches_so_far += 1
-
-        if len(buffer) == self.batch_size or (
-            0 < len(buffer) < self.batch_size and not self.drop_last
-        ):
-            new_policy = yield buffer
-            if new_policy is not None:
-                self.dataset.send(new_policy)
+            else:
+                # Regular iteration step: Get the next batch to yield.
+                try:
+                    new_episode_batch = next(epoch_iterator)
+                    new_policy = yield new_episode_batch
+                    if new_policy is not None:
+                        self.dataset.send(new_policy)
+                except StopIteration:
+                    break
 
         # for batch_index in itertools.count():
         #     buffer = []

@@ -336,7 +336,6 @@ class OnPolicyModel(LightningModule):
             )
             updated_episodes = redo_forward_pass_strategy(
                 episodes=[episode],
-                old_policy=None,  # unused anyway: Probably need to redesign this a bit.
                 new_policy=self,
                 new_policy_version=self.global_step,
                 single_action_space=single_action_space,
@@ -434,8 +433,9 @@ class OnPolicyModel(LightningModule):
             self.train_env,
             batch_size=self.hp.episodes_per_update,
             policy=train_policy,
-            max_episodes=self.episodes_per_train_epoch,
-            max_steps=self.steps_per_train_epoch,
+            max_episodes_per_iteration=self.episodes_per_train_epoch,
+            max_steps_per_iteration=self.steps_per_train_epoch,
+            empty_batch_interval=1,  # NOTE: this is a bit of a hack.
             seed=self.config.seed,
             what_to_do_after_update=detach_actions_strategy,
         )
@@ -454,8 +454,8 @@ class OnPolicyModel(LightningModule):
         val_policy = torch.no_grad()(self)
         self._val_dataloader = make_env_loader(
             env=self.val_env,
-            max_episodes=self.episodes_per_val_epoch,
-            max_steps=self.steps_per_val_epoch,
+            max_episodes_per_iteration=self.episodes_per_val_epoch,
+            max_steps_per_iteration=self.steps_per_val_epoch,
             policy=val_policy,
             what_to_do_after_update=detach_actions_strategy,
         )
@@ -474,8 +474,8 @@ class OnPolicyModel(LightningModule):
         test_policy = torch.no_grad()(self)
         self._test_dataloader = make_env_loader(
             env=self.test_env,
-            max_episodes=self.episodes_per_val_epoch,
-            max_steps=self.steps_per_val_epoch,
+            max_episodes_per_iteration=self.episodes_per_val_epoch,
+            max_steps_per_iteration=self.steps_per_val_epoch,
             policy=test_policy,
             what_to_do_after_update=detach_actions_strategy,
         )

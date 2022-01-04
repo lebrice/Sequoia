@@ -1,15 +1,12 @@
-import logging
+import itertools
 
-from pytorch_lightning.utilities import seed
-from .on_policy_model import OnPolicyModel, WhatToDoWithOffPolicyData
 import gym
+import pytest
 import torch
 from pytorch_lightning.trainer import Trainer
-import itertools
-import pytest
-from sequoia.common.gym_wrappers.convert_tensors import ConvertToFromTensors
 from pytorch_lightning.utilities.seed import seed_everything
 from sequoia.conftest import param_requires_cuda
+from .on_policy_model import OnPolicyModel, WhatToDoWithOffPolicyData
 
 
 def seed_env(env: gym.Env, seed: int) -> None:
@@ -31,16 +28,6 @@ def test_cartpole_manual(monkeypatch):
     seed_everything(123)
     seed_env(env, train_seed)
     seed_env(val_env, val_seed)
-
-    # Note: Have to wrap the env so it works for the model.
-    from sequoia.settings.rl.wrappers import TypedObjectsWrapper
-    from .on_policy_model import (
-        OnPolicyModel,
-        Observation,
-        DiscreteAction,
-        Rewards,
-    )
-
     episodes_per_update = 3
     max_updates = 10
 
@@ -54,17 +41,8 @@ def test_cartpole_manual(monkeypatch):
     )
     optimizer = model.configure_optimizers()
     train_dl = model.train_dataloader()
-
-    monkeypatch.setattr(
-        OnPolicyModel,
-        "global_step",
-        property(
-            fget=lambda self: self._global_step,
-            fset=lambda self, val: setattr(self, "_global_step", val),
-        ),
-    )
+    # Need to bypass the read-only global step property during testing.
     for i, episodes in enumerate(itertools.islice(train_dl, max_updates)):
-        model._global_step = i
         step_output = model.training_step(episodes, batch_idx=i)
         if i % 2 == 1:
             assert len(episodes) == 0
@@ -77,7 +55,7 @@ def test_cartpole_manual(monkeypatch):
 
         for j, episode in enumerate(episodes):
             # NOTE: Not quite true, actually. Have to think about this again.
-            assert set(episode.model_versions) == {model.global_step // 2}, j // 2
+            assert set(episode.model_versions) == {model.n_policy_updates}
 
         optimizer.step()
         optimizer.zero_grad()
@@ -208,13 +186,7 @@ def test_cartpole_vecenv_manual(num_envs: int):
     seed_env(val_env, val_seed)
 
     # Note: Have to wrap the env so it works for the model.
-    from .on_policy_model import (
-        OnPolicyModel,
-        Observation,
-        DiscreteAction,
-        DiscreteAction,
-        Rewards,
-    )
+    from .on_policy_model import DiscreteAction, Observation, OnPolicyModel, Reward
 
     model = OnPolicyModel(train_env=env, val_env=val_env)
     optimizer = model.configure_optimizers()
@@ -264,7 +236,7 @@ def test_cartpole_vecenv_manual(num_envs: int):
 def test_vecenv_cartpole_pl(
     train_seed: int, recompute_forward_passes: bool, num_envs: int, use_gpus: bool
 ):
-    """ TODO: There is still a bug with PL about tryign to call backward twice, so we need to make a more fine-grained tests as in above perhaps. """
+    """TODO: There is still a bug with PL about tryign to call backward twice, so we need to make a more fine-grained tests as in above perhaps."""
     env = gym.vector.make("CartPole-v0", num_envs=num_envs, asynchronous=False)
     val_env = gym.vector.make("CartPole-v0", num_envs=num_envs, asynchronous=False)
     test_env = gym.vector.make("CartPole-v0", num_envs=num_envs, asynchronous=False)
@@ -332,4 +304,3 @@ def test_vecenv_cartpole_pl(
     # NOTE: The number of test steps == number of val steps per epoch atm.
     episodes_per_test_epoch = model.episodes_per_val_epoch
     assert model.steps_per_trainer_stage[RunningStage.TESTING] == episodes_per_test_epoch
-

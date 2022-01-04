@@ -70,8 +70,7 @@ def redo_forward_pass_strategy(
     updated_episodes = []
     for old_episode in episodes:
         # NOTE: Could probably also only do the slice that needs to be recomputed!
-
-        versions_differ = np.not_equal(old_episode.model_versions, new_policy_version)
+        versions_differ = [v != new_policy_version for v in old_episode.model_versions]
 
         if all(versions_differ):
             new_episode = replace_actions(
@@ -80,19 +79,19 @@ def redo_forward_pass_strategy(
                 single_action_space=single_action_space,
                 new_policy_version=new_policy_version,
             )
-
+        elif not any(versions_differ):
+            # Weird: no need to change anything about this episode:
+            new_episode = old_episode
         else:
-            assert False, "todo: still debugging stuff here."
             old_indices = np.nonzero(versions_differ)[0]
             logger.debug(
                 f"Only need to update indices {len(old_indices)} in the episode of length "
-                f"{len(old_episode)}."
+                f"{old_episode.length}."
             )
             old_episode_slice = get_slice(old_episode, old_indices)
 
             new_episode_slice = replace_actions(
                 old_episode_slice,
-                old_policy=old_policy,
                 new_policy=new_policy,
                 single_action_space=single_action_space,
                 new_policy_version=new_policy_version,
