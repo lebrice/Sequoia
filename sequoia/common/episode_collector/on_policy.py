@@ -133,18 +133,28 @@ class OnPolicyEpisodeLoader(DataLoader[StackedEpisode[_Observation_co, _Action, 
     def __iter__(self):
         # NOTE: Testing this out, seems to work so far. However, not sure if there is some kind of
         # buffer that delays stuff, so I'll probably just do it myself just to be sure.
-        return super().__iter__()
 
-        # batches = 0
-        # assert self.batch_size is not None
-        # for batch in itertools.count():
-        #     buffer = []
-        #     for i, episode in zip(range(self.batch_size), self.dataset):
-        #         buffer.append(episode)
-        #     new_policy = yield buffer
+        # IDEA: I just had a terribly stupid idea, that could fix the PL bug!
+        # Give out an empty batch between every other batch. That way, the `with_is_last` bug
+        # doesn't happen!
 
-        #     if new_policy is not None:
-        #         self.dataset.send(new_policy)
+        # return super().__iter__()
+
+        batches = 0
+        assert self.batch_size is not None
+        for batch in itertools.count():
+            buffer = []
+            for i, episode in zip(range(self.batch_size), self.dataset):
+                buffer.append(episode)
+            new_policy = yield buffer
+
+            if new_policy is not None:
+                self.dataset.send(new_policy)
+
+            # STUPID idea: Yield an empty batch here
+            new_policy = yield []
+            if new_policy is not None:
+                self.dataset.send(new_policy)
 
     def send(self, new_policy: Policy[_Observation_co, _Action]) -> None:
         return self.dataset.send(new_policy)

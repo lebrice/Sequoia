@@ -287,7 +287,7 @@ class EpisodeCollector(
                 }
                 # Update all the ongoing episodes:
                 self.ongoing_episodes = self.what_to_do_after_update(
-                    episodes=self.ongoing_episodes,
+                    self.ongoing_episodes,
                     old_policy=self.policy,
                     new_policy=new_policy,
                     new_policy_version=self.model_version,
@@ -295,7 +295,7 @@ class EpisodeCollector(
                 )
                 # ALSO: Update all the completed episodes that haven't yet been yielded.
                 updated_completed_episodes = self.what_to_do_after_update(
-                    episodes=completed_episodes.values(),
+                    completed_episodes.values(),
                     old_policy=self.policy,
                     new_policy=new_policy,
                     new_policy_version=self.model_version,

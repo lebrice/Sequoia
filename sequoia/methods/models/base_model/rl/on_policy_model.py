@@ -56,6 +56,7 @@ from sequoia.common.typed_gym import (
     _Reward,
     _Space,
     _VectorEnv,
+    detach,
 )
 from sequoia.utils.generic_functions import move, stack
 from simple_parsing.helpers.hparams.hyperparameters import HyperParameters
@@ -234,10 +235,17 @@ class OnPolicyModel(LightningModule):
         NOTE: The actions in the episode are *currently* from the same model that is being trained.
         accumulate_grad_batches controls the update frequency.
         """
+        if not episodes:
+            self.deploy_new_policies()
+            self.n_policy_updates += 1
+            return
+
         on_policy_episodes = []
         for episode in episodes:
-            if set(episode.model_versions) == {self.global_step}:
+            if set(episode.model_versions) == {self.global_step // 2}:
                 logger.debug(f"All good: 100% on-policy episode. ({self.global_step=})")
+                if self.global_step > 2:
+                    assert False, episode
                 on_policy_episodes.append(episode)
                 self.n_on_policy_episodes += 1
             else:
@@ -308,7 +316,7 @@ class OnPolicyModel(LightningModule):
         )
         if self.trainer:
             stage = self.trainer.state.stage
-            self.log(f"episode_metrics/{stage.value}", metrics, prog_bar=True)
+            self.log_dict(metrics, prog_bar=True)
             self.steps_per_trainer_stage[stage] += 1
         step_output = {
             "loss": loss,
@@ -758,11 +766,3 @@ def normalize(x: Tensor, inplace: bool = False) -> Tensor:
     x = x - x.mean()
     x = x / (x.std() + 1e-9)
     return x
-
-
-def main():
-    pass
-
-
-if __name__ == "__main__":
-    main()

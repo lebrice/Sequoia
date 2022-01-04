@@ -66,13 +66,18 @@ def test_cartpole_manual(monkeypatch):
     for i, episodes in enumerate(itertools.islice(train_dl, max_updates)):
         model._global_step = i
         step_output = model.training_step(episodes, batch_idx=i)
+        if i % 2 == 1:
+            assert len(episodes) == 0
+            assert step_output is None
+            continue
+
         assert step_output is not None
         loss = step_output["loss"]
         loss.backward()
 
-        for i, episode in enumerate(episodes):
+        for j, episode in enumerate(episodes):
             # NOTE: Not quite true, actually. Have to think about this again.
-            assert set(episode.model_versions) == {model.global_step}, i
+            assert set(episode.model_versions) == {model.global_step // 2}, j // 2
 
         optimizer.step()
         optimizer.zero_grad()
@@ -150,10 +155,9 @@ def test_cartpole_pl(train_seed: int, recompute_forward_passes: bool, use_gpus: 
     n_updates = model.global_step
     if recompute_forward_passes:
         # We are recomputing the first episode after each update.
-        assert model.n_recomputed_forward_passes == n_updates, (
-            model.n_on_policy_episodes,
-            model.n_recomputed_forward_passes,
-        )
+        # BUG: Not quite true. Here instead we're recomputing the first batch of episodes after each
+        # update, which actually means the first batch is the only one that is on-policy!
+        assert model.n_recomputed_forward_passes == n_updates
         assert model.n_wasted_forward_passes == 0
     else:
         # We are 'wasting'' the first episode after each model update.
@@ -174,7 +178,7 @@ def test_cartpole_pl(train_seed: int, recompute_forward_passes: bool, use_gpus: 
 
     test_results = trainer.test(model)
     print(test_results)
-
+    assert False, test_results
     # NOTE: The number of test steps == number of val steps per epoch atm.
     episodes_per_test_epoch = model.episodes_per_val_epoch
     assert model.steps_per_trainer_stage[RunningStage.TESTING] == episodes_per_test_epoch
@@ -261,9 +265,9 @@ def test_vecenv_cartpole_pl(
     train_seed: int, recompute_forward_passes: bool, num_envs: int, use_gpus: bool
 ):
     """ TODO: There is still a bug with PL about tryign to call backward twice, so we need to make a more fine-grained tests as in above perhaps. """
-    env = gym.vector.make("CartPole-v0", num_envs=num_envs)
-    val_env = gym.vector.make("CartPole-v0", num_envs=num_envs)
-    test_env = gym.vector.make("CartPole-v0", num_envs=num_envs)
+    env = gym.vector.make("CartPole-v0", num_envs=num_envs, asynchronous=False)
+    val_env = gym.vector.make("CartPole-v0", num_envs=num_envs, asynchronous=False)
+    test_env = gym.vector.make("CartPole-v0", num_envs=num_envs, asynchronous=False)
 
     val_seed = train_seed * 2
     test_seed = train_seed * 3
