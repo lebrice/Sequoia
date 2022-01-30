@@ -73,7 +73,7 @@ class OfflineRLSetting(Setting):
 
     def __post_init__(self):
         # Load d3rlpy offline dataset
-        if self.dataset in offline_datasets_from_d3rlpy:
+        if self.dataset in offline_datasets_from_d3rlpy or self.dataset in offline_atari_datasets_from_d3rlpy:
             mdp_dataset, self.env = d3rlpy.datasets.get_dataset(self.dataset, self.create_mask, self.mask_size)
             self.train_dataset, self.valid_dataset = train_test_split(mdp_dataset, test_size=self.val_size)
 
