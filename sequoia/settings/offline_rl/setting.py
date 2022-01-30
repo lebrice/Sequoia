@@ -14,7 +14,6 @@ from dataclasses import dataclass
 from simple_parsing.helpers import choice
 
 
-
 @dataclass
 class OfflineRLResults(Results):
 
@@ -26,7 +25,7 @@ class OfflineRLResults(Results):
         return {}
 
     def to_log_dict(self, verbose: bool = False) -> Dict[str, Any]:
-        return {}
+        return {self.objective_name: self.objective}
 
     # Metrics from online testing
     test_rewards: list
@@ -40,28 +39,35 @@ class OfflineRLResults(Results):
         return sum(self.test_rewards) / len(self.test_rewards)
 
 
-# TODO: smarter way to do this, like a dict { 'offline_datasets_from_d3rlpy': set() } ?
-offline_datasets_from_d3rlpy = {'cartpole-replay', 'cartpole-random'}
-other_datasets = {}
+# Offline datasets from d3rlpy (not including atari)
+offline_datasets_from_d3rlpy = {
+    'cartpole-replay',
+    'cartpole-random',
+    'pendulum-replay',
+    'pendulum-random',
+    'hopper',
+    'halfcheetah',
+    'walker',
+    'ant'
+}
+
+# Offline atari datasets from d3rlpy
+offline_atari_datasets_from_d3rlpy = set(d3rlpy.datasets.ATARI_GAMES)
 
 
 @dataclass
 class OfflineRLSetting(Setting):
-    """
 
-    available_datasets: A list of available offline rl datasets
-    dataset: choice of dataset for the current setting
-    val_size: size of the validation set, x out of 1
+    # A list of available offline rl datasets
+    available_datasets: ClassVar[list] = list(offline_datasets_from_d3rlpy) + list(offline_atari_datasets_from_d3rlpy)
 
-    create_mask: flag to create binary mask for bootstrapping
-    mask_size: ensemble size for binary mask
-
-    """
-    available_datasets: ClassVar[list] = list(offline_datasets_from_d3rlpy) + list(other_datasets)
+    # choice of dataset for the current setting
     dataset: str = choice(available_datasets, default="cartpole-replay")
+
+    # size of validation set
     val_size: int = 0.2
 
-    # Only d3rlpy uses these params
+    # mask for control bootstrapping
     create_mask: bool = False
     mask_size: int = 1
 
@@ -72,10 +78,8 @@ class OfflineRLSetting(Setting):
             self.train_dataset, self.valid_dataset = train_test_split(mdp_dataset, test_size=self.val_size)
 
         # Load other dataset types here
-        elif self.dataset in other_datasets:
-            self.env = None
-            self.train_dataset = None
-            self.valid_dataset = None
+        else:
+            raise NotImplementedError
 
     def train_dataloader(self, batch_size: int = None) -> DataLoader:
         return DataLoader(self.train_dataset, batch_size=batch_size)

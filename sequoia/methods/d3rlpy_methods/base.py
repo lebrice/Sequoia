@@ -39,17 +39,14 @@ class BaseOfflineRLMethod(Method, target_setting=OfflineRLSetting):
         self.test_steps = test_steps
         self.scorers = scorers
         self.offline_metrics = None
-
-        # Option 1: Move this to configure, each algo implements its own configure
-        # Option 2: Add kwargs to this constructor
-        #
-        # TODO: add support for all algo params, not just common ones
-
-        self.algo = type(self).Algo(use_gpu=use_gpu, **kwargs)
+        self.use_gpu = use_gpu
+        self.kwargs = kwargs
+        self.algo = None
 
     def configure(self, setting: OfflineRLSetting) -> None:
         super().configure(setting)
         self.setting = setting
+        self.algo = type(self).Algo(use_gpu=self.use_gpu, **self.kwargs)
 
     def fit(self,
             train_env: Union[Environment[Observations, Actions, Rewards], MDPDataset],
@@ -87,9 +84,6 @@ D3RLPY Methods: target OfflineRL and TraditionalRL assumptions
 
 class DQNMethod(BaseOfflineRLMethod):
     Algo: ClassVar[Type[AlgoBase]] = DQN
-
-    # def __init__(dqn arguments...):
-    # super().__init__(dqn arguments)
 
 
 class DoubleDQNMethod(BaseOfflineRLMethod):
