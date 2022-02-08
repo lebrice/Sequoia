@@ -1,26 +1,19 @@
 """ Subclass of `spaces.Dict` that allows custom dtypes and uses type annotations.
 """
-import inspect
 import dataclasses
 from inspect import isclass
 from collections import OrderedDict
 from collections.abc import Mapping as MappingABC
 from dataclasses import (
-    _PARAMS,
-    Field,
-    _DataclassParams,
-    dataclass,
     fields,
     is_dataclass,
-    make_dataclass,
 )
-import typing
 from typing import (
     Any,
+    ClassVar,
     Dict,
     Generic,
     Iterable,
-    KeysView,
     List,
     Mapping,
     Sequence,
@@ -30,7 +23,7 @@ from typing import (
     Union,
     get_type_hints,
 )
-from dataclasses import _is_classvar
+
 from copy import deepcopy
 import numpy as np
 import gym
@@ -39,9 +32,6 @@ from gym.vector.utils import batch_space, concatenate
 
 from .sparse import batch_space, concatenate
 
-M = TypeVar("M", bound=Mapping[str, Any])
-S = TypeVar("S")
-Dataclass = TypeVar("Dataclass")
 
 try:
     from typing import get_origin
@@ -51,7 +41,12 @@ except ImportError:
     from typing_inspect import get_origin
 
 
-class TypedDictSpace(spaces.Dict, Mapping[str, Space], Generic[M]):
+M = TypeVar("M", bound=Mapping[str, Any])
+S = TypeVar("S")
+Dataclass = TypeVar("Dataclass")
+
+
+class TypedDictSpace(spaces.Dict, Space[M]):
     """ Subclass of `spaces.Dict` that allows custom dtypes and uses type annotations.
 
     ## Examples:
@@ -69,14 +64,14 @@ class TypedDictSpace(spaces.Dict, Mapping[str, Space], Generic[M]):
     - Using it like a TypedDict: (This equivalent to the above)
 
     >>> class VisionSpace(TypedDictSpace):
-    ...     x: Box = Box(0, 1, (4,), dtype=np.float64)  
+    ...     x: Box = Box(0, 1, (4,), dtype=np.float64)
     >>> s = VisionSpace()
     >>> s
     VisionSpace(x:Box([0. 0. 0. 0.], [1. 1. 1. 1.], (4,), float64))
     >>> _ = s.seed(123)
     >>> s.sample()
     {'x': array([0.66528138, 0.33239426, 0.30337907, 0.92981861])}
-    
+
     - You can also overwrite the values from the type annotations by passing them to the
       constructor:
 
@@ -88,7 +83,7 @@ class TypedDictSpace(spaces.Dict, Mapping[str, Space], Generic[M]):
     {'x': array([1, 0, 0])}
 
     ### Using custom dtypes
-    
+
     Can use any type here, as long as it can receive the samples from each space as
     keyword arguments.
 
@@ -106,10 +101,10 @@ class TypedDictSpace(spaces.Dict, Mapping[str, Space], Generic[M]):
     OrderedDict([('x', array([1, 0, 0, 1]))])
 
     ### Required items:
-    
+
     If an annotation on the class doesn't have a default value, then it is treated as a
     required argument:
-    
+
     >>> class FooSpace(TypedDictSpace):
     ...     a: spaces.Box = spaces.Box(0, 1, (4,), int)
     ...     b: spaces.Discrete
@@ -146,7 +141,7 @@ class TypedDictSpace(spaces.Dict, Mapping[str, Space], Generic[M]):
         self, spaces: Mapping[str, Space] = None, dtype: Type[M] = dict, **spaces_kwargs
     ):
         """Creates the TypedDict space.
-        
+
         Can either pass a dict of spaces, or pass the spaces as keyword arguments.
 
         Parameters
@@ -156,10 +151,10 @@ class TypedDictSpace(spaces.Dict, Mapping[str, Space], Generic[M]):
         dtype : Type[M], optional
             Type of outputs to return. By default `dict`, but this can also use any
             other dtype which will accept the values from each space as a keyword
-            argument. 
-            
+            argument.
+
             NOTE: This `dtype` is usually set to some dataclass type in Sequoia, such as
-            `Observation`, `Rewards`, etc. (subclasses of `Batch`).  
+            `Observation`, `Rewards`, etc. (subclasses of `Batch`).
 
             By default, `dtype` is just `dict`, and `space.sample()` will return simple
             dictionaries.
@@ -174,7 +169,7 @@ class TypedDictSpace(spaces.Dict, Mapping[str, Space], Generic[M]):
         """
 
         if spaces and spaces_kwargs:
-            raise RuntimeError(f"Can only use one of `spaces` or **kwargs, not both.")
+            raise RuntimeError("Can only use one of `spaces` or **kwargs, not both.")
         spaces_from_args = spaces or spaces_kwargs
 
         # have to use OrderedDict just in case python <= 3.6.x
@@ -185,13 +180,13 @@ class TypedDictSpace(spaces.Dict, Mapping[str, Space], Generic[M]):
         # NOTE: This is only needed when using `__future__ import annotations` in a
         # client file:
         # Get the `globals` of the caller when checking type annotations:
-        # TODO: Might actually need to get the globals of where that class is defined!
+        # NOTE: Might actually need to get the globals of where that class is defined!
         # caller_globals = inspect.stack()[1][0].f_globals
         # class_typed_attributes: Dict[str, Type] = get_type_hints(cls, globalns=caller_globals)
 
         if class_typed_attributes:
             for attribute, type_annotation in class_typed_attributes.items():
-                if _is_classvar(type_annotation, typing=typing):
+                if getattr(type_annotation, "__origin__", "") is ClassVar:
                     continue
 
                 is_space = False
@@ -207,7 +202,7 @@ class TypedDictSpace(spaces.Dict, Mapping[str, Space], Generic[M]):
 
                 # NOTE: emulate a 'required argument' when there is a type
                 # annotation, but no value.
-                # TODO: How about a None value, is that ok?
+                # Note: How about a None value, is that ok?
                 if is_space:
                     _missing = object()
                     value = getattr(cls, attribute, _missing)
@@ -232,8 +227,8 @@ class TypedDictSpace(spaces.Dict, Mapping[str, Space], Generic[M]):
 
         if not spaces:
             raise TypeError(
-                f"Need to either have type annotations on the class, or pass some "
-                f"arguments to the constructor!"
+                "Need to either have type annotations on the class, or pass some "
+                "arguments to the constructor!"
             )
         assert all(isinstance(s, gym.Space) for s in spaces.values()), spaces
 
@@ -306,7 +301,7 @@ class TypedDictSpace(spaces.Dict, Mapping[str, Space], Generic[M]):
 
         # NOTE: Modifying this so that we allow samples with more values, as long as it
         # has all the required keys.
-        if not isinstance(x, (dict, MappingABC)) or not all(k in x for k in self.spaces):            
+        if not isinstance(x, (dict, MappingABC)) or not all(k in x for k in self.spaces):
             return False
         for k, space in self.spaces.items():
             if k not in x:
@@ -330,43 +325,9 @@ class TypedDictSpace(spaces.Dict, Mapping[str, Space], Generic[M]):
         return super().__eq__(other)
 
 
-from functools import singledispatch
-
-
-def _is_singledispatch(module_function):
-    return hasattr(module_function, "registry")
-
-
-def register_variant(module, module_fn_name: str):
-    """ Converts a function from the given module to a singledispatch callable,
-    and registers the wrapped function as the callable to use for Sparse spaces.
-    
-    The module function must have the space as the first argument for this to
-    work.
-    """
-    module_function = getattr(module, module_fn_name)
-
-    # Convert the function to a singledispatch callable.
-    if not _is_singledispatch(module_function):
-        module_function = singledispatch(module_function)
-        setattr(module, module_fn_name, module_function)
-    # Register the function as the callable to use when the first arg is a
-    # Sparse object.
-    def wrapper(function):
-        module_function.register(TypedDictSpace, function)
-        return function
-
-    return wrapper
-
-
-import gym.vector.utils
-from gym.vector.utils.shared_memory import (
-    read_from_shared_memory as read_from_shared_memory_,
-)
 
 
 @batch_space.register(TypedDictSpace)
-# @register_variant(gym.vector.utils, "batch_space")
 def _batch_typed_dict_space(space: TypedDictSpace, n: int = 1) -> spaces.Dict:
     return type(space)(
         {key: batch_space(subspace, n=n) for (key, subspace) in space.spaces.items()},
@@ -375,7 +336,6 @@ def _batch_typed_dict_space(space: TypedDictSpace, n: int = 1) -> spaces.Dict:
 
 
 @concatenate.register(TypedDictSpace)
-# @register_variant(gym.vector.utils, "concatenate")
 def _concatenate_typed_dicts(
     space: TypedDictSpace,
     items: Union[list, tuple],
@@ -388,29 +348,3 @@ def _concatenate_typed_dicts(
         }
     )
 
-
-def _add_field_to_dataclass(
-    dataclass_type: Type[Dataclass],
-    new_name: str,
-    new_fields: List[Union[str, Tuple[str, Type], Tuple[str, Type, Field]]],
-) -> Type[Dataclass]:
-    """ Dynamically creates a new dataclass which adds `new_fields` to `dataclass_type`.
-    
-    NOTE: This probably shouldn't be used, in favor of having 
-    """
-    assert is_dataclass(dataclass_type)
-    old_fields = [(f.name, f.type, f) for f in fields(dataclass_type)]
-    bases = (dataclass_type,)
-    dataclass_params: _DataclassParams = getattr(dataclass_type, _PARAMS)
-    new_type = make_dataclass(
-        new_name,
-        fields=old_fields + new_fields,
-        bases=bases,
-        init=dataclass_params.init,
-        repr=dataclass_params.repr,
-        eq=dataclass_params.eq,
-        order=dataclass_params.order,
-        unsafe_hash=dataclass_params.order,
-        frozen=dataclass_params.frozen,
-    )
-    return new_type

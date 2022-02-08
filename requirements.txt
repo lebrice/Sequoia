@@ -1,5 +1,5 @@
 # Fork of gym with more flexible utility functions.
-gym @ git+https://www.github.com/lebrice/gym@easier_custom_spaces#egg=gym
+gym>=0.21.0
 # nngeometry module used in the EWC method
 nngeometry @ git+https://github.com/oleksost/nngeometry.git#egg=nngeometry
 # Temporary fix for issue#128

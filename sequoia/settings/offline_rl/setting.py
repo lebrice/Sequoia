@@ -1,4 +1,3 @@
-import d3rlpy
 import gym
 from gym.wrappers import RecordEpisodeStatistics
 from matplotlib import pyplot as plt
@@ -12,6 +11,10 @@ from sequoia.settings.base import Method
 from dataclasses import dataclass
 
 from simple_parsing.helpers import choice
+try:
+    import d3rlpy
+except ImportError as err:
+    raise RuntimeError(f"You need to have `d3rlpy` installed to use these methods.") from err
 
 
 @dataclass

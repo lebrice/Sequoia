@@ -1,5 +1,5 @@
 from functools import singledispatch
-from typing import Any, Dict, Optional, Tuple, TypeVar, Union
+from typing import Any, Dict, Optional, Tuple, TypeVar, Union, Mapping
 
 import numpy as np
 import torch
@@ -22,7 +22,11 @@ def from_tensor(space: Space, sample: Union[Tensor, Any]) -> Union[np.ndarray, A
 @from_tensor.register
 def _(space: spaces.Discrete, sample: Tensor) -> int:
     if isinstance(sample, Tensor):
-        return sample.item()
+        v = sample.item()
+        int_v = int(v)
+        if int_v != v:
+            raise ValueError(f"Value {sample} isn't an integer, so it can't be from space {space}!")
+        return int_v
     elif isinstance(sample, np.ndarray):
         assert sample.size == 1, sample
         return int(sample)
@@ -48,28 +52,6 @@ def _(
     if isinstance(sample, NamedTuple):
         return type(sample)(values_gen)
     return tuple(values_gen)
-
-
-from collections.abc import Mapping
-
-
-@from_tensor.register
-def _(space: NamedTupleSpace, sample: NamedTuple) -> NamedTuple:
-    sample_dict: Dict
-    if isinstance(sample, NamedTuple):
-        sample_dict = sample._asdict()
-    elif isinstance(sample, Mapping):
-        sample_dict = sample
-    else:
-        assert len(sample) == len(space.spaces)
-        sample_dict = dict(zip(space.names, sample))
-
-    return space.dtype(
-        **{
-            key: from_tensor(space[key], value) if key in space.names else value
-            for key, value in sample_dict.items()
-        }
-    )
 
 
 @from_tensor.register(TypedDictSpace)

@@ -1,7 +1,8 @@
 from dataclasses import dataclass
-
+import functools
+from typing import Union
 import pytest
-
+import inspect
 from sequoia.methods import Method
 from sequoia.utils import constant
 
@@ -230,7 +231,7 @@ class SettingTests:
         self.assert_chance_level(setting, results=results)
 
 
-def make_dataset_fixture(setting_type) -> pytest.fixture:
+def make_dataset_fixture(setting_type: Union[Type[Setting], functools.partial]):
     """Create a parametrized fixture that will go through all the available datasets
     for a given setting."""
 
@@ -238,10 +239,11 @@ def make_dataset_fixture(setting_type) -> pytest.fixture:
         dataset = request.param
         return dataset
 
-    datasets = set(setting_type.available_datasets.values())
-    # FIXME: Temporarily removing these datasets because they take quite a long time to
-    # run. Also: not sure if we can use a `slow_param` on these only, because we're
-    # parameterizing a fixture rather than a test.
+    if isinstance(setting_type, functools.partial):
+        setting_type = setting_type.args[0]
+        assert inspect.isclass(setting_type) and issubclass(setting_type, Setting)
+
+    datasets = set(setting_type.available_datasets.keys())
     datasets_to_remove = set(["MT10", "MT50", "CW10", "CW20"])
     # NOTE: Need deterministic ordering for the datasets for tests to be parallelizable
     # with pytest-xdist.

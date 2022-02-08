@@ -23,8 +23,8 @@ register_classic_control_variants(sequoia_registry)
 
 ATARI_PY_INSTALLED = False
 try:
-    from gym.envs import atari
-    AtariEnv = atari.AtariEnv
+    from ale_py.gym.environment import ALGymEnv
+    AtariEnv = ALGymEnv
 
     ATARI_PY_INSTALLED = True
 except (gym.error.DependencyNotInstalled, ImportError):

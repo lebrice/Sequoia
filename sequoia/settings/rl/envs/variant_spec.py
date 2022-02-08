@@ -15,13 +15,13 @@ class EnvVariantSpec(EnvSpec, Generic[EnvType]):
         id: str,
         base_spec: EnvSpec,
         entry_point: Union[str, Callable[..., EnvType]] = None,
-        reward_threshold: float = None,
+        reward_threshold: int = None,
         nondeterministic: bool = False,
         max_episode_steps=None,
         kwargs=None,
     ):
         super().__init__(
-            id=id,
+            id_requested=id,
             entry_point=entry_point,
             reward_threshold=reward_threshold,
             nondeterministic=nondeterministic,
@@ -45,12 +45,12 @@ class EnvVariantSpec(EnvSpec, Generic[EnvType]):
         new_kwargs: Dict[str, Any] = None,
         new_entry_point: Union[str, Callable[..., gym.Env]] = None,
         wrappers: Optional[List[Callable[[gym.Env], gym.Env]]] = None,
-    ) -> "VariantEnvSpec":
+    ) -> "EnvVariantSpec":
         """ Returns a new env spec which uses additional wrappers.
         
         NOTE: The `new_kwargs` update the current kwargs, rather than replacing them.
         """
-        new_spec_kwargs = original._kwargs
+        new_spec_kwargs = original.kwargs
         new_spec_kwargs.update(new_kwargs or {})
         # Replace the entry-point if desired:
         new_spec_entry_point: Union[

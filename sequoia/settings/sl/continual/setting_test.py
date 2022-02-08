@@ -6,9 +6,6 @@ from typing import Any, ClassVar, Dict, Tuple, Type
 import gym
 import pytest
 import torch
-from continuum.datasets import MNIST
-from continuum.scenarios import ClassIncremental
-from continuum.tasks import TaskSet, concat
 from sklearn.datasets import make_classification
 from sklearn.model_selection import train_test_split
 from torch.utils.data import TensorDataset, random_split
@@ -23,13 +20,15 @@ from .setting import ContinualSLSetting, random_subset, smooth_task_boundaries_c
 from .wrappers import ShowLabelDistributionWrapper
 
 
-def test_shuffle(config: Config):
+def test_continuum_shuffle(config: Config):
+    from continuum.datasets import MNIST
+    from continuum.scenarios import ClassIncremental
+    from continuum.tasks import TaskSet, concat
     dataset = MNIST(data_path=config.data_dir, train=True)
     cl_dataset = concat(ClassIncremental(dataset, increment=2))
     shuffled_dataset = shuffle(cl_dataset)
     assert (shuffled_dataset._y != cl_dataset._y).sum() > len(cl_dataset) / 2
     assert (shuffled_dataset._t != cl_dataset._t).sum() > len(cl_dataset) / 2
-    # assert False, list(zip(shuffled_dataset._t, cl_dataset._t, shuffled_dataset._y, cl_dataset._y))[:10]
 
 
 class TestContinualSLSetting(SettingTests):

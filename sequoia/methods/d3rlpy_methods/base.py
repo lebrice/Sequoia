@@ -1,9 +1,13 @@
 from typing import Type, ClassVar, List, Tuple, Dict, Optional, Union
 
 import gym
-from d3rlpy.algos import *
 import numpy as np
-from d3rlpy.dataset import MDPDataset
+try:
+    from d3rlpy.algos import *
+    from d3rlpy.dataset import MDPDataset
+except ImportError as err:
+    raise RuntimeError(f"You need to have `d3rlpy` installed to use these methods.") from err
+
 from gym import Space
 from gym.wrappers.record_episode_statistics import RecordEpisodeStatistics
 from sequoia import Method, Environment, Observations, Actions, Rewards, TraditionalRLSetting

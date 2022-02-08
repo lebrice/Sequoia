@@ -5,7 +5,7 @@ You can use this model and method as a jumping off point for your own submission
 """
 from dataclasses import dataclass
 from typing import ClassVar, Dict, List, Optional, Tuple, Type
-
+from argparse import Namespace
 import gym
 import torch
 import tqdm
