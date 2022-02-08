@@ -44,7 +44,7 @@ class DummyMethod(RandomBaselineMethod):
         if self._has_been_configured_before:
             raise RuntimeError("Can't reuse this Method across Settings for now.")
         self._has_been_configured_before = True
-
+        # The attributes to look for changes with.
         self.changing_attributes = list(
             set().union(*[task.keys() for task in setting.train_task_schedule.values()])
         )
@@ -81,17 +81,18 @@ class DummyMethod(RandomBaselineMethod):
         )
         self.train_env = train_env
         self.valid_env = valid_env
-        # TODO: Fix any issues with how the RandomBaselineMethod deals with
-        # RL envs
+        # TODO: Replace the loop below with adding soem wrappers around the train/valid envs, and
+        # just delegate to super().fit (so we use the RandomBaselineMethod).
         # return super().fit(train_env, valid_env)
+
         episodes = 0
         val_interval = 10
+        total_steps = 0
         self.train_steps_per_task.append(0)
         self.train_episodes_per_task.append(0)
-
-        while not train_env.is_closed() and (
-            episodes < self.max_train_episodes if self.max_train_episodes else True
-        ):
+        import tqdm
+        train_pbar = tqdm.tqdm(desc="Fake training")
+        while not train_env.is_closed():
 
             obs = train_env.reset()
             task_labels = obs.task_labels
@@ -108,17 +109,24 @@ class DummyMethod(RandomBaselineMethod):
                 actions = train_env.action_space.sample()
                 # print(train_env.current_task)
                 obs, rew, done, info = train_env.step(actions)
+                total_steps += 1
                 self.train_steps_per_task[-1] += 1
+                train_pbar.update()
+                train_pbar.set_postfix({"episodes": episodes, "total steps": total_steps})
 
             episodes += 1
             self.train_episodes_per_task[-1] += 1
 
             if episodes % val_interval == 0 and not valid_env.is_closed():
+                # Perform one 'validation' episode.
                 obs = valid_env.reset()
                 done = False
                 while not done and not valid_env.is_closed():
                     actions = valid_env.action_space.sample()
                     obs, rew, done, info = valid_env.step(actions)
+
+            if self.max_train_episodes is not None and episodes < self.max_train_episodes:
+                break
 
         self.all_train_values.append(self.train_env.values)
         self.all_valid_values.append(self.valid_env.values)

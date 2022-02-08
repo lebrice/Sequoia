@@ -10,6 +10,7 @@ from gym import Space, spaces
 from gym.vector import VectorEnv
 from gym.vector.utils import batch_space
 from torch import Tensor
+from sequoia.common.spaces import TypedDictSpace
 
 from sequoia.common.spaces import TypedDictSpace
 
@@ -67,10 +68,6 @@ def add_done_to_space(observation: Space, done: Space) -> Space:
     )
 
 
-from ..spaces.named_tuple import NamedTuple, NamedTupleSpace
-from sequoia.common.spaces import TypedDictSpace
-
-
 @add_done.register(spaces.Discrete)
 @add_done.register(spaces.MultiDiscrete)
 @add_done.register(spaces.MultiBinary)
@@ -89,14 +86,6 @@ def _add_done_to_tuple_space(observation: spaces.Tuple, done: Space) -> spaces.T
         *observation.spaces,
         done,
     ])
-
-
-@add_done.register
-def _add_done_to_namedtuple_space(observation: NamedTupleSpace, done: Space) -> NamedTupleSpace:
-    return type(observation)(
-        **observation._spaces,
-        done=done,
-    )
 
 
 @add_done.register

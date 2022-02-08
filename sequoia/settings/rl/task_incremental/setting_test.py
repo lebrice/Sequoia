@@ -10,12 +10,20 @@ from sequoia.settings.rl.incremental.setting_test import (
 import pytest
 
 from .setting import TaskIncrementalRLSetting
-from ..incremental.setting_test import make_dataset_fixture
 
 
 class TestTaskIncrementalRLSetting(IncrementalRLSettingTests):
     Setting: ClassVar[Type[Setting]] = TaskIncrementalRLSetting
-    dataset: pytest.fixture = make_dataset_fixture(TaskIncrementalRLSetting)
+    dataset: pytest.fixture
+
+
+def test_task_label_space_of_env_has_right_n():
+    setting = TaskIncrementalRLSetting(dataset="MountainCarContinuous-v0")
+    default_nb_tasks = setting.nb_tasks
+    assert setting.observation_space.task_labels.n == default_nb_tasks
+    assert setting.train_dataloader().observation_space.task_labels.n == default_nb_tasks
+    assert setting.val_dataloader().observation_space.task_labels.n == default_nb_tasks
+    assert setting.test_dataloader().observation_space.task_labels.n == default_nb_tasks
 
 
 def test_task_schedule_is_used():

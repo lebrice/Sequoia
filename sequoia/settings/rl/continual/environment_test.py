@@ -51,6 +51,7 @@ class TestGymDataLoader:
             assert actions in batched_action_space
 
             rewards = dataloader_env.send(actions)
+            # BUG: rewards has dtype np.float64, while the space has np.float32.
             assert len(rewards) == batch_size
             assert rewards in dataloader_env.reward_space
 

@@ -1,5 +1,6 @@
 """ Demo: Creates a simple new method and applies it to a single CL setting.
 """
+from argparse import Namespace
 import sys
 from dataclasses import dataclass
 from typing import Dict, List, Tuple, Type, Optional
@@ -228,12 +229,12 @@ class DemoMethod(Method, target_setting=DomainIncrementalSLSetting):
         return self.target_setting.Actions(y_pred)
 
     @classmethod
-    def add_argparse_args(cls, parser: ArgumentParser, dest: str = ""):
+    def add_argparse_args(cls, parser: ArgumentParser):
         """Adds command-line arguments for this Method to an argument parser."""
         parser.add_arguments(cls.HParams, "hparams")
 
     @classmethod
-    def from_argparse_args(cls, args, dest: str = ""):
+    def from_argparse_args(cls, args: Namespace):
         """Creates an instance of this Method from the parsed arguments."""
         hparams: cls.HParams = args.hparams
         return cls(hparams=hparams)

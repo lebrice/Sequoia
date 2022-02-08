@@ -87,17 +87,17 @@ class ContinualWalker2dV2Env(
         model_path: str = "walker2d.xml",
         frame_skip: int = 4,
         gravity=-9.81,
-        body_parts=None,  # 'torso_geom','thigh_geom','leg_geom','foot_geom'
-        size_scales=None,  # (1.0, 1.0, 1.0, 1.0),
         body_name_to_size_scale: Dict[str, float] = None,
+        body_name_to_mass_scale: Dict[str, float] = None,
     ):
         super().__init__(
             model_path=model_path,
             frame_skip=frame_skip,
             gravity=gravity,
-            body_parts=body_parts,
-            size_scales=size_scales,
+            # body_parts=body_parts,
+            # size_scales=size_scales,
             body_name_to_size_scale=body_name_to_size_scale,
+            body_name_to_mass_scale=body_name_to_mass_scale,
         )
 
 
@@ -119,6 +119,7 @@ class ContinualWalker2dV3Env(
         exclude_current_positions_from_observation: bool = True,
         gravity=-9.81,
         body_name_to_size_scale: Dict[str, float] = None,
+        body_name_to_mass_scale: Dict[str, float] = None,
         xml_file: str = None,
         frame_skip: int = 4,
     ):
@@ -137,5 +138,6 @@ class ContinualWalker2dV3Env(
             reset_noise_scale=reset_noise_scale,
             exclude_current_positions_from_observation=exclude_current_positions_from_observation,
             body_name_to_size_scale=body_name_to_size_scale,
+            body_name_to_mass_scale=body_name_to_mass_scale,
             gravity=gravity,
         )

@@ -1,7 +1,5 @@
-import itertools
 import time
 import warnings
-from abc import ABC, abstractmethod
 from functools import partial
 from logging import getLogger
 from pathlib import Path
@@ -9,25 +7,16 @@ from typing import Any, Dict, Generic, List, Optional, Type, TypeVar, Callable
 
 import gym
 import numpy as np
-import tqdm
-from gym.vector.utils.spaces import batch_space
-from torch import Tensor
 from sequoia.common.config import Config
-from sequoia.common.gym_wrappers import StepCallbackWrapper
 from sequoia.methods import Method
 from sequoia.settings import (
-    Actions,
     ClassIncrementalSetting,
     IncrementalRLSetting,
-    Observations,
     Results,
-    Rewards,
     Setting,
 )
 from sequoia.settings.assumptions.incremental import (
     IncrementalAssumption,
-    TaskResults,
-    TaskSequenceResults,
 )
 from sequoia.settings.base import SettingABC
 
@@ -84,7 +73,7 @@ class SettingProxy(SettingABC, Generic[SettingType]):
             self.__setting = setting_type.load_benchmark(setting_config_path)
             if setting_kwargs:
                 raise RuntimeError(
-                    f"Can't use keyword arguments when passing a path to a yaml file!"
+                    "Can't use keyword arguments when passing a path to a yaml file!"
                 )
         else:
             self.__setting = setting_type(**setting_kwargs)

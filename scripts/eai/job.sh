@@ -10,7 +10,8 @@ ORG_NAME=$(eai organization get --field name)
 ACCOUNT_NAME=$(eai account get --field name)
 ACCOUNT_ID=$ORG_NAME.$ACCOUNT_NAME
 
-EAI_Registry=registry.console.elementai.com/$ACCOUNT_ID
+EAI_Registry=${EAI_Registry:-"registry.console.elementai.com/$ACCOUNT_ID"}
+echo "Using registry $EAI_Registry"
 
 CURRENT_BRANCH="`git branch --show-current`"
 BRANCH=${BRANCH:-$CURRENT_BRANCH}
@@ -38,5 +39,17 @@ eai job submit \
     --env WANDB_API_KEY="$WANDB_API_KEY" \
     --env HOME=/home/toolkit \
     --image $EAI_Registry/sequoia_eai:$BRANCH \
-    --gpu 1 --cpu 8 --mem 12 --gpu-model-filter 12gb \
+    --gpu 1 --cpu 8 --mem 12 \
     -- "$@"
+
+
+# eai job submit \
+#     --restartable \
+#     --data $ACCOUNT_ID.home:/mnt/home \
+#     --data $ACCOUNT_ID.data:/mnt/data \
+#     --data $ACCOUNT_ID.results:/mnt/results \
+#     --env WANDB_API_KEY="$WANDB_API_KEY" \
+#     --env HOME=/home/toolkit \
+#     --image $EAI_Registry/sequoia_eai:$BRANCH \
+#     --gpu 1 --cpu 8 --mem 12 --gpu-model-filter 12gb \
+#     -- "$@"

@@ -1,4 +1,5 @@
 import bisect
+import dataclasses
 from functools import singledispatch
 from typing import (
     Any,
@@ -92,6 +93,10 @@ def _add_task_labels_to_single_obs(observation: X, task_labels: T) -> Tuple[X, T
     }
     # return ObservationsAndTaskLabels(observation, task_labels)
 
+from sequoia.common.batch import Batch
+@add_task_labels.register(Batch)
+def _add_task_labels_to_batch(observation: Batch, task_labels: T) -> Batch:
+    return dataclasses.replace(observation, task_labels=task_labels)
 
 from sequoia.common.spaces import TypedDictSpace
 
@@ -207,6 +212,7 @@ class MultiTaskEnvironment(MayCloseEarly):
         add_task_id_to_obs: bool = False,
         new_random_task_on_reset: bool = False,
         starting_step: int = 0,
+        nb_tasks: int = None,
         max_steps: int = None,
         seed: int = None,
     ):
@@ -236,14 +242,15 @@ class MultiTaskEnvironment(MayCloseEarly):
             if unwrapped_type in task_param_names:
                 task_params = task_param_names[unwrapped_type]
             elif task_schedule:
-                if any(isinstance(v, dict) for v in task_schedule.values()):
-                    first_task_dict = task_schedule[min(task_schedule)]
-                    task_params = first_task_dict.keys()
-                    for task_dict in task_schedule.values():
-                        assert (
-                            task_params == task_dict.keys()
-                        ), "All tasks need to have the same keys for now."
-                    task_params = list(task_params)
+                if not any(isinstance(v, dict) for v in task_schedule.values()):
+                    task_params: List[str] = None
+                    for value in task_schedule.values():
+                        if not isinstance(value, dict):
+                            continue
+                        if task_params is None:
+                            task_params = list(value.keys())
+                        elif not task_params == list(value.keys()):
+                            raise NotImplementedError("All tasks need to have the same keys for now.")
             else:
                 logger.warning(
                     UserWarning(
@@ -276,11 +283,14 @@ class MultiTaskEnvironment(MayCloseEarly):
         if 0 not in self.task_schedule:
             self.task_schedule[0] = self.default_task
 
-        n_tasks = len(self.task_schedule)
+        # TODO: Need to do a major refactor of this wrapper.
+        # Need to clean this up: passing the task schedule to the env and having it "mean" different
+        # things depending on the value other arguments (discrete vs continuous, etc) is very ugly.
+        nb_tasks = nb_tasks if nb_tasks is not None else len(self.task_schedule)
 
         if self.add_task_id_to_obs:
             self.observation_space = add_task_labels(
-                self.env.observation_space, spaces.Discrete(n=n_tasks),
+                self.env.observation_space, spaces.Discrete(n=nb_tasks),
             )
             # self.observation_space = spaces.Tuple([
             #     self.env.observation_space,

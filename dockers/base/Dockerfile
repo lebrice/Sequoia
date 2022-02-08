@@ -92,5 +92,5 @@ ENV PATH /home/toolkit/.local/bin:${PATH}
 # RUN cd /workspace/tools && git clone https://github.com/openai/gym.git && cd gym && pip install -e '.[all]'
 # RUN cd /workspace/tools && git clone https://github.com/openai/baselines.git && cd baselines && pip install -e .
 RUN cd /workspace/ && git clone https://github.com/lebrice/Sequoia.git
-RUN pip install -e /workspace/Sequoia[monsterkong,hpo,avalanche]
+RUN pip install -e /workspace/Sequoia[no_mujoco]
 ENTRYPOINT ["conda", "run", "--no-capture-output", "-n", "base", "/bin/bash", "-c"]

@@ -182,7 +182,6 @@ class GymDataLoader(
         assert not isinstance(
             self.env, GymDataLoader
         ), "Something very wrong is happening."
-
         # self.max_epochs: int = max_epochs
         self.observation_space: gym.Space = self.env.observation_space
         self.action_space: gym.Space = self.env.action_space
@@ -197,7 +196,7 @@ class GymDataLoader(
 
         if not hasattr(self.env, "reward_space"):
             self.reward_space = spaces.Box(
-                low=self.env.reward_range[0], high=self.env.reward_range[1], shape=(),
+                low=self.env.reward_range[0], high=self.env.reward_range[1], shape=(), dtype=np.float64,
             )
             if isinstance(self.env.unwrapped, VectorEnv):
                 # Same here, we use a 'batched' space rather than Tuple.

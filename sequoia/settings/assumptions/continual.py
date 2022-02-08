@@ -2,12 +2,13 @@ import itertools
 import json
 import time
 from abc import ABC, abstractmethod
-from dataclasses import dataclass, field
+from dataclasses import asdict, dataclass, field, is_dataclass
 from io import StringIO
 from pathlib import Path
-from typing import ClassVar, Dict, Optional, Type
+from typing import Any, ClassVar, Dict, Optional, Type
 
 import gym
+from simple_parsing.helpers.serialization.serializable import Serializable
 import tqdm
 import wandb
 from gym.vector.utils import batch_space
@@ -273,11 +274,18 @@ class ContinualAssumption(AssumptionBase):
             if isinstance(dataset, str):
                 run_name += f"-{dataset}"
             if getattr(self, "nb_tasks", 0) > 1:
-                run_name += f"_{self.nb_tasks}t"
+                run_name += f"_{self.nb_tasks}t"  # type: ignore
             self.wandb.run_name = run_name
 
         run: Run = self.wandb.wandb_init()
         run.config["setting"] = setting_name
+        # Add the setting's options into the config:
+        setting_config_dict: Dict[str, Any] = {}
+        if isinstance(self, Serializable):
+            setting_config_dict = self.to_dict()
+        elif is_dataclass(self):
+            setting_config_dict = asdict(self)
+        run.config.update({f"setting.{k}": v for k, v in setting_config_dict.items()})
         run.config["method"] = method_name
         run.config["method_full_name"] = method.get_full_name()
         run.summary["setting"] = self.get_name()
