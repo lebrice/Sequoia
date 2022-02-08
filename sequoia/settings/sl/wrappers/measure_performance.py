@@ -26,7 +26,7 @@ from sequoia.settings.base import Actions, Environment, Observations, Rewards
 from sequoia.settings.sl.environment import PassiveEnvironment
 from sequoia.utils.utils import add_prefix
 from torch import Tensor
-from sequoia.common.gym_wrappers.batch_env.tile_images import tile_images
+from sequoia.common.gym_wrappers.utils import tile_images
 
 
 class MeasureSLPerformanceWrapper(

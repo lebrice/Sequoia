@@ -49,7 +49,7 @@ from torch.utils.data import IterableDataset
 
 
 from sequoia.common.batch import Batch
-from sequoia.common.gym_wrappers.batch_env import AsyncVectorEnv, BatchedVectorEnv
+from gym.vector import AsyncVectorEnv
 from sequoia.common.gym_wrappers.utils import StepResult, has_wrapper
 from sequoia.common.gym_wrappers.policy_env import PolicyEnv
 from sequoia.common.gym_wrappers.convert_tensors import (
@@ -155,9 +155,7 @@ class GymDataLoader(
                 )
             batch_size = env.num_envs
 
-        if isinstance(env.unwrapped, BatchedVectorEnv):
-            num_workers = env.n_workers
-        elif isinstance(env.unwrapped, AsyncVectorEnv):
+        if isinstance(env.unwrapped, AsyncVectorEnv):
             num_workers = env.num_envs
         else:
             num_workers = 0

@@ -8,14 +8,9 @@ from typing import (Callable, Dict, Iterable, List, Optional, Tuple, Type,
 
 import gym
 from gym import Wrapper
-from gym.envs.classic_control import CartPoleEnv
 from gym.vector import VectorEnv
 
-from sequoia.common.gym_wrappers import ConvertToFromTensors
-from sequoia.common.gym_wrappers.batch_env import (AsyncVectorEnv,
-                                                   BatchedVectorEnv,
-                                                   SyncVectorEnv)
-from sequoia.common.spaces import Sparse
+from gym.vector import SyncVectorEnv, AsyncVectorEnv
 from sequoia.utils.logging_utils import get_logger
 
 logger = get_logger(__file__)
@@ -124,8 +119,9 @@ def make_batched_env(base_env: Union[str, Callable],
     
     if num_workers == batch_size:
         return AsyncVectorEnv(env_fns, shared_memory=shared_memory)
-    
-    return BatchedVectorEnv(env_fns, shared_memory=shared_memory, n_workers=num_workers)
+
+    raise RuntimeError(f"Need num_workers to match batch_size for now.")
+    return AsyncVectorEnv(env_fns, shared_memory=shared_memory, n_workers=num_workers)
 
    
 

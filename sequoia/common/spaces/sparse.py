@@ -2,12 +2,6 @@
 instead of a sample from the 'base' space.
 
 As a result, `None` is always a valid sample from any Sparse space.
-
-
-TODO: Totally optional, but if we wanted to use the `shared_memory=True`
-argument to the AsyncVectorEnv or BatchedVectorEnv wrappers, we'd need to
-test/debug some bugs with shared memory functions below. In the interest of time
-though, I just set that `shared_memory=False`, and it works great.  
 """
 import multiprocessing as mp
 from ctypes import c_bool

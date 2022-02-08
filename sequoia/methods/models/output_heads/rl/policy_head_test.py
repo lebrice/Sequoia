@@ -16,7 +16,6 @@ from sequoia.common.gym_wrappers import (
 )
 from sequoia.common.gym_wrappers import PixelObservationWrapper
 from sequoia.settings.rl.continual.make_env import make_batched_env
-from sequoia.common.gym_wrappers.batch_env import BatchedVectorEnv
 from sequoia.common.loss import Loss
 from sequoia.conftest import DummyEnvironment
 from sequoia.methods.models.forward_pass import ForwardPass
@@ -389,7 +388,7 @@ def test_buffers_are_stacked_correctly(monkeypatch):
     starting_values = [i for i in range(batch_size)]
     targets = [10 for i in range(batch_size)]
 
-    env = BatchedVectorEnv(
+    env = SyncVectorEnv(
         [
             partial(DummyEnvironment, start=start, target=target, max_value=10 * 2)
             for start, target in zip(starting_values, targets)

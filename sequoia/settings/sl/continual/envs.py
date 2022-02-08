@@ -35,7 +35,7 @@ from torch.nn import functional as F
 from torch.utils.data import DataLoader, Dataset, IterableDataset, Subset, ConcatDataset
 from sequoia.common.spaces.image import could_become_image
 from sequoia.common.spaces import TensorBox, TensorDiscrete
-from sequoia.common.gym_wrappers.batch_env.tile_images import tile_images
+from sequoia.common.gym_wrappers.utils import tile_images
 from sequoia.common.gym_wrappers.convert_tensors import (
     add_tensor_support as tensor_space,
 )

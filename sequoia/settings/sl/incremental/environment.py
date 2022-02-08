@@ -59,7 +59,7 @@ from sequoia.common.metrics import ClassificationMetrics
 import torch
 import warnings
 import bisect
-from sequoia.common.gym_wrappers.batch_env.tile_images import tile_images
+from sequoia.common.gym_wrappers.utils import tile_images
 import numpy as np
 from torch.nn import functional as F
 from sequoia.common.transforms import Transforms

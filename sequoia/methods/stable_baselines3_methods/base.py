@@ -26,7 +26,7 @@ from stable_baselines3.common.base_class import (
 # from stable_baselines3.common.vec_env.obs_dict_wrapper import ObsDictWrapper
 from wandb.wandb_run import Run
 
-from sequoia.common.gym_wrappers.batch_env.batched_vector_env import VectorEnv
+from gym.vector import VectorEnv
 from sequoia.common.gym_wrappers.utils import has_wrapper
 from simple_parsing.helpers.hparams import HyperParameters, log_uniform, categorical
 from sequoia.common.spaces import Image

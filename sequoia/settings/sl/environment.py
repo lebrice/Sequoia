@@ -14,7 +14,7 @@ from torch import Tensor
 from torch.utils.data import DataLoader, Dataset, IterableDataset
 from torch.utils.data.dataloader import _BaseDataLoaderIter
 import matplotlib.pyplot as plt
-from sequoia.common.gym_wrappers.batch_env.tile_images import tile_images
+from sequoia.common.gym_wrappers.utils import tile_images
 
 from sequoia.common.batch import Batch
 from sequoia.common.gym_wrappers.convert_tensors import add_tensor_support

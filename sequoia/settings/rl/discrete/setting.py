@@ -7,7 +7,6 @@ from typing import Any, Callable, ClassVar, Dict, List, Optional, Union, Type
 import gym
 import numpy as np
 from sequoia.common.gym_wrappers import IterableWrapper
-from sequoia.common.gym_wrappers.batch_env.tile_images import tile_images
 from sequoia.common.gym_wrappers.utils import is_monsterkong_env
 from sequoia.common.metrics.rl_metrics import EpisodeMetrics
 from sequoia.settings.assumptions.context_discreteness import DiscreteContextAssumption

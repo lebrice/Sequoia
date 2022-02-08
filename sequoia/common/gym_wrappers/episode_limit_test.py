@@ -7,7 +7,6 @@ from gym.vector import SyncVectorEnv
 
 from sequoia.conftest import DummyEnvironment
 
-from .batch_env import BatchedVectorEnv
 from .episode_limit import EpisodeLimit
 from .env_dataset import EnvDataset
 from gym.wrappers import TimeLimit

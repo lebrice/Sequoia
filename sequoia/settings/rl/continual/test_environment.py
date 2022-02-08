@@ -3,7 +3,6 @@ from typing import Dict
 import math
 from sequoia.common.metrics.rl_metrics import EpisodeMetrics
 import itertools
-from sequoia.common.gym_wrappers.batch_env.tile_images import tile_images
 
 # TODO: Refactor those so they are based on the MeasureRLPerformanceWrapper, which works
 # with vectorized envs.

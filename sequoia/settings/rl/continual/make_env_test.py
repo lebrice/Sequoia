@@ -9,8 +9,7 @@ import pytest
 import torch
 from sequoia.conftest import slow_param
 from .make_env import make_batched_env
-from gym.vector import SyncVectorEnv
-from sequoia.common.gym_wrappers.batch_env import BatchedVectorEnv, AsyncVectorEnv
+from gym.vector import SyncVectorEnv, AsyncVectorEnv
 
 
 @pytest.mark.parametrize("env_name", ["CartPole-v0"])
@@ -87,12 +86,9 @@ def test_make_env_with_wrapper(env_name: str, batch_size: int):
 
 
 from sequoia.common.gym_wrappers import PixelObservationWrapper, MultiTaskEnvironment
-from sequoia.common.gym_wrappers.batch_env import AsyncVectorEnv
+from gym.vector import AsyncVectorEnv
 
 
-@pytest.mark.xfail(
-    reason=f"TODO: Haven't added the env_method or env_attribute or set_attr methods on the BatchedVectorEnv."
-)
 @pytest.mark.parametrize("env_name", ["CartPole-v0"])
 @pytest.mark.parametrize("batch_size", [1, 5, slow_param(10)])
 def test_make_env_with_wrapper_and_kwargs(env_name: str, batch_size: int):

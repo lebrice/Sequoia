@@ -34,7 +34,6 @@ from sequoia.common.gym_wrappers import (
     TransformReward,
 )
 from sequoia.common.gym_wrappers.action_limit import ActionLimit
-from sequoia.common.gym_wrappers.batch_env.tile_images import tile_images
 from sequoia.common.gym_wrappers.convert_tensors import add_tensor_support
 from sequoia.common.gym_wrappers.env_dataset import EnvDataset
 from sequoia.common.gym_wrappers.episode_limit import EpisodeLimit

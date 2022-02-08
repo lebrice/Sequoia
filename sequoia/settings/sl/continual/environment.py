@@ -30,8 +30,7 @@ from gym import Space, spaces
 from torch import Tensor
 from torch.nn import functional as F
 from torch.utils.data import DataLoader, Dataset, IterableDataset, Subset
-
-from sequoia.common.gym_wrappers.batch_env.tile_images import tile_images
+from sequoia.common.gym_wrappers.utils import tile_images
 from sequoia.common.gym_wrappers.convert_tensors import (
     add_tensor_support as tensor_space,
 )

@@ -24,8 +24,7 @@ from torch import Tensor
 from torch.utils.data import IterableDataset
 
 from sequoia.utils.logging_utils import get_logger
-
-from .batch_env import VectorEnv
+from gym.vector import VectorEnv
 from .utils import (
     ActionType,
     ObservationType,
