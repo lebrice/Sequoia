@@ -59,13 +59,13 @@ offline_atari_datasets_from_d3rlpy = set(d3rlpy.datasets.ATARI_GAMES)
 class OfflineRLSetting(Setting):
 
     # A list of available offline rl datasets
-    available_datasets: ClassVar[list] = list(offline_datasets_from_d3rlpy) + list(offline_atari_datasets_from_d3rlpy)
+    available_datasets: ClassVar[List[str]] = list(offline_datasets_from_d3rlpy) + list(offline_atari_datasets_from_d3rlpy)
 
     # choice of dataset for the current setting
     dataset: str = choice(available_datasets, default="cartpole-replay")
 
     # size of validation set
-    val_size: int = 0.2
+    val_size: float = 0.2
 
     # mask for control bootstrapping
     create_mask: bool = False
