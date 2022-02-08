@@ -1,25 +1,23 @@
-from typing import Iterable, Tuple, ClassVar, Type
+from typing import ClassVar, Iterable, Tuple, Type
 
 import gym
-import matplotlib.pyplot as plt
+import numpy as np
 import pytest
 import torch
 from gym import spaces
 from torch import Tensor
+from torch.utils.data import Subset, TensorDataset
 from torchvision.datasets import MNIST
-from torch.utils.data import TensorDataset
-
-from sequoia.common.transforms import Compose, Transforms
-from .environment import PassiveEnvironment
-from sequoia.common.spaces import Image
-import numpy as np
-from torch.utils.data import Subset
 
 from sequoia.common.gym_wrappers import TransformObservation
+from sequoia.common.spaces import Image
+from sequoia.common.transforms import Compose, Transforms
+
+from .environment import PassiveEnvironment
 
 
 def check_env(env: PassiveEnvironment):
-    """ Perform a step gym-style and dataloader-style and check that items
+    """Perform a step gym-style and dataloader-style and check that items
     fit their respective spaces.
     """
     reset_obs = env.reset()
@@ -62,7 +60,10 @@ class TestPassiveEnvironment:
         obs_space = transforms(obs_space)
 
         env: Iterable[Tuple[Tensor, Tensor]] = self.PassiveEnvironment(
-            dataset, batch_size=batch_size, n_classes=10, observation_space=obs_space,
+            dataset,
+            batch_size=batch_size,
+            n_classes=10,
+            observation_space=obs_space,
         )
 
         for x, y in env:
@@ -76,7 +77,6 @@ class TestPassiveEnvironment:
             # plt.imshow(x[0])
             # plt.title(f"y: {y[0]}")
             # plt.waitforbuttonpress(10)
-
 
     def test_mnist_as_gym_env(self, mnist_dataset):
         # from continuum.datasets import MNIST
@@ -99,7 +99,6 @@ class TestPassiveEnvironment:
             assert reward.shape == (batch_size,)
             assert not done
         env.close()
-
 
     def test_env_gives_done_on_last_item(self):
         # from continuum.datasets import MNIST
@@ -164,7 +163,6 @@ class TestPassiveEnvironment:
             assert False, "Should have reached done=True!"
         assert i == max_batches - 1
         env.close()
-
 
     def test_multiple_epochs_env(self):
         max_epochs = 3
@@ -244,7 +242,7 @@ class TestPassiveEnvironment:
             env.step(env.action_space.sample())
 
     def test_multiple_epochs_dataloader(self):
-        """ Test that we can iterate on the dataloader more than once. """
+        """Test that we can iterate on the dataloader more than once."""
         max_epochs = 3
         max_samples = 200
         batch_size = 5
@@ -269,13 +267,16 @@ class TestPassiveEnvironment:
         assert total_steps == max_batches * max_epochs
 
     def test_multiple_epochs_dataloader_with_split_batch_fn(self):
-        """ Test that we can iterate on the dataloader more than once. """
+        """Test that we can iterate on the dataloader more than once."""
         max_epochs = 3
         max_samples = 200
         batch_size = 5
 
         def split_batch_fn(batch):
-            x, y, = batch
+            (
+                x,
+                y,
+            ) = batch
             # some dummy function.
             return torch.zeros_like(x), y
 
@@ -331,7 +332,6 @@ class TestPassiveEnvironment:
         # dataset = MNIST("data", transform=Compose([Transforms.to_tensor, Transforms.three_channels]))
         from continuum import ClassIncremental
         from continuum.datasets import MNIST
-        from continuum.tasks import split_train_val
 
         scenario = ClassIncremental(
             MNIST("data", download=True, train=True),
@@ -386,7 +386,7 @@ class TestPassiveEnvironment:
             env.close()
 
     def test_observation_wrapper_applied_to_passive_environment(self):
-        """ Test that when we apply a gym wrapper to a PassiveEnvironment, it also
+        """Test that when we apply a gym wrapper to a PassiveEnvironment, it also
         affects the observations / actions / rewards produced when iterating on the
         env.
         """
@@ -398,7 +398,10 @@ class TestPassiveEnvironment:
         obs_space = transforms(obs_space)
         dataset.classes
         env = self.PassiveEnvironment(
-            dataset, n_classes=10, batch_size=batch_size, observation_space=obs_space,
+            dataset,
+            n_classes=10,
+            batch_size=batch_size,
+            observation_space=obs_space,
         )
 
         assert env.observation_space == Image(0, 1, (batch_size, 3, 28, 28))
@@ -425,8 +428,7 @@ class TestPassiveEnvironment:
         # from continuum.tasks import split_train_val
 
     def test_passive_environment_interaction(self):
-        """ Test the gym.Env-style interaction with a PassiveEnvironment.
-        """
+        """Test the gym.Env-style interaction with a PassiveEnvironment."""
         batch_size = 5
         transforms = Compose([Transforms.to_tensor, Transforms.three_channels])
         dataset = MNIST(
@@ -464,8 +466,7 @@ class TestPassiveEnvironment:
         assert i == max_samples // batch_size - 1
 
     def test_passive_environment_without_pretend_to_be_active(self):
-        """ Test the gym.Env-style interaction with a PassiveEnvironment.
-        """
+        """Test the gym.Env-style interaction with a PassiveEnvironment."""
         batch_size = 5
         transforms = Compose([Transforms.to_tensor, Transforms.three_channels])
         dataset = MNIST(
@@ -500,8 +501,7 @@ class TestPassiveEnvironment:
         assert i == max_samples // batch_size - 1
 
     def test_passive_environment_needs_actions_to_be_sent(self):
-        """ Test the 'active dataloader' style interaction.
-        """
+        """Test the 'active dataloader' style interaction."""
         batch_size = 10
         transforms = Compose([Transforms.to_tensor, Transforms.three_channels])
         dataset = MNIST(
@@ -518,7 +518,7 @@ class TestPassiveEnvironment:
             batch_size=batch_size,
             observation_space=obs_space,
             pretend_to_be_active=True,
-            strict = True,
+            strict=True,
         )
 
         with pytest.raises(RuntimeError):
@@ -540,8 +540,7 @@ class TestPassiveEnvironment:
             assert rewards.shape[0] == action.shape[0]
 
     def test_passive_environment_active_mode_action_reward_match(self):
-        """ Test the 'active dataloader' style interaction.
-        """
+        """Test the 'active dataloader' style interaction."""
         batch_size = 10
         max_samples = 105
         dataset = TensorDataset(
@@ -560,10 +559,9 @@ class TestPassiveEnvironment:
         for i, (obs, _) in enumerate(env):
             print(i)
             expected_obs = torch.arange(i * batch_size, (i + 1) * batch_size)
-            expected_obs = expected_obs[:obs.shape[0]]
+            expected_obs = expected_obs[: obs.shape[0]]
             assert (obs == expected_obs.reshape([obs.shape[0], 1, 1, 1])).all()
             action = torch.arange(i * batch_size, (i + 1) * batch_size, dtype=int)
             action = action[: obs.shape[0]]
             rewards = env.send(action)
             assert (rewards == action).all()
-

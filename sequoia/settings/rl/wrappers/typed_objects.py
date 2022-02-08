@@ -1,16 +1,16 @@
-from collections.abc import Mapping
-from dataclasses import is_dataclass, replace, fields
+from dataclasses import fields
 from functools import singledispatch
-from typing import Any, Callable, Dict, List, Optional, Sequence, Tuple, Type, TypeVar, Union
+from typing import Any, Dict, Sequence, Tuple, TypeVar, Union
 
 import gym
 import numpy as np
 from gym import Space, spaces
-from sequoia.common import Batch
-from sequoia.common.gym_wrappers import IterableWrapper, TransformObservation
+from torch import Tensor
+
+from sequoia.common.gym_wrappers import IterableWrapper
 from sequoia.common.gym_wrappers.convert_tensors import supports_tensors
-from sequoia.common.spaces import Sparse, TypedDictSpace
-from sequoia.common.spaces.named_tuple import NamedTuple, NamedTupleSpace
+from sequoia.common.spaces import TypedDictSpace
+from sequoia.common.spaces.named_tuple import NamedTupleSpace
 from sequoia.settings.base.environment import Environment
 from sequoia.settings.base.objects import (
     Actions,
@@ -20,7 +20,6 @@ from sequoia.settings.base.objects import (
     Rewards,
     RewardType,
 )
-from torch import Tensor
 
 T = TypeVar("T")
 
@@ -102,11 +101,12 @@ class TypedObjectsWrapper(IterableWrapper, Environment[ObservationType, ActionTy
                 dtype=self.Actions,
             )
         elif (isinstance(self.env.action_space, simple_spaces) and len(action_fields) == 1) or (
-            isinstance(self.env.action_space, spaces.Tuple) and num_envs):
+            isinstance(self.env.action_space, spaces.Tuple) and num_envs
+        ):
             field_name = action_fields[0].name
             self.action_space = TypedDictSpace(
                 spaces={field_name: self.env.action_space}, dtype=self.Actions
-            ) 
+            )
         else:
             raise NotImplementedError(
                 "Need to pass the action space to the TypedObjectsWrapper constructor when "

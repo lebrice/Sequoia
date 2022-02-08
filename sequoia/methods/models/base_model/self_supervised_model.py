@@ -16,6 +16,7 @@ from sequoia.methods.aux_tasks.auxiliary_task import AuxiliaryTask
 from sequoia.settings import Rewards, Setting, SettingType
 from sequoia.utils.logging_utils import get_logger
 from sequoia.utils.utils import flatten_dict
+
 from .model import Model
 
 # from sequoia.utils.module_dict import ModuleDict
@@ -35,7 +36,7 @@ class SelfSupervisedModel(Model[SettingType]):
 
     @dataclass
     class HParams(Model.HParams):
-        """Hyperparameters of a Self-Supervised method. """
+        """Hyperparameters of a Self-Supervised method."""
 
         # simclr: Optional[SimCLRTask.Options] = None
         # vae: Optional[VAEReconstructionTask.Options] = None
@@ -54,9 +55,7 @@ class SelfSupervisedModel(Model[SettingType]):
         loss_name: str = "",
     ) -> Loss:
         # Get the output task loss (the loss of the base model)
-        loss: Loss = super().get_loss(
-            forward_pass, rewards=rewards, loss_name=loss_name
-        )
+        loss: Loss = super().get_loss(forward_pass, rewards=rewards, loss_name=loss_name)
 
         # Add the self-supervised losses from all the enabled auxiliary tasks.
         for task_name, aux_task in self.tasks.items():
@@ -77,20 +76,16 @@ class SelfSupervisedModel(Model[SettingType]):
     def add_auxiliary_task(
         self, aux_task: AuxiliaryTask, key: str = None, coefficient: float = None
     ) -> None:
-        """ Adds an auxiliary task to the self-supervised model. """
+        """Adds an auxiliary task to the self-supervised model."""
         key = aux_task.name if key is None else key
         if key in self.tasks:
-            raise RuntimeError(
-                f"There is already an auxiliary task with name {key} in the model!"
-            )
+            raise RuntimeError(f"There is already an auxiliary task with name {key} in the model!")
         self.tasks[key] = aux_task.to(self.device)
         if coefficient is not None:
             aux_task.coefficient = coefficient
         elif not aux_task.coefficient:
             warnings.warn(
-                UserWarning(
-                    f"Adding auxiliary task with name {key}, but with coefficient of 0.!"
-                )
+                UserWarning(f"Adding auxiliary task with name {key}, but with coefficient of 0.!")
             )
 
         if aux_task.coefficient:

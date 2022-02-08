@@ -14,13 +14,14 @@ from sequoia.common.hparams import log_uniform
 from sequoia.methods import register_method
 from sequoia.settings.rl import ContinualRLSetting
 from sequoia.utils.logging_utils import get_logger
+
 from .on_policy_method import OnPolicyMethod, OnPolicyModel
 
 logger = get_logger(__file__)
 
 
 class PPOModel(PPO, OnPolicyModel):
-    """ Proximal Policy Optimization algorithm (PPO) (clip version) - from SB3.
+    """Proximal Policy Optimization algorithm (PPO) (clip version) - from SB3.
 
     Paper: https://arxiv.org/abs/1707.06347
     Code: The SB3 implementation borrows code from OpenAI Spinning Up
@@ -33,7 +34,7 @@ class PPOModel(PPO, OnPolicyModel):
 
     @dataclass
     class HParams(OnPolicyModel.HParams):
-        """ Hyper-parameters of the PPO Model. """
+        """Hyper-parameters of the PPO Model."""
 
         # # The policy model to use (MlpPolicy, CnnPolicy, ...)
         # policy: Union[str, Type[ActorCriticPolicy]]
@@ -131,7 +132,7 @@ class PPOModel(PPO, OnPolicyModel):
 @register_method
 @dataclass
 class PPOMethod(OnPolicyMethod):
-    """ Method that uses the PPO model from stable-baselines3. """
+    """Method that uses the PPO model from stable-baselines3."""
 
     Model: ClassVar[Type[PPOModel]] = PPOModel
     # Hyper-parameters of the PPO Model.
@@ -151,11 +152,12 @@ class PPOMethod(OnPolicyMethod):
         self, observations: ContinualRLSetting.Observations, action_space: spaces.Space
     ) -> ContinualRLSetting.Actions:
         return super().get_actions(
-            observations=observations, action_space=action_space,
+            observations=observations,
+            action_space=action_space,
         )
 
     def on_task_switch(self, task_id: Optional[int]) -> None:
-        """ Called when switching tasks in a CL setting.
+        """Called when switching tasks in a CL setting.
 
         If task labels are available, `task_id` will correspond to the index of
         the new task. Otherwise, if task labels aren't available, `task_id` will
@@ -165,9 +167,7 @@ class PPOMethod(OnPolicyMethod):
         """
         super().on_task_switch(task_id=task_id)
 
-    def get_search_space(
-        self, setting: ContinualRLSetting
-    ) -> Mapping[str, Union[str, Dict]]:
+    def get_search_space(self, setting: ContinualRLSetting) -> Mapping[str, Union[str, Dict]]:
         return super().get_search_space(setting)
 
 

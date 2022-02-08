@@ -3,14 +3,14 @@
 from typing import Dict
 
 from gym.envs.registration import EnvRegistry, EnvSpec, registry
+
 from sequoia.common.gym_wrappers.pixel_observation import PixelObservationWrapper
 
 from .variant_spec import EnvVariantSpec
 
 
 def register_classic_control_variants(env_registry: EnvRegistry = registry) -> None:
-    """ Adds pixel variants for the classic-control envs to the given registry in-place.
-    """
+    """Adds pixel variants for the classic-control envs to the given registry in-place."""
     classic_control_env_specs: Dict[str, EnvSpec] = {
         spec.id: spec
         for env_id, spec in env_registry.env_specs.items()

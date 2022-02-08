@@ -5,8 +5,10 @@ from pathlib import Path
 from typing import Optional, Type
 
 import pytest
+
 from sequoia.common.config import Config
 from sequoia.methods import Method, get_all_methods
+from sequoia.methods.method_test import key_fn
 from sequoia.methods.random_baseline import RandomBaselineMethod
 from sequoia.settings import Results, Setting, all_settings
 from sequoia.utils.serialization import Serializable
@@ -27,7 +29,12 @@ class MockResults(Results):
         return {}
 
     def to_log_dict(self, verbose: bool = False):
-        return {"hparams": self.hparams.to_dict() if isinstance(self.hparams, Serializable) else self.hparams, "objective": self.objective}
+        return {
+            "hparams": self.hparams.to_dict()
+            if isinstance(self.hparams, Serializable)
+            else self.hparams,
+            "objective": self.objective,
+        }
 
     def summary(self):
         return str(self.to_log_dict())
@@ -56,7 +63,6 @@ def method_type(request, monkeypatch, set_argv_for_debug):
     return method_class
 
 
-from sequoia.methods.method_test import key_fn
 @pytest.fixture(params=sorted(all_settings, key=key_fn))
 def setting_type(request, monkeypatch, set_argv_for_debug):
     setting_class: Type[Setting] = request.param
@@ -80,7 +86,9 @@ def test_launch_sweep_with_constructor(
         )
 
     if issubclass(method_type, RandomBaselineMethod):
-        pytest.skip("BUG: RandomBaselineMethod has a hparam space that causes the HPO algo to go into an infinite loop.")
+        pytest.skip(
+            "BUG: RandomBaselineMethod has a hparam space that causes the HPO algo to go into an infinite loop."
+        )
         return
 
     experiment = HPOSweep(

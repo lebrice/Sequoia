@@ -4,26 +4,14 @@ NOTE (@lebrice): This 'Environment' abstraction isn't super useful at the moment
 because there's only the `ActiveDataLoader` that fits this interface (since we
 can't send anything to the usual DataLoader).
 """
-from abc import ABC, ABCMeta, abstractmethod
-from dataclasses import dataclass
-from typing import Generic, Iterable, Optional, Type, TypeVar
+from abc import ABC
+from typing import Generic
 
 import gym
-import numpy as np
-from gym import spaces
-from sequoia.common.batch import Batch
-from sequoia.utils.logging_utils import get_logger
-from torch import Tensor
-from torch.utils.data import DataLoader
 
-from .objects import (
-    Actions,
-    ActionType,
-    Observations,
-    ObservationType,
-    Rewards,
-    RewardType,
-)
+from sequoia.utils.logging_utils import get_logger
+
+from .objects import ActionType, ObservationType, RewardType
 
 logger = get_logger(__file__)
 

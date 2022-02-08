@@ -5,10 +5,11 @@ See `avalanche.training.plugins.cwr_star.CWRStarPlugin` or
 """
 from dataclasses import dataclass
 from typing import ClassVar, Optional, Type
+
 from avalanche.training.strategies import BaseStrategy, CWRStar
 
 from sequoia.methods import register_method
-from sequoia.settings.sl import ClassIncrementalSetting, TaskIncrementalSLSetting
+from sequoia.settings.sl import TaskIncrementalSLSetting
 
 from .base import AvalancheMethod
 
@@ -16,7 +17,7 @@ from .base import AvalancheMethod
 @register_method
 @dataclass
 class CWRStarMethod(AvalancheMethod[CWRStar]):
-    """ CWRStar strategy from Avalanche.
+    """CWRStar strategy from Avalanche.
     See CWRStar plugin for details.
     This strategy does not use task identities.
 

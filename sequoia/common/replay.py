@@ -6,17 +6,14 @@ import random
 from collections import Counter, deque
 from dataclasses import dataclass
 from typing import *
-import json
-from pathlib import Path
-import numpy as np
+
 import torch
-from torch import Tensor, nn
+from simple_parsing import field
+from torch import Tensor
 from torch.utils.data import TensorDataset
-from simple_parsing.helpers.serialization.serializable import D
-from sequoia.common.loss import Loss
-from simple_parsing import field, mutable_field
-from sequoia.utils.serialization import Serializable, Pickleable
+
 from sequoia.utils.logging_utils import get_logger
+from sequoia.utils.serialization import Pickleable, Serializable
 
 logger = get_logger(__file__)
 T = TypeVar("T")
@@ -28,6 +25,7 @@ class ReplayBuffer(deque, Deque[T], Pickleable):
     Uses a doubly-ended Queue, which unfortunately isn't registered as a buffer
     for pytorch.
     """
+
     def __init__(self, capacity: int):
         super().__init__(maxlen=capacity)
         # self.extend("ABC")
@@ -56,18 +54,22 @@ class ReplayBuffer(deque, Deque[T], Pickleable):
         # NOTE: Type hints indicate that random.shuffle expects a list, not
         # a deque. Seems to work just fine though.
         random.shuffle(extended)  # type: ignore
-        assert size <= len(extended), f"Asked to sample {size} values, while there are only {len(extended)} in the batch + buffer!"
-        
+        assert size <= len(
+            extended
+        ), f"Asked to sample {size} values, while there are only {len(extended)} in the batch + buffer!"
+
         self.extend(extended)
         return extended[:size]
 
     def _sample(self, size: int) -> List[T]:
-        assert size <= len(self), f"Asked to sample {size} values while there are only {len(self)} in the buffer!"
+        assert size <= len(
+            self
+        ), f"Asked to sample {size} values while there are only {len(self)} in the buffer!"
         return random.sample(self, size)
 
     @property
     def full(self) -> bool:
-        return len(self) == self.capacity 
+        return len(self) == self.capacity
 
 
 class UnlabeledReplayBuffer(ReplayBuffer[Tensor]):
@@ -78,7 +80,7 @@ class UnlabeledReplayBuffer(ReplayBuffer[Tensor]):
     def push(self, x_batch: Tensor, y_batch: Tensor = None) -> None:
         super().extend(x_batch)
 
-    def push_and_sample(self, x_batch: Tensor, y_batch: Tensor = None, size: int=None) -> Tensor:
+    def push_and_sample(self, x_batch: Tensor, y_batch: Tensor = None, size: int = None) -> Tensor:
         size = x_batch.shape[0] if size is None else size
         return torch.stack(super()._push_and_sample(x_batch, size=size))
 
@@ -92,20 +94,22 @@ class LabeledReplayBuffer(ReplayBuffer[Tuple[Tensor, Tensor]]):
     def push(self, x_batch: Tensor, y_batch: Tensor) -> None:
         super().extend(zip(x_batch, y_batch))
 
-    def push_and_sample(self, x_batch: Tensor, y_batch: Tensor, size: int=None) -> Tuple[Tensor, Tensor]:
+    def push_and_sample(
+        self, x_batch: Tensor, y_batch: Tensor, size: int = None
+    ) -> Tuple[Tensor, Tensor]:
         size = x_batch.shape[0] if size is None else size
         list_of_pairs = super()._push_and_sample(*zip(x_batch, y_batch), size=size)
         data_list, target_list = zip(*list_of_pairs)
         return torch.stack(data_list), torch.stack(target_list)
 
     def samples_per_class(self) -> Dict[int, int]:
-        """ Returns a Counter showing how many samples there are per class. """
+        """Returns a Counter showing how many samples there are per class."""
         # TODO: Idea, could use the None key for unlabeled replay buffer.
         return Counter(int(y) for x, y in self)
 
 
 class SemiSupervisedReplayBuffer(object):
-    def __init__(self, labeled_capacity: int, unlabeled_capacity: int=0):
+    def __init__(self, labeled_capacity: int, unlabeled_capacity: int = 0):
         """Semi-Supervised (ish) version of a replay buffer.
         With the default parameters, acts just like a regular replay buffer.
 
@@ -141,7 +145,7 @@ class SemiSupervisedReplayBuffer(object):
         )
         return self.labeled.sample(size)
 
-    def sample_unlabeled(self, size: int, take_from_labeled_buffer_first: bool=None) -> Tensor:
+    def sample_unlabeled(self, size: int, take_from_labeled_buffer_first: bool = None) -> Tensor:
         """Samples `size` unlabeled samples.
 
         Can also use samples from the labeled replay buffer (while discarding
@@ -160,7 +164,7 @@ class SemiSupervisedReplayBuffer(object):
         Returns:
             Tensor: A batch of X's.
         """
-        
+
         total = len(self.unlabeled)
         if take_from_labeled_buffer_first is not None:
             total += len(self.labeled)
@@ -180,10 +184,10 @@ class SemiSupervisedReplayBuffer(object):
                 data, _ = self.labeled.sample(size)
                 samples_left -= data.shape[0]
                 tensors.append(data)
-        
+
         # Take the rest of the samples from the unlabeled buffer.
         n_samples_from_labeled = min(len(self.labeled), samples_left)
-        data = self.unlabeled.sample_batch(samples_left) 
+        data = self.unlabeled.sample_batch(samples_left)
         tensors.append(data)
         samples_left -= data.shape[0]
 
@@ -198,17 +202,17 @@ class SemiSupervisedReplayBuffer(object):
         data = torch.cat(tensors)
         return data
 
-    def push_and_sample(self, x: Tensor, y: Tensor, size: int=None) -> Tuple[Tensor, Tensor]:
+    def push_and_sample(self, x: Tensor, y: Tensor, size: int = None) -> Tuple[Tensor, Tensor]:
         size = x.shape[0] if size is None else size
         self.unlabeled.push(x)
         return self.labeled.push_and_sample(x, y, size=size)
-        
-    def push_and_sample_unlabeled(self, x: Tensor, y: Tensor=None, size: int=None) -> Tensor:
+
+    def push_and_sample_unlabeled(self, x: Tensor, y: Tensor = None, size: int = None) -> Tensor:
         size = x.shape[0] if size is None else size
         if y is not None:
             self.labeled.push(x, y)
         return self.unlabeled.push_and_sample(x, size=size)
-    
+
     def clear(self):
         self.labeled.clear()
         self.unlabeled.clear()
@@ -216,7 +220,8 @@ class SemiSupervisedReplayBuffer(object):
 
 @dataclass
 class ReplayOptions(Serializable):
-    """ Options related to Replay. """
+    """Options related to Replay."""
+
     # Size of the labeled replay buffer.
     labeled_buffer_size: int = field(0, alias="replay_buffer_size")
     # Size of the unlabeled replay buffer.
@@ -231,4 +236,3 @@ class ReplayOptions(Serializable):
     @property
     def enabled(self) -> bool:
         return self.labeled_buffer_size > 0 or self.unlabeled_buffer_size > 0
-

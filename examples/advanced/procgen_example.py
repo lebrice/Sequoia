@@ -3,17 +3,19 @@
 In this example, we create environments using [the `procgen` package](https://github.com/openai/procgen).
 """
 
-from dataclasses import dataclass, replace
 import dataclasses
-from typing import List, NamedTuple, Optional, Type, TypeVar, Dict
+from dataclasses import dataclass, replace
+from typing import Dict, List, NamedTuple, Optional, Type, TypeVar
+
 import gym
 import numpy as np
 from gym3.interop import ToGymEnv
+
 from sequoia.settings.rl import (
     IncrementalRLSetting,
+    MultiTaskRLSetting,
     TaskIncrementalRLSetting,
     TraditionalRLSetting,
-    MultiTaskRLSetting,
 )
 
 

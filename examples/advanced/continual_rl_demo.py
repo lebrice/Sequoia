@@ -1,21 +1,25 @@
 import sys
+
 # This "hack" is required so we can run `python examples/continual_rl_demo.py`
 sys.path.extend([".", ".."])
-from sequoia.methods.stable_baselines3_methods import DQNMethod, A2CMethod
-from sequoia.settings import (IncrementalRLSetting, ContinualRLSetting, RLSetting,
-                      TaskIncrementalRLSetting)
-
+from sequoia.methods.stable_baselines3_methods import A2CMethod, DQNMethod
+from sequoia.settings import (
+    ContinualRLSetting,
+    IncrementalRLSetting,
+    RLSetting,
+    TaskIncrementalRLSetting,
+)
 
 if __name__ == "__main__":
     task_schedule = {
-        0:      {"gravity": 10, "length": 0.2},
-        1000:   {"gravity": 100, "length": 1.2},
-        2000:   {"gravity": 10, "length": 0.2},
+        0: {"gravity": 10, "length": 0.2},
+        1000: {"gravity": 100, "length": 1.2},
+        2000: {"gravity": 10, "length": 0.2},
     }
     setting = ContinualRLSetting(
-    # setting = IncrementalRLSetting(
-    # setting = TaskIncrementalRLSetting(
-    # setting = RLSetting(
+        # setting = IncrementalRLSetting(
+        # setting = TaskIncrementalRLSetting(
+        # setting = RLSetting(
         dataset="CartPole-v1",
         train_max_steps=2000,
         train_task_schedule=task_schedule,

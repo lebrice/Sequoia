@@ -1,7 +1,7 @@
 """ Sequoia - The Research Tree """
-from .settings import *
+from ._version import get_versions
+from .settings import Setting, Method, Environment
 # from .experiments import Experiment
 
-from ._version import get_versions
-__version__ = get_versions()['version']
+__version__ = get_versions()["version"]
 del get_versions

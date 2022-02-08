@@ -12,7 +12,7 @@ from .base import AvalancheMethod
 
 
 class NaiveMethod(AvalancheMethod[Naive]):
-    """ 'Naive' Strategy from [Avalanche](https://github.com/ContinualAI/avalanche).
+    """'Naive' Strategy from [Avalanche](https://github.com/ContinualAI/avalanche).
 
     The simplest (and least effective) Continual Learning strategy. Naive just
     incrementally fine tunes a single model without employing any method

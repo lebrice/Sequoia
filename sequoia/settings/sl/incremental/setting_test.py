@@ -1,17 +1,15 @@
-import math
 from typing import Any, ClassVar, Dict, Type
 
 import pytest
 from continuum import ClassIncremental
 from gym import spaces
 from gym.spaces import Discrete, Space
+
 from sequoia.common.config import Config
 from sequoia.common.metrics import ClassificationMetrics
 from sequoia.common.spaces import Sparse
 from sequoia.conftest import skip_param, xfail_param
-from sequoia.settings.assumptions.incremental_test import OtherDummyMethod
 from sequoia.settings.base import Setting
-from sequoia.settings.base.setting_test import SettingTests
 from sequoia.settings.sl.continual.envs import get_action_space
 
 from ..discrete.setting_test import (
@@ -24,7 +22,8 @@ from .setting import IncrementalSLSetting as ClassIncrementalSetting
 class TestIncrementalSLSetting(DiscreteTaskAgnosticSLSettingTests):
     Setting: ClassVar[Type[Setting]] = IncrementalSLSetting
     fast_dev_run_kwargs: ClassVar[Dict[str, Any]] = dict(
-        dataset="mnist", batch_size=64,
+        dataset="mnist",
+        batch_size=64,
     )
 
     def assert_chance_level(
@@ -74,9 +73,7 @@ class TestIncrementalSLSetting(DiscreteTaskAgnosticSLSettingTests):
             "cifar100",
             "fashionmnist",
             "kmnist",
-            xfail_param(
-                "emnist", reason="Bug in emnist, requires split positional arg?"
-            ),
+            xfail_param("emnist", reason="Bug in emnist, requires split positional arg?"),
             xfail_param("qmnist", reason="Bug in qmnist, 229421 not in list"),
             "mnistfellowship",
             "cifar10",
@@ -85,7 +82,7 @@ class TestIncrementalSLSetting(DiscreteTaskAgnosticSLSettingTests):
     )
     @pytest.mark.timeout(60)
     def test_observation_spaces_match_dataset(self, dataset_name: str):
-        """ Test to check that the `observation_spaces` and `reward_spaces` dict
+        """Test to check that the `observation_spaces` and `reward_spaces` dict
         really correspond to the entries of the corresponding datasets, before we do
         anything with them.
         """
@@ -109,14 +106,17 @@ class TestIncrementalSLSetting(DiscreteTaskAgnosticSLSettingTests):
     def test_task_label_space(self, dataset_name: str, nb_tasks: int):
         # dataset = ClassIncrementalSetting.available_datasets[dataset_name]
         nb_tasks = 2
-        setting = ClassIncrementalSetting(dataset=dataset_name, nb_tasks=nb_tasks,)
+        setting = ClassIncrementalSetting(
+            dataset=dataset_name,
+            nb_tasks=nb_tasks,
+        )
         task_label_space: Space = setting.observation_space.task_labels
         # TODO: Should the task label space be Sparse[Discrete]? or Discrete?
         assert task_label_space == Discrete(nb_tasks)
 
     @pytest.mark.parametrize("dataset_name", ["mnist"])
     def test_setting_obs_space_changes_when_transforms_change(self, dataset_name: str):
-        """ TODO: Test that the `observation_space` property on the
+        """TODO: Test that the `observation_space` property on the
         ClassIncrementalSetting reflects the data produced by the dataloaders, and
         that changing a transform on a Setting also changes the value of that
         property on both the Setting itself, as well as on the corresponding
@@ -133,9 +133,7 @@ class TestIncrementalSLSetting(DiscreteTaskAgnosticSLSettingTests):
             batch_size=None,
             num_workers=0,
         )
-        assert (
-            setting.observation_space.x == Setting.base_observation_spaces[dataset_name]
-        )
+        assert setting.observation_space.x == Setting.base_observation_spaces[dataset_name]
         # TODO: Should the 'transforms' apply to ALL the environments, and the
         # train/valid/test transforms apply only to those envs?
         from sequoia.common.transforms import Transforms

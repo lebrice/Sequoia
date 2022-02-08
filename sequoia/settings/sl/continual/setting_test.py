@@ -7,12 +7,10 @@ import gym
 import pytest
 import torch
 from sklearn.datasets import make_classification
-from sklearn.model_selection import train_test_split
 from torch.utils.data import TensorDataset, random_split
 
 from sequoia.common.config import Config
 from sequoia.methods import RandomBaselineMethod
-from sequoia.settings import Setting
 from sequoia.settings.base.setting_test import SettingTests
 from sequoia.settings.sl.continual.setting import shuffle
 
@@ -23,7 +21,8 @@ from .wrappers import ShowLabelDistributionWrapper
 def test_continuum_shuffle(config: Config):
     from continuum.datasets import MNIST
     from continuum.scenarios import ClassIncremental
-    from continuum.tasks import TaskSet, concat
+    from continuum.tasks import concat
+
     dataset = MNIST(data_path=config.data_dir, train=True)
     cl_dataset = concat(ClassIncremental(dataset, increment=2))
     shuffled_dataset = shuffle(cl_dataset)
@@ -153,10 +152,6 @@ class TestContinualSLSetting(SettingTests):
         setting = self.Setting(dataset="mnist", config=config)
         figures_dir = Path("temp")
 
-        from functools import partial
-
-        import matplotlib.pyplot as plt
-
         # fig, axes = plt.subplots(2, 3)
         name_to_env_fn = {
             "train": setting.train_dataloader,
@@ -200,12 +195,8 @@ class TestContinualSLSetting(SettingTests):
             n_test = n - n_train_val
             n_train = int(n_train_val * 0.8)
             n_valid = n_train_val - n_train
-            train_val_dataset, test_dataset = random_split(
-                dataset, [n_train_val, n_test]
-            )
-            train_dataset, val_dataset = random_split(
-                train_val_dataset, [n_train, n_valid]
-            )
+            train_val_dataset, test_dataset = random_split(dataset, [n_train_val, n_test])
+            train_dataset, val_dataset = random_split(train_val_dataset, [n_train, n_valid])
 
             train_datasets.append(train_dataset)
             val_datasets.append(val_dataset)
@@ -227,8 +218,9 @@ class TestContinualSLSetting(SettingTests):
         assert setting.observation_space.x.shape == image_shape
         assert setting.reward_space.n == n_classes
 
-    from .envs import CTRL_INSTALLED, CTRL_STREAMS
     from sequoia.conftest import skip_param
+
+    from .envs import CTRL_INSTALLED, CTRL_STREAMS
 
     @pytest.mark.skipif(not CTRL_INSTALLED, reason="Need ctrl-benchmark for this test.")
     @pytest.mark.parametrize(
@@ -290,7 +282,6 @@ from typing import List, Tuple
 
 import numpy as np
 import pytest
-from continuum import TaskSet
 from torch.utils.data import DataLoader
 
 

@@ -2,16 +2,17 @@
 RL and SL settings.
 """
 
-from sequoia.methods import BaseMethod
-from sequoia.settings import TaskIncrementalSLSetting, TaskIncrementalRLSetting, Setting
-from sequoia.common import Config
 from simple_parsing import ArgumentParser
+
+from sequoia.common import Config
+from sequoia.methods import BaseMethod
+from sequoia.settings import Setting, TaskIncrementalRLSetting, TaskIncrementalSLSetting
 
 
 def baseline_demo_simple():
     config = Config()
     method = BaseMethod(config=config, max_epochs=1)
-    
+
     ## Create *any* Setting from the tree, for example:
     # Supervised Learning Setting:
     setting = TaskIncrementalSLSetting(
@@ -31,7 +32,7 @@ def baseline_demo_simple():
 
 def baseline_demo_command_line():
     parser = ArgumentParser(__doc__, add_dest_to_option_strings=False)
-    
+
     # Supervised Learning Setting:
     parser.add_arguments(TaskIncrementalSLSetting, dest="setting")
     # Reinforcement Learning Setting:
@@ -45,7 +46,7 @@ def baseline_demo_command_line():
     setting: Setting = args.setting
     config: Config = args.config
     method: BaseMethod = BaseMethod.from_argparse_args(args, dest="method")
-    
+
     results = setting.apply(method, config=config)
     print(results.summary())
     return results
@@ -54,7 +55,6 @@ def baseline_demo_command_line():
 if __name__ == "__main__":
     ### Option 1: Create the BaseMethod and Settings manually.
     baseline_demo_simple()
-    
+
     ### Option 2: Create the BaseMethod and Settings from the command-line.
     # baseline_demo_command_line()
- 

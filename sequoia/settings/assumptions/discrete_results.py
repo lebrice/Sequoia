@@ -1,24 +1,20 @@
 import json
-import warnings
 from dataclasses import dataclass
 from io import StringIO
-from pathlib import Path
-from typing import ClassVar, Dict, Generic, List, Optional, Union
+from typing import ClassVar, Dict, Generic, List
 
 import matplotlib.pyplot as plt
-import numpy as np
-import wandb
-from gym.utils import colorize
+from simple_parsing.helpers import list_field
+
 from sequoia.common.metrics import Metrics
 from sequoia.settings.base.results import Results
-from simple_parsing.helpers import list_field
 
 from .iid_results import MetricType, TaskResults
 
 
 @dataclass
 class TaskSequenceResults(Results, Generic[MetricType]):
-    """ Results obtained when evaluated on a sequence of (discrete) Tasks. """
+    """Results obtained when evaluated on a sequence of (discrete) Tasks."""
 
     task_results: List[TaskResults[MetricType]] = list_field()
 
@@ -36,7 +32,7 @@ class TaskSequenceResults(Results, Generic[MetricType]):
     @property
     def objective_name(self) -> str:
         return self.average_metrics.objective_name
-    
+
     @property
     def num_tasks(self) -> int:
         """Returns the number of tasks.
@@ -78,4 +74,3 @@ class TaskSequenceResults(Results, Generic[MetricType]):
         for task_id, task_results in enumerate(self.task_results):
             result[f"Task {task_id}"] = task_results.make_plots()
         return result
-

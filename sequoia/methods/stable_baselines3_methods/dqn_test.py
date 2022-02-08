@@ -1,16 +1,16 @@
+from typing import ClassVar, Dict, Type
+
 import numpy as np
 import pytest
 from gym import spaces
+
 from sequoia.common.config import Config
-from sequoia.common.spaces import Image, TypedDictSpace, Sparse
-from sequoia.conftest import monsterkong_required
+from sequoia.common.spaces import Image
 from sequoia.settings.rl import IncrementalRLSetting
 
-from .dqn import DQNMethod, DQNModel
-from typing import ClassVar, Type, Dict
-
-from .base import StableBaselines3Method, BaseAlgorithm
+from .base import BaseAlgorithm, StableBaselines3Method
 from .base_test import DiscreteActionSpaceMethodTests
+from .dqn import DQNMethod, DQNModel
 from .off_policy_method_test import OffPolicyMethodTests
 
 

@@ -22,7 +22,7 @@ from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from functools import total_ordering
 from pathlib import Path
-from typing import Any, ClassVar, Dict, List, Type, TypeVar, Union
+from typing import Any, ClassVar, Dict, TypeVar, Union
 
 import matplotlib.pyplot as plt
 from simple_parsing import Serializable
@@ -35,14 +35,15 @@ logger = get_logger(__file__)
 @dataclass
 @total_ordering
 class Results(Serializable, ABC):
-    """ Represents the results of an experiment.
-    
+    """Represents the results of an experiment.
+
     Here you can define what the quantity to maximize/minize is. This class
     should also be used to create the plots that will be helpful to understand
     and compare different results.
 
     TODO: Add wandb logging here somehow.
     """
+
     lower_is_better: ClassVar[bool] = False
     # Name for the 'objective'.
     objective_name: ClassVar[str] = "Objective"
@@ -50,13 +51,13 @@ class Results(Serializable, ABC):
     @property
     @abstractmethod
     def objective(self) -> float:
-        """ Returns a float value that indicating how "good" this result is.
-        
-        If the `lower_is_better` class variable is set to `False` (default), 
+        """Returns a float value that indicating how "good" this result is.
+
+        If the `lower_is_better` class variable is set to `False` (default),
         then this
         """
         raise NotImplementedError("Each Result subclass should implement this.")
-    
+
     @abstractmethod
     def summary(self) -> str:
         """Gives a string describing the results, in a way that is easy to understand.
@@ -73,29 +74,24 @@ class Results(Serializable, ABC):
         :return: A dictionary mapping from plot name to the matplotlib figure.
         :rtype: Dict[str, plt.Figure]
         """
-    
+
     @abstractmethod
     def to_log_dict(self, verbose: bool = False) -> Dict[str, Any]:
-        """Create a dict version of the results, to be logged to wandb
-        """
-        return {
-            self.objective_name: self.objective
-        }
+        """Create a dict version of the results, to be logged to wandb"""
+        return {self.objective_name: self.objective}
 
     def save(self, path: Union[str, Path], dump_fn=None, **kwargs) -> None:
         path = Path(path)
         path.parent.mkdir(exist_ok=True, parents=True)
         return super().save(path, dump_fn=dump_fn, **kwargs)
 
-    def save_to_dir(self,
-                    save_dir: Union[str, Path],
-                    filename: str = "results.json") -> None:
+    def save_to_dir(self, save_dir: Union[str, Path], filename: str = "results.json") -> None:
         save_dir = Path(save_dir)
         save_dir.mkdir(exist_ok=True, parents=True)
 
         print(f"Results summary:")
         self.summary
-    
+
         results_dump_file = save_dir / filename
         self.save(results_dump_file)
         print(f"Saved a copy of the results to {results_dump_file}")
@@ -106,25 +102,26 @@ class Results(Serializable, ABC):
             print(f"fig_name: {fig_name}")
             # figure.show()
             # plt.waitforbuttonpress(10)
-            path = (save_dir/ fig_name).with_suffix(".jpg")
+            path = (save_dir / fig_name).with_suffix(".jpg")
             path.parent.mkdir(exist_ok=True, parents=True)
             figure.savefig(path)
             # print(f"Saved figure at path {path}")
             plot_paths[fig_name] = path
         print(f"\nSaved Plots to: {plot_paths}\n")
-            
+
     def __eq__(self, other: Any) -> bool:
         if isinstance(other, Results):
             return self.objective == other.objective
         elif isinstance(other, float):
             return self.objective == other
         return NotImplemented
-    
+
     def __gt__(self, other: Any) -> bool:
         if isinstance(other, Results):
             return self.objective > other.objective
         elif isinstance(other, float):
             return self.objective > other
         return NotImplemented
+
 
 ResultsType = TypeVar("ResultsType", bound=Results)

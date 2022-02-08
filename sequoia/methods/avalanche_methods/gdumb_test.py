@@ -1,13 +1,13 @@
-""" WIP: Tests for the Replay Method.
+""" WIP: Tests for the GDumb Method.
 
 For now this only inherits the tests from the AvalancheMethod class.
 """
 from typing import ClassVar, Type
 
 from .base import AvalancheMethod
-from .replay import ReplayMethod
 from .base_test import _TestAvalancheMethod
+from .gdumb import GDumbMethod
 
 
-class TestReplayMethod(_TestAvalancheMethod):
-    Method: ClassVar[Type[AvalancheMethod]] = ReplayMethod
+class TestGDumbMethod(_TestAvalancheMethod):
+    Method: ClassVar[Type[AvalancheMethod]] = GDumbMethod

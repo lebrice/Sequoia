@@ -10,6 +10,7 @@ import numpy as np
 import pytest
 from gym import spaces
 from gym.vector.utils import batch_space
+
 from sequoia.common.config import Config
 from sequoia.common.spaces import TypedDictSpace
 from sequoia.common.spaces.sparse import Sparse
@@ -19,11 +20,11 @@ from sequoia.conftest import (
     param_requires_monsterkong,
     param_requires_mujoco,
 )
-from sequoia.settings.rl.incremental.setting import IncrementalRLSetting
 from sequoia.settings.assumptions.incremental_test import DummyMethod as _DummyMethod
+from sequoia.settings.base.setting_test import SettingTests
+from sequoia.settings.rl.incremental.setting import IncrementalRLSetting
 from sequoia.settings.rl.setting_test import DummyMethod
 from sequoia.utils.utils import pairwise, take
-from sequoia.settings.base.setting_test import SettingTests
 
 from .setting import ContinualRLSetting
 
@@ -460,7 +461,10 @@ class TestContinualRLSetting(SettingTests):
             assert obs.task_labels in env.observation_space.task_labels
             if batch_size:
                 assert obs.x[0] in setting.observation_space.x
-                assert obs.task_labels is None or obs.task_labels[0] in setting.observation_space.task_labels
+                assert (
+                    obs.task_labels is None
+                    or obs.task_labels[0] in setting.observation_space.task_labels
+                )
             else:
                 assert obs in setting.observation_space
 
@@ -678,7 +682,6 @@ if MUJOCO_INSTALLED:
         ContinualHopperEnv,
         ContinualHopperV2Env,
         ContinualHopperV3Env,
-        ContinualWalker2dEnv,
         ContinualWalker2dV2Env,
         ContinualWalker2dV3Env,
     )

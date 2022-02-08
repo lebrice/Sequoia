@@ -2,8 +2,10 @@
 """
 from functools import singledispatch
 from typing import Dict, Sequence, TypeVar, Union
-from sequoia.utils.generic_functions._namedtuple import is_namedtuple
+
 import torch
+
+from sequoia.utils.generic_functions._namedtuple import is_namedtuple
 
 T = TypeVar("T")
 K = TypeVar("K")
@@ -22,9 +24,7 @@ def move(x: T, device: Union[str, torch.device]) -> T:
 
 @move.register(dict)
 def move_dict(x: Dict[K, V], device: Union[str, torch.device]) -> Dict[K, V]:
-    return type(x)(**{
-        move(k, device): move(v, device) for k, v in x.items()
-    })
+    return type(x)(**{move(k, device): move(v, device) for k, v in x.items()})
 
 
 @move.register(list)

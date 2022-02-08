@@ -3,18 +3,19 @@
 """
 import dataclasses
 from dataclasses import Field
-from typing import Type, List, Dict
+from typing import Dict, List, Type
+
 from sequoia.utils.logging_utils import get_logger
 
 logger = get_logger(__file__)
 
 
 class SettingMeta(Type["Setting"]):
-    """ Metaclass for the nodes in the Setting inheritance tree.
-    
+    """Metaclass for the nodes in the Setting inheritance tree.
+
     Might remove this. Was experimenting with using this to create class
     properties for each Setting.
-    
+
     What this currently does is to remove any keyword argument passed to the
     constructor if its value is marked as a 'constant'.
 
@@ -31,9 +32,7 @@ class SettingMeta(Type["Setting"]):
     def __call__(cls, *args, **kwargs):
         # This is used to filter the arguments passed to the constructor
         # of the Setting and only keep the ones that are fields with init=True.
-        fields: Dict[str, Field] = {
-            field.name: field for field in dataclasses.fields(cls)
-        }
+        fields: Dict[str, Field] = {field.name: field for field in dataclasses.fields(cls)}
         init_fields: List[str] = [name for name, f in fields.items() if f.init]
 
         for key in list(kwargs.keys()):

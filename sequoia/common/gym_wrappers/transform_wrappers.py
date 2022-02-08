@@ -1,3 +1,4 @@
+from __future__ import annotations
 from typing import Callable, Union
 
 import gym
@@ -5,8 +6,7 @@ from gym import Space, spaces
 from gym.wrappers import TransformObservation as TransformObservation_
 from gym.wrappers import TransformReward as TransformReward_
 
-from sequoia.common.gym_wrappers.convert_tensors import (add_tensor_support,
-                                                         has_tensor_support)
+from sequoia.common.gym_wrappers.convert_tensors import add_tensor_support, has_tensor_support
 from sequoia.common.transforms import Compose, Transform
 from sequoia.utils.logging_utils import get_logger
 
@@ -27,10 +27,10 @@ class TransformObservation(TransformObservation_, IterableWrapper):
             self.observation_space = add_tensor_support(self.observation_space)
 
         # except Exception as e:
-            # logger.warning(UserWarning(
-            #     f"Don't know how the transform {self.f} will impact the "
-            #     f"observation space! (Exception: {e})"
-            # ))
+        # logger.warning(UserWarning(
+        #     f"Don't know how the transform {self.f} will impact the "
+        #     f"observation space! (Exception: {e})"
+        # ))
 
     def __call__(self, *args, **kwargs):
         return self.f(*args, **kwargs)
@@ -65,10 +65,12 @@ class TransformReward(TransformReward_, IterableWrapper):
             self.reward_space = self.f(self.reward_space)
             logger.debug(f"New reward space after transform: {self.reward_space}")
         except Exception as e:
-            logger.warning(UserWarning(
-                f"Don't know how the transform {self.f} will impact the "
-                f"reward space! (Exception: {e})"
-            ))
+            logger.warning(
+                UserWarning(
+                    f"Don't know how the transform {self.f} will impact the "
+                    f"reward space! (Exception: {e})"
+                )
+            )
 
 
 class TransformAction(IterableWrapper):

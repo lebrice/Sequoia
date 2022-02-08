@@ -5,21 +5,26 @@ import os
 from dataclasses import dataclass
 from functools import singledispatch
 from pathlib import Path
-from typing import Any, Callable, Iterable, List, Optional, Tuple, Union
+from typing import Any, Callable, Iterable, List, Optional, Union
 
-import pytorch_lightning as pl
+import gym
+import pytorch_lightning.trainer.connectors.data_connector
+import pytorch_lightning.utilities.apply_func
 import torch
-import tqdm
 from pytorch_lightning import Callback
 from pytorch_lightning import Trainer as _Trainer
 from pytorch_lightning.loggers import LightningLoggerBase
-from pytorch_lightning.utilities import rank_zero_warn
-from simple_parsing import choice, field
+from pytorch_lightning.trainer.connectors.data_connector import DataConnector
+from pytorch_lightning.trainer.supporters import CombinedLoader
+from pytorch_lightning.utilities.apply_func import apply_to_collection
+from simple_parsing import choice
+from torch.utils.data import DataLoader
 
 from sequoia.common import Batch
 from sequoia.common.config import Config
+from sequoia.common.gym_wrappers.utils import IterableWrapper, has_wrapper
 from sequoia.common.hparams import HyperParameters, uniform
-from sequoia.methods.models.forward_pass import ForwardPass
+from sequoia.settings.rl.continual.environment import GymDataLoader
 from sequoia.settings.sl import PassiveEnvironment
 from sequoia.utils.logging_utils import get_logger
 from sequoia.utils.parseable import Parseable
@@ -29,7 +34,7 @@ logger = get_logger(__file__)
 
 @dataclass
 class TrainerConfig(HyperParameters, Parseable):
-    """ Configuration dataclass for a pytorch-lightning Trainer.
+    """Configuration dataclass for a pytorch-lightning Trainer.
 
     See the docs for the Trainer from pytorch lightning for more info on the options.
 
@@ -57,9 +62,7 @@ class TrainerConfig(HyperParameters, Parseable):
     # Floating point precision to use in the model. (See pl.Trainer)
     precision: int = choice(16, 32, default=32)
 
-    default_root_dir: Path = Path(
-        os.environ.get("RESULTS_DIR", os.getcwd() + "/results")
-    )
+    default_root_dir: Path = Path(os.environ.get("RESULTS_DIR", os.getcwd() + "/results"))
 
     # How much of training dataset to check (floats = percent, int = num_batches)
     limit_train_batches: Union[int, float] = 1.0
@@ -79,7 +82,7 @@ class TrainerConfig(HyperParameters, Parseable):
         callbacks: Optional[List[Callback]] = None,
         loggers: Iterable[LightningLoggerBase] = None,
     ) -> "Trainer":
-        """ Create a Trainer object from the command-line args.
+        """Create a Trainer object from the command-line args.
         Adds the given loggers and callbacks as well.
         """
         # FIXME: Trying to subclass the DataConnector to fix issues while iterating
@@ -145,13 +148,9 @@ class Trainer(_Trainer):
 #     **kwargs
 # ) -> Any:
 
-import pytorch_lightning.utilities.apply_func
-from pytorch_lightning.utilities.apply_func import apply_to_collection
 
 apply_to_collection = singledispatch(apply_to_collection)
-setattr(
-    pytorch_lightning.utilities.apply_func, "apply_to_collection", apply_to_collection
-)
+setattr(pytorch_lightning.utilities.apply_func, "apply_to_collection", apply_to_collection)
 
 # import pytorch_lightning.overrides.data_parallel
 # setattr(pytorch_lightning.overrides.data_parallel, "apply_to_collection", apply_to_collection)
@@ -170,20 +169,10 @@ def _apply_to_batch(
     # logger.debug(f"{type(data)}, {dtype}, {function}, {args}, {wrong_dtype}, {kwargs}")
     return type(data)(
         **{
-            k: apply_to_collection(
-                v, dtype, function, *args, wrong_dtype=wrong_dtype, **kwargs
-            )
+            k: apply_to_collection(v, dtype, function, *args, wrong_dtype=wrong_dtype, **kwargs)
             for k, v in data.items()
         }
     )
-
-
-import gym
-from pytorch_lightning.trainer.connectors.data_connector import DataConnector
-from pytorch_lightning.trainer.supporters import CombinedLoader
-from sequoia.common.gym_wrappers.utils import IterableWrapper, has_wrapper
-from sequoia.settings.rl.continual.environment import GymDataLoader
-from torch.utils.data import DataLoader
 
 
 class ProfiledEnvironment(IterableWrapper, DataLoader):
@@ -224,9 +213,6 @@ class PatchedDataConnector(DataConnector):
         )
         return profiled_dl
 
-
-import pytorch_lightning.trainer.connectors.data_connector
-from pytorch_lightning.trainer.connectors.data_connector import prefetch_iterator
 
 setattr(
     pytorch_lightning.trainer.connectors.data_connector,

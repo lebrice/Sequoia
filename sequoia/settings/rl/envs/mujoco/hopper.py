@@ -1,17 +1,18 @@
 # TODO: Should we use HopperV3 instead?
-from dataclasses import dataclass
-from gym.envs.mujoco.hopper import HopperEnv as _HopperV2Env
-from gym.envs.mujoco import MujocoEnv
-from typing import ClassVar, List, Dict, Tuple
-from .modified_gravity import ModifiedGravityEnv
-from .modified_size import ModifiedSizeEnv
-from .modified_mass import ModifiedMassEnv
+from typing import ClassVar, Dict, List, Tuple
 
-# NOTE: Removed the `utils.EzPickle` base class (since it wasn't being passed any kwargs
-# (and therefore wasn't saving any of the 'state') anyway.
+from gym.envs.mujoco import MujocoEnv
+from gym.envs.mujoco.hopper import HopperEnv as _HopperV2Env
 
 # TODO: Use HalfCheetah-v3 instead, which allows explicitly to change the model file!
 from gym.envs.mujoco.hopper_v3 import HopperEnv as _HopperV3Env
+
+from .modified_gravity import ModifiedGravityEnv
+from .modified_mass import ModifiedMassEnv
+from .modified_size import ModifiedSizeEnv
+
+# NOTE: Removed the `utils.EzPickle` base class (since it wasn't being passed any kwargs
+# (and therefore wasn't saving any of the 'state') anyway.
 
 
 class HopperV2Env(_HopperV2Env):
@@ -72,9 +73,7 @@ class HopperV2GravityEnv(ModifiedGravityEnv, HopperV2Env):
         super().__init__(model_path=model_path, frame_skip=frame_skip, gravity=gravity)
 
 
-class ContinualHopperV2Env(
-    ModifiedGravityEnv, ModifiedSizeEnv, ModifiedMassEnv, HopperV2Env
-):
+class ContinualHopperV2Env(ModifiedGravityEnv, ModifiedSizeEnv, ModifiedMassEnv, HopperV2Env):
     def __init__(
         self,
         model_path: str = "hopper.xml",
@@ -92,9 +91,7 @@ class ContinualHopperV2Env(
         )
 
 
-class ContinualHopperV3Env(
-    ModifiedGravityEnv, ModifiedSizeEnv, ModifiedMassEnv, HopperV3Env
-):
+class ContinualHopperV3Env(ModifiedGravityEnv, ModifiedSizeEnv, ModifiedMassEnv, HopperV3Env):
     def __init__(
         self,
         model_path="hopper.xml",

@@ -45,28 +45,27 @@ RegressionMetrics(n_samples=4, mse=tensor(1.), l1_error=tensor(0.5000))
 
 See the `Loss` constructor for more info on which tensors are accepted.
 """
-from dataclasses import InitVar, dataclass, fields
-from typing import Any, Dict, List, Optional, Union, Mapping, Iterable, ClassVar, Tuple, Type
 from collections.abc import Mapping as MappingABC
+from dataclasses import InitVar, dataclass, fields
+from typing import Any, ClassVar, Dict, Iterable, List, Optional, Tuple, Union
 
 import torch
-from torch import Tensor
-
 from simple_parsing import field
 from simple_parsing.helpers import dict_field
-from sequoia.utils.serialization import Serializable, detach, move
+from torch import Tensor
+
 from sequoia.utils.logging_utils import cleanup, get_logger
+from sequoia.utils.serialization import Serializable
 from sequoia.utils.utils import add_dicts, add_prefix
 
-from .metrics import (ClassificationMetrics, Metrics, RegressionMetrics,
-                      get_metrics)
+from .metrics import ClassificationMetrics, Metrics, RegressionMetrics, get_metrics
 
 logger = get_logger(__file__)
 
 
 @dataclass
 class Loss(Serializable, MappingABC):
-    """ Object used to store the losses and metrics. 
+    """Object used to store the losses and metrics.
 
     Used to simplify the return type of the different `get_loss` functions and
     also to help in debugging models that use a combination of different loss
@@ -76,8 +75,9 @@ class Loss(Serializable, MappingABC):
     each loss signal?
     TODO: Maybe create a `make_plots()` method to create wandb plots?
     """
+
     name: str
-    loss: Tensor = 0.  # type: ignore
+    loss: Tensor = 0.0  # type: ignore
     losses: Dict[str, "Loss"] = dict_field()
     # NOTE: By setting to_dict=False below, we don't include the tensors when
     # serializing the attributes.
@@ -99,26 +99,24 @@ class Loss(Serializable, MappingABC):
 
     _field_names: ClassVar[Tuple[str, ...]]
 
-    def __post_init__(self,
-                      x: Tensor = None,
-                      h_x: Tensor = None,
-                      y_pred: Tensor = None,
-                      y: Tensor = None):
+    def __post_init__(
+        self, x: Tensor = None, h_x: Tensor = None, y_pred: Tensor = None, y: Tensor = None
+    ):
         if isinstance(self.name, dict):
             # TODO: ugly-ish 'hack', we need to do this because of the infamous
             # 'apply_to_collection' function, which does a Loss({k: v for k, v in loss.items()})
             # Check that all other fields are empty, so we're not overwriting anything.
-            assert (isinstance(self.loss, float) or not self.loss.shape) and self.loss == 0.
+            assert (isinstance(self.loss, float) or not self.loss.shape) and self.loss == 0.0
             assert not self.metrics
             assert not self.losses
             assert not self.tensors
-            assert self._coefficient == 1.
+            assert self._coefficient == 1.0
 
             field_values = self.name
             self.name = field_values.pop("name")
             for k, v in field_values.items():
                 setattr(self, k, v)
-        
+
         assert self.name, "Loss objects should be given a name!"
         if self.name not in self.metrics:
             # Create a Metrics object if given the necessary tensors.
@@ -155,16 +153,16 @@ class Loss(Serializable, MappingABC):
     @property
     def total_loss(self) -> Tensor:
         return self.loss
-    
+
     @property
     def requires_grad(self) -> bool:
-        """ Returns wether the loss tensor in this object requires grad. """
+        """Returns wether the loss tensor in this object requires grad."""
         return isinstance(self.loss, Tensor) and self.loss.requires_grad
-    
+
     def backward(self, *args, **kwargs):
-        """ Calls `self.loss.backward(*args, **kwargs)`. """
+        """Calls `self.loss.backward(*args, **kwargs)`."""
         return self.loss.backward(*args, **kwargs)
-    
+
     @property
     def metric(self) -> Optional[Metrics]:
         """Shortcut for `self.metrics[self.name]`.
@@ -198,17 +196,17 @@ class Loss(Serializable, MappingABC):
 
     def __add__(self, other: Union["Loss", Any]) -> "Loss":
         """Adds two Loss instances together.
-        
+
         Adds the losses, total loss and metrics. Overwrites the tensors.
         Keeps the name of the first one. This is useful when doing something
         like:
-        
+
         ```
         loss = Loss("Test")
         for x, y in dataloader:
             loss += model.get_loss(x=x, y=y)
-        ```      
-        
+        ```
+
         Returns
         -------
         Loss
@@ -220,9 +218,9 @@ class Loss(Serializable, MappingABC):
             return NotImplemented
         name = self.name
         loss = self.loss + other.loss
-        
+
         if self.name == other.name:
-            losses  = add_dicts(self.losses, other.losses)
+            losses = add_dicts(self.losses, other.losses)
             metrics = add_dicts(self.metrics, other.metrics)
         else:
             # IDEA: when the names don't match, store the entire Loss
@@ -233,7 +231,7 @@ class Loss(Serializable, MappingABC):
             # and `self.losses[other.name].metrics` attributes.
             metrics = self.metrics
             # metrics = add_dicts(self.metrics, {other.name: other.metrics})
-        
+
         tensors = add_dicts(self.tensors, other.tensors, add_values=False)
         return Loss(
             name=name,
@@ -246,32 +244,32 @@ class Loss(Serializable, MappingABC):
 
     def __iadd__(self, other: Union["Loss", Any]) -> "Loss":
         """Adds Loss to `self` in-place.
-        
+
         Adds the losses, total loss and metrics. Overwrites the tensors.
         Keeps the name of the first one. This is useful when doing something
         like:
-        
+
         ```
         loss = Loss("Test")
         for x, y in dataloader:
             loss += model.get_loss(x=x, y=y)
         ```
-        
+
         Returns
         -------
         Loss
             `self`: The merged/summed up Loss.
         """
         self.loss = self.loss + other.loss
-        
+
         if self.name == other.name:
-            self.losses  = add_dicts(self.losses, other.losses)
+            self.losses = add_dicts(self.losses, other.losses)
             self.metrics = add_dicts(self.metrics, other.metrics)
         else:
             # IDEA: when the names don't match, store the entire Loss
             # object into the 'losses' dict, rather than a single loss tensor.
             self.losses = add_dicts(self.losses, {other.name: other})
-        
+
         self.tensors = add_dicts(self.tensors, other.tensors, add_values=False)
         return self
 
@@ -291,7 +289,7 @@ class Loss(Serializable, MappingABC):
         return NotImplemented
 
     def __mul__(self, factor: Union[float, Tensor]) -> "Loss":
-        """ Scale each loss tensor by `coefficient`.
+        """Scale each loss tensor by `coefficient`.
 
         Returns
         -------
@@ -301,9 +299,7 @@ class Loss(Serializable, MappingABC):
         result = Loss(
             name=self.name,
             loss=self.loss * factor,
-            losses={
-                k: value * factor for k, value in self.losses.items()
-            },
+            losses={k: value * factor for k, value in self.losses.items()},
             metrics=self.metrics,
             tensors=self.tensors,
             _coefficient=self._coefficient * factor,
@@ -319,13 +315,11 @@ class Loss(Serializable, MappingABC):
 
     @property
     def unscaled_losses(self):
-        """ Recovers the 'unscaled' version of this loss.
+        """Recovers the 'unscaled' version of this loss.
 
         TODO: This isn't used anywhere. We could probably remove it.
         """
-        return {
-            k: value / self._coefficient for k, value in self.losses.items()
-        }
+        return {k: value / self._coefficient for k, value in self.losses.items()}
 
     def to_log_dict(self, verbose: bool = False) -> Dict[str, Union[str, float, Dict]]:
         """Creates a dictionary to be logged (e.g. by `wandb.log`).
@@ -370,13 +364,12 @@ class Loss(Serializable, MappingABC):
                 "class_accuracy",
                 "_coefficient",
             ]
-        result = cleanup(log_dict, keys_to_remove=keys_to_remove, sep="/") 
+        result = cleanup(log_dict, keys_to_remove=keys_to_remove, sep="/")
         return result
- 
+
     def to_pbar_message(self) -> Dict[str, float]:
-        """ Smaller, less-detailed version of `to_log_dict()` for progress bars.
-        """
-        # NOTE: PL actually doesn't seem to accept strings as values 
+        """Smaller, less-detailed version of `to_log_dict()` for progress bars."""
+        # NOTE: PL actually doesn't seem to accept strings as values
         message: Dict[str, Union[str, float]] = {}
         message["Loss"] = float(self.loss)
 
@@ -393,11 +386,9 @@ class Loss(Serializable, MappingABC):
 
         return cleanup(message, sep=" ")
 
-
-
     def clear_tensors(self) -> None:
-        """ Clears the `tensors` attribute of `self` and of sublosses.
-        
+        """Clears the `tensors` attribute of `self` and of sublosses.
+
         NOTE: This could be useful if you want to save some space/compute, but
         it isn't being used atm, and there's no issue. You might want to call
         this if you are storing big tensors (or passing them to the constructor)
@@ -419,16 +410,12 @@ class Loss(Serializable, MappingABC):
         new_other = Loss(name=new_name)
         new_other.loss = other.loss
         # We also replace the name in the keys, if present.
-        new_other.metrics = {
-            k.replace(old_name, new_name): v for k, v in other.metrics.items() 
-        }
-        new_other.losses = {
-            k.replace(old_name, new_name): v for k, v in other.losses.items() 
-        }
+        new_other.metrics = {k.replace(old_name, new_name): v for k, v in other.metrics.items()}
+        new_other.losses = {k.replace(old_name, new_name): v for k, v in other.losses.items()}
         self += new_other
 
     def all_metrics(self) -> Dict[str, Metrics]:
-        """ Returns a 'cleaned up' dictionary of all the Metrics objects. """
+        """Returns a 'cleaned up' dictionary of all the Metrics objects."""
         assert self.name
         result: Dict[str, Metrics] = {}
         result.update(self.metrics)
@@ -438,8 +425,7 @@ class Loss(Serializable, MappingABC):
             subloss_metrics = loss.all_metrics()
             for key, metric in subloss_metrics.items():
                 assert key not in result, (
-                    f"Collision in metric keys of subloss {name}: key={key}, "
-                    f"result={result}"
+                    f"Collision in metric keys of subloss {name}: key={key}, " f"result={result}"
                 )
                 result[key] = metric
         result = add_prefix(result, prefix=self.name, sep="/")
@@ -448,4 +434,5 @@ class Loss(Serializable, MappingABC):
 
 if __name__ == "__main__":
     import doctest
+
     doctest.testmod()

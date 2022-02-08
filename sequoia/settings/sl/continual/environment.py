@@ -1,9 +1,8 @@
 """ Continual SL environment. (smooth task boundaries, etc)
 """
-import itertools
 import warnings
 from functools import partial
-from typing import Any, Callable, Dict, List, Optional, Sequence, Tuple, Type, Union
+from typing import Any, Callable, Dict, Optional, Sequence, Tuple, Type, Union
 
 import gym
 import numpy as np
@@ -24,29 +23,20 @@ from continuum.datasets import (
     ImageNet1000,
     MNISTFellowship,
     Synbols,
-    _ContinuumDataset,
 )
 from gym import Space, spaces
 from torch import Tensor
 from torch.nn import functional as F
-from torch.utils.data import DataLoader, Dataset, IterableDataset, Subset
+from torch.utils.data import Dataset, IterableDataset
+
+from sequoia.common.gym_wrappers.convert_tensors import add_tensor_support as tensor_space
 from sequoia.common.gym_wrappers.utils import tile_images
-from sequoia.common.gym_wrappers.convert_tensors import (
-    add_tensor_support as tensor_space,
-)
 from sequoia.common.spaces import Image, TypedDictSpace
 from sequoia.common.transforms import Transforms
 from sequoia.settings.sl.environment import PassiveEnvironment
 from sequoia.utils.logging_utils import get_logger
 
-from .objects import (
-    Actions,
-    ActionType,
-    Observations,
-    ObservationType,
-    Rewards,
-    RewardType,
-)
+from .objects import Actions, ActionType, Observations, ObservationType, Rewards, RewardType
 
 logger = get_logger(__file__)
 
@@ -108,8 +98,6 @@ base_reward_spaces: Dict[str, Space] = {
 }
 
 
-
-
 def split_batch(
     batch: Tuple[Tensor, ...],
     hide_task_labels: bool,
@@ -155,8 +143,7 @@ def default_split_batch_function(
     Observations: Type[ObservationType] = Observations,
     Rewards: Type[RewardType] = Rewards,
 ) -> Callable[[Tuple[Tensor, ...]], Tuple[ObservationType, RewardType]]:
-    """ Returns a callable that is used to split a batch into observations and rewards.
-    """
+    """Returns a callable that is used to split a batch into observations and rewards."""
     return partial(
         split_batch,
         hide_task_labels=hide_task_labels,
@@ -165,17 +152,15 @@ def default_split_batch_function(
     )
 
 
-class ContinualSLEnvironment(
-    PassiveEnvironment[ObservationType, ActionType, RewardType]
-):
-    """ Continual Supervised Learning Environment.
+class ContinualSLEnvironment(PassiveEnvironment[ObservationType, ActionType, RewardType]):
+    """Continual Supervised Learning Environment.
 
     TODO: Here we actually inform the environment of its observation / action / reward
     spaces, which isn't ideal, but is arguably better than giving the env the
     responsibility (and arguments needed) to create the datasets of each task for the
     right split, apply the transforms,
     of each task and to use
-    the right train/val/test split   
+    the right train/val/test split
     """
 
     def __init__(
@@ -188,9 +173,7 @@ class ContinualSLEnvironment(
         Observations: Type[ObservationType] = Observations,
         Actions: Type[ActionType] = Actions,
         Rewards: Type[RewardType] = Rewards,
-        split_batch_fn: Callable[
-            [Tuple[Any, ...]], Tuple[ObservationType, ActionType]
-        ] = None,
+        split_batch_fn: Callable[[Tuple[Any, ...]], Tuple[ObservationType, ActionType]] = None,
         pretend_to_be_active: bool = False,
         strict: bool = False,
         one_epoch_only: bool = True,
@@ -240,14 +223,11 @@ from pathlib import Path
 from typing import Optional
 
 import torch
+
 from sequoia.common.config import Config
 from sequoia.common.gym_wrappers import has_wrapper
-from sequoia.common.metrics import ClassificationMetrics, Metrics, MetricsType
+from sequoia.common.metrics import ClassificationMetrics
 from sequoia.settings.assumptions.continual import TestEnvironment
-from sequoia.settings.assumptions.incremental_results import (
-    TaskResults,
-    TaskSequenceResults,
-)
 from sequoia.utils.logging_utils import get_logger
 
 from .results import ContinualSLResults
@@ -299,7 +279,7 @@ class ContinualSLTestEnvironment(TestEnvironment[ContinualSLEnvironment]):
         return self.results
 
     def __iter__(self):
-        """ BUG: The iter/send type of test loop doesn't produce any results! """
+        """BUG: The iter/send type of test loop doesn't produce any results!"""
         assert self.unwrapped.pretend_to_be_active
         # obs = self.reset()
         # self.observations = obs
@@ -386,7 +366,7 @@ class ContinualSLTestEnvironment(TestEnvironment[ContinualSLEnvironment]):
                     f"is larger than the rewards': ({reward.batch_size})"
                 )
             )
-            action = action[:, :reward.batch_size]
+            action = action[:, : reward.batch_size]
 
         # TODO: Use some kind of generic `get_metrics(actions: Actions, rewards: Rewards)`
         # function instead.
@@ -461,4 +441,3 @@ class ContinualSLTestEnvironment(TestEnvironment[ContinualSLEnvironment]):
         if mode == "rgb_array" and self.batch_size:
             image_batch = tile_images(image_batch)
         return image_batch
-

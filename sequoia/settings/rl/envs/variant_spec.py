@@ -1,9 +1,7 @@
-from typing import Any, Callable, Dict, List, Optional, Union
-from typing import TypeVar, Generic
+from typing import Any, Callable, Dict, Generic, List, Optional, TypeVar, Union
 
 import gym
-from gym.envs.registration import EnvRegistry, EnvSpec, load, register, registry
-
+from gym.envs.registration import EnvSpec, load
 
 EnvType = TypeVar("EnvType", bound=gym.Env)
 _EntryPoint = Union[str, Callable[..., gym.Env]]
@@ -46,26 +44,22 @@ class EnvVariantSpec(EnvSpec, Generic[EnvType]):
         new_entry_point: Union[str, Callable[..., gym.Env]] = None,
         wrappers: Optional[List[Callable[[gym.Env], gym.Env]]] = None,
     ) -> "EnvVariantSpec":
-        """ Returns a new env spec which uses additional wrappers.
-        
+        """Returns a new env spec which uses additional wrappers.
+
         NOTE: The `new_kwargs` update the current kwargs, rather than replacing them.
         """
         new_spec_kwargs = original.kwargs
         new_spec_kwargs.update(new_kwargs or {})
         # Replace the entry-point if desired:
-        new_spec_entry_point: Union[
-            str, Callable[..., EnvType]
-        ] = new_entry_point or original.entry_point
+        new_spec_entry_point: Union[str, Callable[..., EnvType]] = (
+            new_entry_point or original.entry_point
+        )
 
         new_reward_threshold = (
-            new_reward_threshold
-            if new_reward_threshold is not None
-            else original.reward_threshold
+            new_reward_threshold if new_reward_threshold is not None else original.reward_threshold
         )
         new_nondeterministic = (
-            new_nondeterministic
-            if new_nondeterministic is not None
-            else original.nondeterministic
+            new_nondeterministic if new_nondeterministic is not None else original.nondeterministic
         )
         new_max_episode_steps = (
             new_max_episode_steps

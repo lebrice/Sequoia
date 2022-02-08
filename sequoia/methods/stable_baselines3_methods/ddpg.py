@@ -7,24 +7,26 @@ from typing import Callable, ClassVar, Optional, Type, Union
 import gym
 from gym import spaces
 from simple_parsing import mutable_field
-from stable_baselines3.ddpg import DDPG
 from stable_baselines3.common.off_policy_algorithm import TrainFreq
+from stable_baselines3.ddpg import DDPG
 
 from sequoia.common.hparams import log_uniform
 from sequoia.methods import register_method
 from sequoia.settings.rl import ContinualRLSetting
 from sequoia.utils.logging_utils import get_logger
 
-from .off_policy_method import OffPolicyModel, OffPolicyMethod
+from .off_policy_method import OffPolicyMethod, OffPolicyModel
+
 logger = get_logger(__file__)
 
 
 class DDPGModel(DDPG, OffPolicyModel):
-    """ Customized version of the DDPG model from stable-baselines-3. """
+    """Customized version of the DDPG model from stable-baselines-3."""
 
     @dataclass
     class HParams(OffPolicyModel.HParams):
-        """ Hyper-parameters of the DDPG Model. """
+        """Hyper-parameters of the DDPG Model."""
+
         # TODO: Add hparams specific to DDPG here.
         # The learning rate, it can be a function of the current progress (from
         # 1 to 0)
@@ -48,7 +50,7 @@ class DDPGModel(DDPG, OffPolicyModel):
 @register_method
 @dataclass
 class DDPGMethod(OffPolicyMethod):
-    """ Method that uses the DDPG model from stable-baselines3. """
+    """Method that uses the DDPG model from stable-baselines3."""
 
     Model: ClassVar[Type[DDPGModel]] = DDPGModel
 
@@ -71,11 +73,12 @@ class DDPGMethod(OffPolicyMethod):
         self, observations: ContinualRLSetting.Observations, action_space: spaces.Space
     ) -> ContinualRLSetting.Actions:
         return super().get_actions(
-            observations=observations, action_space=action_space,
+            observations=observations,
+            action_space=action_space,
         )
 
     def on_task_switch(self, task_id: Optional[int]) -> None:
-        """ Called when switching tasks in a CL setting.
+        """Called when switching tasks in a CL setting.
 
         If task labels are available, `task_id` will correspond to the index of
         the new task. Otherwise, if task labels aren't available, `task_id` will

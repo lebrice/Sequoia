@@ -1,28 +1,26 @@
 import os
 import textwrap
-from contextlib import nullcontext, redirect_stdout
+from contextlib import redirect_stdout
 from inspect import getsourcefile
 from io import StringIO
 from pathlib import Path
-from typing import List, Type
+from typing import TYPE_CHECKING, List, Type
 
-from typing import TYPE_CHECKING
+from sequoia.settings import Setting
 
 if TYPE_CHECKING:
-    from sequoia.methods import Method
     from sequoia.settings import Setting
-from sequoia.settings import Setting
 
 # NOTE: Update this if we move this `readme.py` somewhere else.
 SEQUOIA_ROOT_DIR = Path(os.path.abspath(os.path.dirname(__file__))).parent.parent
 
+
 def get_relative_path_to(something: Type) -> Path:
-    """ Attempts to give the relative path from the current working directory to the
+    """Attempts to give the relative path from the current working directory to the
     file where somethign is defined. If that's not possible, returns an absolute path
     instead.
     """
     # This isn't quite right: Should be a relative path to the source file:
-    import sequoia
     current_dir = Path.cwd()
     source_file = Path(getsourcefile(something)).relative_to(current_dir)
     return source_file
@@ -35,7 +33,7 @@ def get_tree_string(
     with_docstrings: bool = False,
 ) -> str:
     """Get a string representation of the tree!
-    
+
     I want to return something like this:
     ```
     "Setting"
@@ -50,8 +48,7 @@ def get_tree_string(
     """
     if with_assumptions:
         raise NotImplementedError(
-            f"TODO: display the assumptions for each setting into the tree string "
-            f"somehow."
+            f"TODO: display the assumptions for each setting into the tree string " f"somehow."
         )
     setting: Type["Setting"] = root_setting
     # prefix: str = ""
@@ -115,9 +112,9 @@ def get_tree_string_markdown(
     with_docstring: bool = False,
 ):
     """Get a string representation of the tree!
-    
+
     I want to return something like this:
-    
+
     - "Setting"
         - active
             - rl
@@ -126,7 +123,7 @@ def get_tree_string_markdown(
             - cl
                 - task_incremental
                     * iid
-    
+
     """
     setting = root_setting
 
@@ -183,6 +180,7 @@ def get_tree_string_markdown(
 
 def print_methods():
     from sequoia.methods import all_methods
+
     for method in all_methods:
         source_file = get_relative_path_to(method)
         target_setting: Type["Setting"] = method.target_setting
@@ -207,7 +205,7 @@ def print_methods():
         print(textwrap.indent(docstring, "\t"))
 
 
-def add_stuff_to_readme(readme_path=Path("README.md"), settings: bool=True, methods: bool=True):
+def add_stuff_to_readme(readme_path=Path("README.md"), settings: bool = True, methods: bool = True):
     token = "<!-- MAKETREE -->\n"
     assert settings or methods
     lines: List[str] = []
@@ -242,9 +240,9 @@ def add_stuff_to_readme(readme_path=Path("README.md"), settings: bool=True, meth
                 print_methods()
                 print()
 
+
 if __name__ == "__main__":
     # print(get_tree_string())
     # print(get_tree_string_markdown(with_methods=False, with_docstring=True))
     add_stuff_to_readme(readme_path=Path("sequoia/settings/README.md"), methods=False)
     add_stuff_to_readme(readme_path=Path("sequoia/methods/README.md"), settings=False)
-    

@@ -1,26 +1,24 @@
+import pytest
+
 from sequoia.methods import Method
 from sequoia.settings import (
     ClassIncrementalSetting,
     DomainIncrementalSLSetting,
-    Setting,
     TaskIncrementalSLSetting,
 )
-import pytest
 
-from .setting import TraditionalSLSetting
-from ..multi_task.setting import MultiTaskSLSetting
-from ..discrete.setting import DiscreteTaskAgnosticSLSetting
 from ..continual.setting import ContinualSLSetting
+from ..discrete.setting import DiscreteTaskAgnosticSLSetting
 from ..incremental.setting import IncrementalSLSetting
+from ..multi_task.setting import MultiTaskSLSetting
+from .setting import TraditionalSLSetting
 
 
 class ContinualSLMethod(Method, target_setting=ContinualSLSetting):
     pass
 
 
-class DiscreteTaskAgnosticSLMethod(
-    Method, target_setting=DiscreteTaskAgnosticSLSetting
-):
+class DiscreteTaskAgnosticSLMethod(Method, target_setting=DiscreteTaskAgnosticSLSetting):
     pass
 
 
@@ -49,7 +47,7 @@ class MultiTaskSLMethod(Method, target_setting=MultiTaskSLSetting):
 
 
 def test_methods_applicable_to_iid_setting():
-    """ Test to make sure that Methods that are applicable to the Domain-Incremental
+    """Test to make sure that Methods that are applicable to the Domain-Incremental
     are applicable to the IID Setting, same for those targetting the Task-Incremental
     setting.
     """
@@ -142,17 +140,13 @@ def test_get_parents():
     assert TraditionalSLSetting not in TraditionalSLSetting.get_parents()
 
 
-@pytest.mark.xfail(
-    reason="Temporarily removing the domain-incremental<--traditional link."
-)
+@pytest.mark.xfail(reason="Temporarily removing the domain-incremental<--traditional link.")
 def test_get_parents_domain_incremental():
     assert TraditionalSLSetting in DomainIncrementalSLSetting.get_children()
     assert DomainIncrementalSLSetting in TraditionalSLSetting.get_immediate_parents()
 
 
-@pytest.mark.xfail(
-    reason="Temporarily removing the domain-incremental<--traditional link."
-)
+@pytest.mark.xfail(reason="Temporarily removing the domain-incremental<--traditional link.")
 def test_method_applicability_domain_incremental():
     assert not DomainIncrementalSLMethod.is_applicable(ClassIncrementalSetting)
     assert not DomainIncrementalSLMethod.is_applicable(TaskIncrementalSLSetting)
@@ -160,8 +154,6 @@ def test_method_applicability_domain_incremental():
     assert DomainIncrementalSLMethod.is_applicable(TraditionalSLSetting)
 
 
-@pytest.mark.xfail(
-    reason="Temporarily removing the domain-incremental<--traditional link."
-)
+@pytest.mark.xfail(reason="Temporarily removing the domain-incremental<--traditional link.")
 def test_get_parents_domain_incremental():
     assert DomainIncrementalSLSetting in TraditionalSLSetting.get_parents()

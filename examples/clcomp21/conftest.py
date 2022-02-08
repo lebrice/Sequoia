@@ -1,8 +1,8 @@
 import pytest
 
 from sequoia.client.setting_proxy import SettingProxy
-from sequoia.settings.sl import ClassIncrementalSetting
 from sequoia.settings.rl import IncrementalRLSetting, TraditionalRLSetting
+from sequoia.settings.sl import ClassIncrementalSetting
 
 
 @pytest.fixture()

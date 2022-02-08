@@ -1,17 +1,19 @@
-from typing import TypeVar, ClassVar
+from typing import ClassVar, TypeVar
 
-from sequoia.settings.assumptions.discrete_results import TaskSequenceResults
 from sequoia.common.metrics.rl_metrics import EpisodeMetrics
+from sequoia.settings.assumptions.discrete_results import TaskSequenceResults
+
 MetricType = TypeVar("MetricsType", bound=EpisodeMetrics)
 
 
 class DiscreteTaskAgnosticRLResults(TaskSequenceResults[MetricType]):
-    """ Results for a sequence of tasks in an RL Setting
-    
+    """Results for a sequence of tasks in an RL Setting
+
     This can be seen as one row of a transfer matrix.
     NOTE: This is not the entire transfer matrix because in the Discrete settings we don't
     evaluate after learning each task.
     """
+
     # Higher mean reward / episode => better
     lower_is_better: ClassVar[bool] = False
 

@@ -3,9 +3,10 @@
 As you'd expect, this Method exhibits complete forgetting of all previous tasks.
 You can use this model and method as a jumping off point for your own submission.
 """
+from argparse import Namespace
 from dataclasses import dataclass
 from typing import ClassVar, Dict, List, Optional, Tuple, Type
-from argparse import Namespace
+
 import gym
 import torch
 import tqdm
@@ -21,12 +22,12 @@ from sequoia.common.spaces import Image
 from sequoia.methods import Method
 from sequoia.settings import ClassIncrementalSetting
 from sequoia.settings.sl import PassiveEnvironment
-from sequoia.settings.sl.incremental import Actions, Observations, Rewards, Environment
+from sequoia.settings.sl.incremental import Actions, Environment, Observations, Rewards
 
 
 @dataclass
 class HParams(HyperParameters):
-    """ Hyper-parameters of the demo model. """
+    """Hyper-parameters of the demo model."""
 
     # Learning rate of the optimizer.
     learning_rate: float = log_uniform(1e-6, 1e-2, default=0.001)
@@ -40,7 +41,7 @@ class HParams(HyperParameters):
 
 
 class Classifier(nn.Module):
-    """ Simple classification model without any CL-related mechanism.
+    """Simple classification model without any CL-related mechanism.
 
     This example model uses a resnet18 as the encoder, and a single output layer.
     """
@@ -188,7 +189,7 @@ class Classifier(nn.Module):
 
 
 class ExampleMethod(Method, target_setting=ClassIncrementalSetting):
-    """ Minimal example of a Method usable only in the SL track of the competition.
+    """Minimal example of a Method usable only in the SL track of the competition.
 
     This method uses the ExampleModel, which is quite simple.
     """
@@ -203,7 +204,7 @@ class ExampleMethod(Method, target_setting=ClassIncrementalSetting):
         self.optimizer: torch.optim.Optimizer
 
     def configure(self, setting: ClassIncrementalSetting):
-        """ Called before the method is applied on a setting (before training).
+        """Called before the method is applied on a setting (before training).
 
         You can use this to instantiate your model, for instance, since this is
         where you get access to the observation & action spaces.
@@ -216,7 +217,7 @@ class ExampleMethod(Method, target_setting=ClassIncrementalSetting):
         self.optimizer = self.model.configure_optimizers()
 
     def fit(self, train_env: PassiveEnvironment, valid_env: PassiveEnvironment):
-        """ Example train loop.
+        """Example train loop.
         You can do whatever you want with train_env and valid_env here.
 
         NOTE: In the Settings where task boundaries are known (in this case all
@@ -233,9 +234,7 @@ class ExampleMethod(Method, target_setting=ClassIncrementalSetting):
                 postfix = {}
                 train_pbar.set_description(f"Training Epoch {epoch}")
                 for i, batch in enumerate(train_pbar):
-                    loss, metrics_dict = self.model.shared_step(
-                        batch, environment=train_env
-                    )
+                    loss, metrics_dict = self.model.shared_step(batch, environment=train_env)
                     self.optimizer.zero_grad()
                     loss.backward()
                     self.optimizer.step()
@@ -268,10 +267,8 @@ class ExampleMethod(Method, target_setting=ClassIncrementalSetting):
                 # best epoch.
                 break
 
-    def get_actions(
-        self, observations: Observations, action_space: gym.Space
-    ) -> Actions:
-        """ Get a batch of predictions (aka actions) for these observations. """
+    def get_actions(self, observations: Observations, action_space: gym.Space) -> Actions:
+        """Get a batch of predictions (aka actions) for these observations."""
         with torch.no_grad():
             logits = self.model(observations)
         # Get the predicted classes
@@ -291,14 +288,14 @@ class ExampleMethod(Method, target_setting=ClassIncrementalSetting):
 
 
 if __name__ == "__main__":
-    from sequoia.common import Config
-    from sequoia.settings import ClassIncrementalSetting
-
     # Create the Method:
     # - Manually:
     # method = ExampleMethod()
     # - From the command-line:
     from simple_parsing import ArgumentParser
+
+    from sequoia.common import Config
+    from sequoia.settings import ClassIncrementalSetting
 
     parser = ArgumentParser()
     ExampleMethod.add_argparse_args(parser)

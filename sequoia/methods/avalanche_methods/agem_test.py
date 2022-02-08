@@ -1,12 +1,13 @@
-""" WIP: Tests for the GDumb Method.
+""" WIP: Tests for the AGEM Method.
 
 For now this only inherits the tests from the AvalancheMethod class.
 """
 from typing import ClassVar, Type
+
+from .agem import AGEMMethod
 from .base import AvalancheMethod
-from .gdumb import GDumbMethod
 from .base_test import _TestAvalancheMethod
 
 
-class TestGDumbMethod(_TestAvalancheMethod):
-    Method: ClassVar[Type[AvalancheMethod]] = GDumbMethod
+class TestAGEMMethod(_TestAvalancheMethod):
+    Method: ClassVar[Type[AvalancheMethod]] = AGEMMethod

@@ -21,13 +21,16 @@ from typing import (
     TypeVar,
     Union,
 )
+import typing
 
 import gym
 from gym.utils import colorize
 from pytorch_lightning import LightningDataModule
 from wandb.wandb_run import Run
 
-from sequoia.common import Config, Metrics
+import wandb
+if typing.TYPE_CHECKING:
+    from sequoia.common.config.config import Config
 from sequoia.settings.base.environment import Environment
 from sequoia.settings.base.objects import Actions, Observations, Rewards
 from sequoia.settings.base.results import Results
@@ -40,13 +43,12 @@ from sequoia.utils.utils import (
     get_path_to_source_file,
     remove_suffix,
 )
-import wandb
 
 logger = get_logger(__file__)
 
 
 class SettingABC:
-    """ Abstract base class for a Setting.
+    """Abstract base class for a Setting.
 
     This just shows the minimal API. For more info, see the `Setting` class,
     which is the concrete implementation of this class, and the 'root' of the
@@ -71,8 +73,8 @@ class SettingABC:
     Rewards: ClassVar[Type[Rewards]] = Rewards
 
     @abstractmethod
-    def apply(self, method: "Method", config: Config = None) -> "SettingABC.Results":
-        """ Applies a Method on this experimental Setting to produce Results.
+    def apply(self, method: "Method", config: "Config" = None) -> "SettingABC.Results":
+        """Applies a Method on this experimental Setting to produce Results.
 
         Defines the training/evaluation procedure specific to this Setting.
 
@@ -121,27 +123,21 @@ class SettingABC:
         pass
 
     @abstractmethod
-    def train_dataloader(
-        self, *args, **kwargs
-    ) -> Environment[Observations, Actions, Rewards]:
+    def train_dataloader(self, *args, **kwargs) -> Environment[Observations, Actions, Rewards]:
         pass
 
     @abstractmethod
-    def val_dataloader(
-        self, *args, **kwargs
-    ) -> Environment[Observations, Actions, Rewards]:
+    def val_dataloader(self, *args, **kwargs) -> Environment[Observations, Actions, Rewards]:
         pass
 
     @abstractmethod
-    def test_dataloader(
-        self, *args, **kwargs
-    ) -> Environment[Observations, Actions, Rewards]:
+    def test_dataloader(self, *args, **kwargs) -> Environment[Observations, Actions, Rewards]:
         pass
 
     @classmethod
     @abstractmethod
     def get_available_datasets(cls) -> Iterable[str]:
-        """Returns an iterable of the names of available datasets. """
+        """Returns an iterable of the names of available datasets."""
 
     # --- Below this are some class attributes and methods related to the Tree. ---
 
@@ -154,7 +150,7 @@ class SettingABC:
     _targeted_methods: ClassVar[Set[Type["Method"]]] = set()
 
     def __init_subclass__(cls, **kwargs):
-        """ Called whenever a new subclass of `Setting` is declared. """
+        """Called whenever a new subclass of `Setting` is declared."""
         # logger.debug(f"Registering a new setting: {cls.get_name()}")
 
         # Exceptionally, create this new empty list that will hold all the
@@ -168,7 +164,7 @@ class SettingABC:
 
     @classmethod
     def get_applicable_methods(cls) -> List[Type["Method"]]:
-        """ Returns all the Methods applicable on this Setting. """
+        """Returns all the Methods applicable on this Setting."""
         applicable_methods: List[Method] = []
         from sequoia.methods import get_all_methods
 
@@ -179,12 +175,12 @@ class SettingABC:
 
     @classmethod
     def register_method(cls, method: Type["Method"]):
-        """ Register a method as being Applicable on this type of Setting. """
+        """Register a method as being Applicable on this type of Setting."""
         cls._targeted_methods.add(method)
 
     @classmethod
     def get_name(cls) -> str:
-        """ Gets the name of this Setting. """
+        """Gets the name of this Setting."""
         # LightningDataModule has a `name` class attribute of `...`!
         if getattr(cls, "name", None) != Ellipsis:
             return cls.name
@@ -193,20 +189,19 @@ class SettingABC:
 
     @classmethod
     def immediate_children(cls) -> Iterable[Type["SettingABC"]]:
-        """ Returns the immediate children of this Setting in the hierarchy.
+        """Returns the immediate children of this Setting in the hierarchy.
         In most cases, this will be a list with only one value.
         """
         yield from cls._children
 
     @classmethod
     def get_immediate_children(cls) -> List[Type["SettingABC"]]:
-        """ Returns a list of the immediate children of this Setting. """
+        """Returns a list of the immediate children of this Setting."""
         return list(cls.immediate_children())
 
     @classmethod
     def children(cls) -> Iterable[Type["SettingABC"]]:
-        """Returns an Iterator over all the children of this Setting, in-order.
-        """
+        """Returns an Iterator over all the children of this Setting, in-order."""
         # Yield the immediate children.
         for child in cls._children:
             yield child
@@ -219,14 +214,14 @@ class SettingABC:
 
     @classmethod
     def immediate_parents(cls) -> List[Type["SettingABC"]]:
-        """ Returns the immediate parent(s) Setting(s).
+        """Returns the immediate parent(s) Setting(s).
         In most cases, this will be a list with only one value.
         """
         return [parent for parent in cls.__bases__ if issubclass(parent, SettingABC)]
 
     @classmethod
     def get_immediate_parents(cls) -> List[Type["SettingABC"]]:
-        """ Returns the immediate parent(s) Setting(s).
+        """Returns the immediate parent(s) Setting(s).
         In most cases, this will be a list with only one value.
         """
         return cls.immediate_parents()
@@ -240,9 +235,7 @@ class SettingABC:
         setting.
         """
         return [
-            parent_class
-            for parent_class in cls.mro()[1:]
-            if issubclass(parent_class, SettingABC)
+            parent_class for parent_class in cls.mro()[1:] if issubclass(parent_class, SettingABC)
         ]
 
     @classmethod
@@ -263,8 +256,7 @@ class SettingABC:
         with_assumptions: bool = False,
         with_docstrings: bool = False,
     ) -> str:
-        """ Returns a string representation of the tree starting at this node downwards.
-        """
+        """Returns a string representation of the tree starting at this node downwards."""
         from sequoia.utils.readme import get_tree_string, get_tree_string_markdown
 
         formatting_functions = {
@@ -273,8 +265,7 @@ class SettingABC:
         }
         if formatting not in formatting_functions.keys():
             raise RuntimeError(
-                f"formatting must be one of {','.join(formatting_functions)}, "
-                f"got {formatting}"
+                f"formatting must be one of {','.join(formatting_functions)}, " f"got {formatting}"
             )
         return formatting_functions[formatting](
             cls,
@@ -288,8 +279,7 @@ SettingType = TypeVar("SettingType", bound=SettingABC)
 
 
 class Method(Generic[SettingType], Parseable, ABC):
-    """ ABC for a Method, which is a solution to a research problem (a Setting).
-    """
+    """ABC for a Method, which is a solution to a research problem (a Setting)."""
 
     # Class attribute that holds the setting this method was designed to target.
     # Needs to either be passed to the class statement or set as a class
@@ -309,7 +299,7 @@ class Method(Generic[SettingType], Parseable, ABC):
     def get_actions(
         self, observations: Observations, action_space: gym.Space
     ) -> Union[Actions, Any]:
-        """ Get a batch of predictions (actions) for the given observations.
+        """Get a batch of predictions (actions) for the given observations.
         returned actions must fit the action space.
         """
 
@@ -325,7 +315,7 @@ class Method(Generic[SettingType], Parseable, ABC):
         """
 
     def test(self, test_env: Environment[Observations, Actions, Optional[Rewards]]):
-        """ (WIP) Optional method which could be called by the setting to give
+        """(WIP) Optional method which could be called by the setting to give
         your Method more flexibility about how it wants to arrange the test env.
 
         Parameters
@@ -337,7 +327,7 @@ class Method(Generic[SettingType], Parseable, ABC):
         raise NotImplementedError
 
     def receive_results(self, setting: SettingType, results: Results) -> None:
-        """ Receive the Results of applying this method on the given Setting.
+        """Receive the Results of applying this method on the given Setting.
 
         This method is optional.
 
@@ -350,7 +340,7 @@ class Method(Generic[SettingType], Parseable, ABC):
             The `Results` object constructed by `setting`, as a result of applying
             this Method to it.
         """
-        
+
         run_name = ""
         # Set the default name for this run.
         # run_name = f"{method_name}-{setting_name}"
@@ -363,11 +353,11 @@ class Method(Generic[SettingType], Parseable, ABC):
         setting_name = setting.get_name()
         method_name = self.get_name()
         base_results_dir: Path = setting.config.log_dir / setting_name / method_name
-        
+
         dataset_name = getattr(setting, "dataset", None)
         if isinstance(dataset_name, str):
             base_results_dir /= dataset_name
-        
+
         if wandb.run and wandb.run.id:
             # if setting.wandb and setting.wandb.project:
             run_id = wandb.run.id
@@ -376,7 +366,7 @@ class Method(Generic[SettingType], Parseable, ABC):
             # TODO: Fix this:
             results_dir = wandb.run.dir
         else:
-            for suffix in [f"run_{i}"  for i in range(100)]:
+            for suffix in [f"run_{i}" for i in range(100)]:
                 results_dir = base_results_dir / suffix
                 try:
                     results_dir.mkdir(exist_ok=False, parents=True)
@@ -417,7 +407,7 @@ class Method(Generic[SettingType], Parseable, ABC):
                 wandb.save(str(method_path))
 
     def setup_wandb(self, run: Run) -> None:
-        """ Called by the Setting when using Weights & Biases, after `wandb.init`.
+        """Called by the Setting when using Weights & Biases, after `wandb.init`.
 
         This method is here to provide Methods with the opportunity to log some of their
         configuration options or hyper-parameters to wandb.
@@ -443,14 +433,10 @@ class Method(Generic[SettingType], Parseable, ABC):
 
             for attribute, value in vars(self).items():
                 if isinstance(value, nn.Module):
-                    logger.debug(
-                        f"Calling 'train()' on the Method's {attribute} attribute."
-                    )
+                    logger.debug(f"Calling 'train()' on the Method's {attribute} attribute.")
                     value.train()
         except Exception as exc:
-            logger.warning(
-                f"Unable to call `train()` on nn.Modules of the Method: {exc}"
-            )
+            logger.warning(f"Unable to call `train()` on nn.Modules of the Method: {exc}")
 
     def set_testing(self) -> None:
         """Called by the Setting to let the Method know when it is in "testing" phase.
@@ -464,14 +450,10 @@ class Method(Generic[SettingType], Parseable, ABC):
 
             for attribute, value in vars(self).items():
                 if isinstance(value, nn.Module):
-                    logger.debug(
-                        f"Calling 'eval()' on the Method's {attribute} attribute."
-                    )
+                    logger.debug(f"Calling 'eval()' on the Method's {attribute} attribute.")
                     value.eval()
         except Exception as exc:
-            logger.warning(
-                f"Unable to call `eval()` on nn.Modules of the Method: {exc}"
-            )
+            logger.warning(f"Unable to call `eval()` on nn.Modules of the Method: {exc}")
 
     @property
     def training(self) -> bool:
@@ -502,7 +484,7 @@ class Method(Generic[SettingType], Parseable, ABC):
 
     @classmethod
     def main(cls, argv: Optional[Union[str, List[str]]] = None) -> Results:
-        """ Run an Experiment from the command-line using this method.
+        """Run an Experiment from the command-line using this method.
 
         (TODO: @lebrice Finish writing a good docstring here that explains how this works
         and how to use it.)
@@ -547,9 +529,7 @@ class Method(Generic[SettingType], Parseable, ABC):
         if isinstance(setting, LightningDataModule):
             setting = type(setting)
 
-        if not issubclass(setting, SettingABC) and issubclass(
-            setting, LightningDataModule
-        ):
+        if not issubclass(setting, SettingABC) and issubclass(setting, LightningDataModule):
             # TODO: If we're trying to check if this method would be compatible
             # with a LightningDataModule, rather than a Setting, then we treat
             # that LightningModule the same way we would an TraditionalSLSetting.
@@ -563,7 +543,7 @@ class Method(Generic[SettingType], Parseable, ABC):
 
     @classmethod
     def get_applicable_settings(cls) -> List[Type[SettingType]]:
-        """ Returns all settings on which this method is applicable.
+        """Returns all settings on which this method is applicable.
         NOTE: This only returns 'concrete' Settings.
         """
         from sequoia.settings import all_settings
@@ -574,7 +554,7 @@ class Method(Generic[SettingType], Parseable, ABC):
 
     @classmethod
     def all_evaluation_settings(cls, **kwargs) -> Iterable[SettingType]:
-        """ Generator over all the combinations of Settings/datasets on which
+        """Generator over all the combinations of Settings/datasets on which
         this method is applicable.
 
         If keyword arguments are passed, they will be passed to the constructor
@@ -587,7 +567,7 @@ class Method(Generic[SettingType], Parseable, ABC):
 
     @classmethod
     def get_name(cls) -> str:
-        """ Gets the name of this method class. """
+        """Gets the name of this method class."""
         name = getattr(cls, "name", None)
         if name is None:
             name = camel_case(cls.__qualname__)
@@ -596,7 +576,7 @@ class Method(Generic[SettingType], Parseable, ABC):
 
     @classmethod
     def get_family(cls) -> Optional[str]:
-        """ Gets the name of the 'family' of Methods which contains this method class.
+        """Gets the name of the 'family' of Methods which contains this method class.
 
         This is used to differentiate methods with the same name, for instance
         sb3/DQN versus pl_bolts/DQN, sequoia/EWC vs avalanche/EWC, etc.
@@ -605,8 +585,8 @@ class Method(Generic[SettingType], Parseable, ABC):
 
     @classmethod
     def get_full_name(cls) -> str:
-        """ Gets the 'full name' of a method, which is the "{family}.{name}" if the
-        family is set, and just the name otherwise. 
+        """Gets the 'full name' of a method, which is the "{family}.{name}" if the
+        family is set, and just the name otherwise.
 
         The full name is used as the option on the command-line.
         """
@@ -614,9 +594,7 @@ class Method(Generic[SettingType], Parseable, ABC):
         family = cls.get_family()
         return f"{family}.{name}" if family is not None else name
 
-    def __init_subclass__(
-        cls, target_setting: Type[SettingType] = None, **kwargs
-    ) -> None:
+    def __init_subclass__(cls, target_setting: Type[SettingType] = None, **kwargs) -> None:
         """Called when creating a new subclass of Method.
 
         Args:
@@ -642,9 +620,7 @@ class Method(Generic[SettingType], Parseable, ABC):
     def get_path_to_source_file(cls) -> Path:
         return get_path_to_source_file(cls)
 
-    def get_experiment_name(
-        self, setting: SettingABC, experiment_id: str = None
-    ) -> str:
+    def get_experiment_name(self, setting: SettingABC, experiment_id: str = None) -> str:
         """Gets a unique name for the experiment where `self` is applied to `setting`.
 
         This experiment name will be passed to `orion` when performing a run of
@@ -671,12 +647,8 @@ class Method(Generic[SettingType], Parseable, ABC):
             # BUG: Some settings have non-string keys/value or something?
             d = flatten_dict(setting_dict)
             experiment_id = compute_identity(size=5, **d)
-        assert isinstance(
-            setting.dataset, str
-        ), "assuming that dataset is a str for now."
-        return (
-            f"{self.get_name()}-{setting.get_name()}_{setting.dataset}_{experiment_id}"
-        )
+        assert isinstance(setting.dataset, str), "assuming that dataset is a str for now."
+        return f"{self.get_name()}-{setting.get_name()}_{setting.dataset}_{experiment_id}"
 
     def get_search_space(self, setting: SettingABC) -> Mapping[str, Union[str, Dict]]:
         """Returns the search space to use for HPO in the given Setting.
@@ -729,7 +701,7 @@ class Method(Generic[SettingType], Parseable, ABC):
         hpo_algorithm: Union[str, Dict] = "BayesianOptimizer",
         debug: bool = False,
     ) -> Tuple[Dict, float]:
-        """ Performs a Hyper-Parameter Optimization sweep using orion.
+        """Performs a Hyper-Parameter Optimization sweep using orion.
 
         Changes the values in `self.hparams` iteratively, returning the best hparams
         found so far.
@@ -828,10 +800,7 @@ class Method(Generic[SettingType], Parseable, ABC):
             # Inner function, just used to make the code below a bit simpler.
             # TODO: We should probably also change some values in the Config (e.g.
             # log_dir, checkpoint_dir, etc) between runs.
-            logger.info(
-                "Suggested values for this run:\n"
-                + json.dumps(new_hparams, indent="\t")
-            )
+            logger.info("Suggested values for this run:\n" + json.dumps(new_hparams, indent="\t"))
             self.adapt_to_new_hparams(new_hparams)
 
             # ---------

@@ -8,21 +8,22 @@ from pathlib import Path
 from typing import Any, ClassVar, Dict, Optional, Type
 
 import gym
-from simple_parsing.helpers.serialization.serializable import Serializable
 import tqdm
-import wandb
 from gym.vector.utils import batch_space
 from simple_parsing import field
+from simple_parsing.helpers.serialization.serializable import Serializable
 from torch import Tensor
+from wandb.wandb_run import Run
 
+import wandb
 from sequoia.common.config import Config, WandbConfig
 from sequoia.common.gym_wrappers.utils import IterableWrapper
 from sequoia.common.metrics import Metrics, MetricsType
-from sequoia.settings.base import Actions, Method, Setting
+from sequoia.settings.base import Actions, Method
 from sequoia.settings.base.results import Results
-from sequoia.utils import add_prefix, get_logger
-from sequoia.utils.utils import flag
-from wandb.wandb_run import Run
+from sequoia.utils.utils import add_prefix, flag
+from sequoia.utils.logging_utils import get_logger
+
 from .base import AssumptionBase
 from .iid_results import TaskResults
 
@@ -36,7 +37,7 @@ class ContinualResults(TaskResults[MetricsType]):
 
     @property
     def online_performance(self) -> Dict[int, MetricsType]:
-        """ Returns the online training performance.
+        """Returns the online training performance.
 
         In SL, this is only recorded over the first epoch.
 
@@ -58,9 +59,9 @@ class ContinualResults(TaskResults[MetricsType]):
         log_dict = {}
         log_dict["Average Performance"] = super().to_log_dict(verbose=verbose)
         if self._online_training_performance:
-            log_dict[
-                "Online Performance"
-            ] = self.online_performance_metrics.to_log_dict(verbose=verbose)
+            log_dict["Online Performance"] = self.online_performance_metrics.to_log_dict(
+                verbose=verbose
+            )
         return log_dict
 
     def summary(self, verbose: bool = False) -> str:
@@ -72,7 +73,8 @@ class ContinualResults(TaskResults[MetricsType]):
 
 @dataclass
 class ContinualAssumption(AssumptionBase):
-    """ Assumptions for Setting where the environments change over time. """
+    """Assumptions for Setting where the environments change over time."""
+
     # Which dataset to use.
     dataset: str
 
@@ -116,7 +118,7 @@ class ContinualAssumption(AssumptionBase):
     wandb: Optional[WandbConfig] = field(default=None, compare=False, cmd=False)
 
     def main_loop(self, method: Method) -> ContinualResults:
-        """ Runs a continual learning training loop, wether in RL or CL. """
+        """Runs a continual learning training loop, wether in RL or CL."""
         # TODO: Add ways of restoring state to continue a given run.
         if self.wandb and self.wandb.project:
             # Init wandb, and then log the setting's options.
@@ -131,7 +133,8 @@ class ContinualAssumption(AssumptionBase):
         self._start_time = time.process_time()
 
         method.fit(
-            train_env=train_env, valid_env=valid_env,
+            train_env=train_env,
+            valid_env=valid_env,
         )
         train_env.close()
         valid_env.close()
@@ -154,8 +157,7 @@ class ContinualAssumption(AssumptionBase):
         return results
 
     def test_loop(self, method: Method) -> "IncrementalAssumption.Results":
-        """ WIP: Continual test loop.
-        """
+        """WIP: Continual test loop."""
         test_env = self.test_dataloader()
 
         test_env: TestEnvironment
@@ -200,26 +202,17 @@ class ContinualAssumption(AssumptionBase):
 
                 # BUG: This doesn't work if the env isn't batched.
                 action_space = test_env.action_space
-                batch_size = getattr(
-                    test_env, "num_envs", getattr(test_env, "batch_size", 0)
-                )
+                batch_size = getattr(test_env, "num_envs", getattr(test_env, "batch_size", 0))
                 env_is_batched = batch_size is not None and batch_size >= 1
                 if env_is_batched:
                     # NOTE: Need to pass an action space that actually reflects the batch
                     # size, even for the last batch!
                     obs_batch_size = obs.x.shape[0] if obs.x.shape else None
                     action_space_batch_size = (
-                        test_env.action_space.shape[0]
-                        if test_env.action_space.shape
-                        else None
+                        test_env.action_space.shape[0] if test_env.action_space.shape else None
                     )
-                    if (
-                        obs_batch_size is not None
-                        and obs_batch_size != action_space_batch_size
-                    ):
-                        action_space = batch_space(
-                            test_env.single_action_space, obs_batch_size
-                        )
+                    if obs_batch_size is not None and obs_batch_size != action_space_batch_size:
+                        action_space = batch_space(test_env.single_action_space, obs_batch_size)
 
                 action = method.get_actions(obs, action_space)
 
@@ -345,11 +338,12 @@ class ContinualAssumption(AssumptionBase):
 
 
 from gym.vector import VectorEnv
+
 from sequoia.common.gym_wrappers.utils import EnvType
 
 
 class TestEnvironment(gym.wrappers.Monitor, IterableWrapper[EnvType], ABC):
-    """ Wrapper around a 'test' environment, which limits the number of steps
+    """Wrapper around a 'test' environment, which limits the number of steps
     and keeps tracks of the performance.
     """
 
@@ -390,7 +384,7 @@ class TestEnvironment(gym.wrappers.Monitor, IterableWrapper[EnvType], ABC):
 
     @abstractmethod
     def get_results(self) -> Results:
-        """ Return how well the Method was applied on this environment.
+        """Return how well the Method was applied on this environment.
 
         In RL, this would be based on the mean rewards, while in supervised
         learning it could be the average accuracy, for instance.
@@ -444,7 +438,6 @@ class TestEnvironment(gym.wrappers.Monitor, IterableWrapper[EnvType], ABC):
             reward = None
 
         return observation, reward, done, info
-
 
 
 TestEnvironment.__test__ = False

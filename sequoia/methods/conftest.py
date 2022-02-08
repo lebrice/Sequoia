@@ -1,26 +1,22 @@
 import pytest
-import torch
-from sklearn.datasets import make_classification
-from torch.utils.data import Subset, TensorDataset
-from avalanche.benchmarks import nc_benchmark
 
 from sequoia.client import SettingProxy
 from sequoia.common.config import Config
 from sequoia.settings.sl import (
     ClassIncrementalSetting,
     ContinualSLSetting,
-    TaskIncrementalSLSetting,
     DiscreteTaskAgnosticSLSetting,
+    TaskIncrementalSLSetting,
 )
-from sequoia.settings.sl.continual.setting import random_subset, subset
-from pathlib import Path
-import os
+from sequoia.settings.sl.continual.setting import random_subset
 
 
 @pytest.fixture(scope="session")
 def short_class_incremental_setting(session_config: Config):
     setting = ClassIncrementalSetting(
-        dataset="mnist", nb_tasks=5, monitor_training_performance=True,
+        dataset="mnist",
+        nb_tasks=5,
+        monitor_training_performance=True,
     )
     setting.config = session_config
     setting.prepare_data()
@@ -56,7 +52,10 @@ def short_class_incremental_setting(session_config: Config):
 
 @pytest.fixture(scope="session")
 def short_continual_sl_setting(session_config: Config):
-    setting = ContinualSLSetting(dataset="mnist", monitor_training_performance=True,)
+    setting = ContinualSLSetting(
+        dataset="mnist",
+        monitor_training_performance=True,
+    )
     setting.config = session_config
     setting.prepare_data()
     setting.setup()
@@ -92,7 +91,8 @@ def short_continual_sl_setting(session_config: Config):
 @pytest.fixture(scope="session")
 def short_discrete_task_agnostic_sl_setting(session_config: Config):
     setting = DiscreteTaskAgnosticSLSetting(
-        dataset="mnist", monitor_training_performance=True,
+        dataset="mnist",
+        monitor_training_performance=True,
     )
     setting.config = session_config
     setting.prepare_data()
@@ -129,7 +129,9 @@ def short_discrete_task_agnostic_sl_setting(session_config: Config):
 @pytest.fixture(scope="session")
 def short_task_incremental_setting(session_config: Config):
     setting = TaskIncrementalSLSetting(
-        dataset="mnist", nb_tasks=5, monitor_training_performance=True,
+        dataset="mnist",
+        nb_tasks=5,
+        monitor_training_performance=True,
     )
     setting.config = session_config
     setting.prepare_data()
@@ -188,16 +190,13 @@ def short_sl_track_setting(session_config: Config):
     setting.setup()
     # Testing this out: Shortening the train datasets:
     setting.train_datasets = [
-        random_subset(task_dataset, samples_per_task)
-        for task_dataset in setting.train_datasets
+        random_subset(task_dataset, samples_per_task) for task_dataset in setting.train_datasets
     ]
     setting.val_datasets = [
-        random_subset(task_dataset, samples_per_task)
-        for task_dataset in setting.val_datasets
+        random_subset(task_dataset, samples_per_task) for task_dataset in setting.val_datasets
     ]
     setting.test_datasets = [
-        random_subset(task_dataset, samples_per_task)
-        for task_dataset in setting.test_datasets
+        random_subset(task_dataset, samples_per_task) for task_dataset in setting.test_datasets
     ]
     assert len(setting.train_datasets) == setting.nb_tasks
     assert len(setting.val_datasets) == setting.nb_tasks

@@ -1,20 +1,18 @@
-import warnings
-from dataclasses import dataclass
-from typing import Callable, Optional, Tuple, TypeVar, Union
+from typing import Callable, Optional, Tuple, Union
 
-import torch
-from simple_parsing import choice
 from torch import nn
 
 from sequoia.utils.logging_utils import get_logger
 
 logger = get_logger(__file__)
 
-def get_pretrained_encoder(encoder_model: Callable,
-                           pretrained: bool=True,
-                           freeze_pretrained_weights: bool=False,
-                           new_hidden_size: int=None,
-                           ) -> Tuple[nn.Module, int]:
+
+def get_pretrained_encoder(
+    encoder_model: Callable,
+    pretrained: bool = True,
+    freeze_pretrained_weights: bool = False,
+    new_hidden_size: int = None,
+) -> Tuple[nn.Module, int]:
     """Returns a pretrained encoder on ImageNet from `torchvision.models`
 
     If `new_hidden_size` is True, will try to replace the classification layer
@@ -31,7 +29,7 @@ def get_pretrained_encoder(encoder_model: Callable,
             (downloaded) weights should be frozen. Has no effect when
             `pretrained` is False. Defaults to False.
         new_hidden_size (int): The hidden size of the resulting model.
-    
+
     Returns:
         Tuple[nn.Module, int]: the pretrained encoder, with the classification
             head removed, and the resulting output size (hidden dims)
@@ -44,7 +42,7 @@ def get_pretrained_encoder(encoder_model: Callable,
         encoder = encoder_model(pretrained=pretrained)
     except TypeError as e:
         encoder = encoder_model()
-    
+
     if pretrained and freeze_pretrained_weights:
         # Fix the parameters of the model.
         for param in encoder.parameters():
@@ -64,12 +62,11 @@ def get_pretrained_encoder(encoder_model: Callable,
         if hasattr(encoder, attr):
             classifier: Union[nn.Sequential, nn.Linear] = getattr(encoder, attr)
             new_classifier: Optional[nn.Linear] = None
-            
+
             # Get the number of input features.
             if isinstance(classifier, nn.Linear):
                 new_classifier = nn.Linear(
-                    in_features=classifier.in_features,
-                    out_features=new_hidden_size
+                    in_features=classifier.in_features, out_features=new_hidden_size
                 )
             elif isinstance(classifier, nn.Sequential):
                 # if there is a classifier "block", get the number of
@@ -97,4 +94,3 @@ def get_pretrained_encoder(encoder_model: Callable,
         )
     setattr(encoder, attr, new_classifier)
     return encoder, new_hidden_size
-    

@@ -1,8 +1,8 @@
-from gym import spaces
 import numpy as np
-import torch
-from torch import Tensor
 import pytest
+from gym import spaces
+from torch import Tensor
+
 from .tensor_spaces import TensorBox, numpy_to_torch_dtypes
 
 

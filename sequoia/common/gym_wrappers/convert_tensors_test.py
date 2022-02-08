@@ -1,21 +1,14 @@
-from .convert_tensors import (
-    ConvertToFromTensors,
-    add_tensor_support,
-    to_tensor,
-    from_tensor,
-)
-import gym
-from gym import spaces
-import torch
-from torch import Tensor
-import numpy as np
 from typing import Union
 
-
-
-
+import gym
 import pytest
+import torch
+from gym import spaces
+from torch import Tensor
+
 from sequoia.conftest import skipif_param
+
+from .convert_tensors import ConvertToFromTensors, add_tensor_support
 
 
 @pytest.mark.parametrize(
@@ -51,10 +44,11 @@ def test_convert_tensors_wrapper(device: Union[str, torch.device]):
         # assert done.device.type == device
 
 
-from sequoia.common.spaces import NamedTupleSpace, TypedDictSpace
-from sequoia.common.batch import Batch
-from typing import Optional
 from dataclasses import dataclass
+from typing import Optional
+
+from sequoia.common.batch import Batch
+from sequoia.common.spaces import NamedTupleSpace, TypedDictSpace
 
 
 @dataclass(frozen=True)
@@ -63,7 +57,7 @@ class Foo(Batch):
     task_labels: Optional[Tensor]
 
 
-def test_preserves_dtype_of_namedtuple_space():    
+def test_preserves_dtype_of_namedtuple_space():
     input_space = NamedTupleSpace(
         x=spaces.Box(0, 1, [32, 123, 123, 3]),
         task_labels=spaces.MultiDiscrete([5 for _ in range(32)]),
@@ -74,7 +68,7 @@ def test_preserves_dtype_of_namedtuple_space():
     assert output_space.dtype is input_space.dtype
 
 
-def test_preserves_dtype_of_typeddict_space():    
+def test_preserves_dtype_of_typeddict_space():
     input_space = TypedDictSpace(
         x=spaces.Box(0, 1, [32, 123, 123, 3]),
         task_labels=spaces.MultiDiscrete([5 for _ in range(32)]),

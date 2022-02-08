@@ -1,7 +1,7 @@
 """ Typed wrapper around `nn.ModuleDict`, just that just adds a get method. """
-from typing import TypeVar, Union, MutableMapping, Any
-from torch import nn
+from typing import Any, MutableMapping, TypeVar, Union
 
+from torch import nn
 
 M = TypeVar("M", bound=nn.Module)
 T = TypeVar("T")

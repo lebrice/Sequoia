@@ -3,14 +3,13 @@ etc.
 """
 from collections.abc import Mapping
 from functools import singledispatch
-from typing import Any, Dict, List, Sequence, Union, TypeVar, overload
+from typing import Any, Dict, List, TypeVar, Union
 
 import numpy as np
 import torch
-from gym import Space, spaces
-from sequoia.common.spaces.sparse import Sparse
-from sequoia.utils.categorical import Categorical
 from torch import Tensor
+
+from sequoia.utils.categorical import Categorical
 
 T = TypeVar("T")
 
@@ -47,10 +46,8 @@ def stack(first_item: Union[T, List[T]], *others: T, **kwargs) -> Any:
 
 
 @stack.register(type(None))
-def _stack_none(
-    first_item: None, *others: None, **kwargs
-) -> Union[None, np.ndarray]:
-    # TODO: Should we return an ndarray with 'None' entries, of dtype np.object_? or 
+def _stack_none(first_item: None, *others: None, **kwargs) -> Union[None, np.ndarray]:
+    # TODO: Should we return an ndarray with 'None' entries, of dtype np.object_? or
     # just a single None?
     # Opting for a single None for now, as it's easier to work with. (`v is None` works)
     if all(v is None for v in others):
@@ -62,9 +59,7 @@ def _stack_none(
 
 
 @stack.register(np.ndarray)
-def _stack_ndarrays(
-    first_item: np.ndarray, *others: np.ndarray, **kwargs
-) -> np.ndarray:
+def _stack_ndarrays(first_item: np.ndarray, *others: np.ndarray, **kwargs) -> np.ndarray:
     return np.stack([first_item, *others], **kwargs)
 
 
@@ -84,11 +79,7 @@ def _stack_dicts(first_item: Dict, *others: Dict, **kwargs) -> Dict:
 
 
 @stack.register(Categorical)
-def _stack_distributions(
-    first_item: Categorical, *others: Categorical, **kwargs
-) -> Categorical:
+def _stack_distributions(first_item: Categorical, *others: Categorical, **kwargs) -> Categorical:
     return Categorical(
-        logits=torch.stack(
-            [first_item.logits, *(other.logits for other in others)], **kwargs
-        )
+        logits=torch.stack([first_item.logits, *(other.logits for other in others)], **kwargs)
     )

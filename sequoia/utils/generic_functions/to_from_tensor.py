@@ -1,19 +1,18 @@
 from functools import singledispatch
-from typing import Any, Dict, Optional, Tuple, TypeVar, Union, Mapping
+from typing import Any, Dict, Mapping, Optional, Tuple, TypeVar, Union
 
 import numpy as np
 import torch
 from gym import Space, spaces
-from sequoia.common.spaces.named_tuple import NamedTuple, NamedTupleSpace
-from sequoia.common.spaces.typed_dict import TypedDictSpace
 from torch import Tensor
+
 
 T = TypeVar("T")
 
 
 @singledispatch
 def from_tensor(space: Space, sample: Union[Tensor, Any]) -> Union[np.ndarray, Any]:
-    """ Converts a Tensor into a sample from the given space. """
+    """Converts a Tensor into a sample from the given space."""
     if isinstance(sample, Tensor):
         return sample.cpu().numpy()
     return sample
@@ -40,35 +39,25 @@ def _(
     return {key: from_tensor(space[key], value) for key, value in sample.items()}
 
 
+from sequoia.utils.generic_functions._namedtuple import is_namedtuple
+
 @from_tensor.register
-def _(
-    space: spaces.Tuple, sample: Tuple[Union[Tensor, Any]]
-) -> Tuple[Union[np.ndarray, Any]]:
+def _(space: spaces.Tuple, sample: Tuple[Union[Tensor, Any]]) -> Tuple[Union[np.ndarray, Any]]:
     if not isinstance(sample, tuple):
         # BUG: Sometimes instead of having a sample of Tuple(Discrete(2))
         # be `(1,)`, its `array([1])` instead.
         sample = tuple(sample)
     values_gen = (from_tensor(space[i], value) for i, value in enumerate(sample))
-    if isinstance(sample, NamedTuple):
-        return type(sample)(values_gen)
+    if is_namedtuple(sample):
+        return type(sample)(*values_gen)
     return tuple(values_gen)
-
-
-@from_tensor.register(TypedDictSpace)
-def _(space: TypedDictSpace[T], sample: Union[T, Mapping]) -> T:
-    return space.dtype(
-        **{
-            key: from_tensor(sub_space, sample[key])
-            for key, sub_space in space.spaces.items()
-        }
-    )
 
 
 @singledispatch
 def to_tensor(
     space: Space, sample: Union[np.ndarray, Any], device: torch.device = None
 ) -> Union[np.ndarray, Any]:
-    """ Converts a sample from the given space into a Tensor. """
+    """Converts a sample from the given space into a Tensor."""
     if sample is None:
         return sample
     return torch.as_tensor(sample, device=device)
@@ -79,21 +68,6 @@ def _(
     space: spaces.MultiBinary, sample: np.ndarray, device: torch.device = None
 ) -> Dict[str, Union[Tensor, Any]]:
     return torch.as_tensor(sample, device=device, dtype=torch.bool)
-
-
-@to_tensor.register(TypedDictSpace)
-def _(
-    space: TypedDictSpace[T],
-    sample: Dict[str, Union[np.ndarray, Any]],
-    device: torch.device = None,
-) -> T:
-    return space.dtype(
-        **{
-            key: to_tensor(subspace, sample=sample[key], device=device)
-            for key, subspace in space.items()
-        }
-    )
-
 
 @to_tensor.register
 def _(
@@ -106,15 +80,19 @@ def _(
         assert all(item_space.sparsity == 1.0 for item_space in space.spaces)
         # todo: What to do in this context?
         return None
-        return np.full([len(space.spaces),], fill_value=None, dtype=np.object_)
+        return np.full(
+            [
+                len(space.spaces),
+            ],
+            fill_value=None,
+            dtype=np.object_,
+        )
     if any(v is None for v in sample):
         assert False, (space, sample, device)
-    return tuple(
-        to_tensor(subspace, sample[i], device)
-        for i, subspace in enumerate(space.spaces)
-    )
+    return tuple(to_tensor(subspace, sample[i], device) for i, subspace in enumerate(space.spaces))
 
-
+from typing import NamedTuple
+from sequoia.common.spaces.named_tuple import NamedTupleSpace
 @to_tensor.register
 def _(space: NamedTupleSpace, sample: NamedTuple, device: torch.device = None):
     return space.dtype(

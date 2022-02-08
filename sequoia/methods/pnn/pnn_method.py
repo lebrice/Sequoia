@@ -12,7 +12,6 @@ from numpy import inf
 from simple_parsing import ArgumentParser
 from wandb.wandb_run import Run
 
-from sequoia.settings.base import Environment
 from sequoia.common import Config
 from sequoia.common.hparams import HyperParameters, categorical, log_uniform, uniform
 from sequoia.common.spaces import Image
@@ -29,7 +28,7 @@ from sequoia.settings import (
     TaskIncrementalSLSetting,
 )
 from sequoia.settings.assumptions import IncrementalAssumption
-from sequoia.settings.assumptions.task_incremental import TaskIncrementalAssumption
+from sequoia.settings.base import Environment
 from sequoia.utils import get_logger
 
 from .model_rl import PnnA2CAgent
@@ -56,7 +55,7 @@ class PnnMethod(Method, target_setting=IncrementalAssumption):
 
     @dataclass
     class HParams(HyperParameters):
-        """ Hyper-parameters of the Pnn method. """
+        """Hyper-parameters of the Pnn method."""
 
         # Learning rate of the optimizer. Defauts to 0.0001 when in SL.
         learning_rate: float = log_uniform(1e-6, 1e-2, default=2e-4)
@@ -80,7 +79,7 @@ class PnnMethod(Method, target_setting=IncrementalAssumption):
         self.optimizer: torch.optim.Optimizer
 
     def configure(self, setting: Setting):
-        """ Called before the method is applied on a setting (before training). 
+        """Called before the method is applied on a setting (before training).
 
         You can use this to instantiate your model, for instance, since this is
         where you get access to the observation & action spaces.
@@ -96,11 +95,13 @@ class PnnMethod(Method, target_setting=IncrementalAssumption):
         self.num_inputs = np.prod(input_space.shape)
 
         self.added_tasks = []
-        if not (setting.task_labels_at_train_time and setting.task_labels_at_test_time): 
-            logger.warning(RuntimeWarning(
-                "TODO: PNN doesn't have 'propper' task inference, and task labels "
-                "arent always available! This will use an output head at random."
-            ))
+        if not (setting.task_labels_at_train_time and setting.task_labels_at_test_time):
+            logger.warning(
+                RuntimeWarning(
+                    "TODO: PNN doesn't have 'propper' task inference, and task labels "
+                    "arent always available! This will use an output head at random."
+                )
+            )
         if isinstance(setting, RLSetting):
             # If we're applied to an RL setting:
 
@@ -129,7 +130,8 @@ class PnnMethod(Method, target_setting=IncrementalAssumption):
             # If we're applied to a Supervised Learning setting:
             # Used these as the default hparams in SL:
             self.hparams = self.hparams or self.HParams(
-                learning_rate=0.0001, batch_size=32,
+                learning_rate=0.0001,
+                batch_size=32,
             )
             if self.hparams.batch_size is None:
                 self.hparams.batch_size = 32
@@ -151,10 +153,12 @@ class PnnMethod(Method, target_setting=IncrementalAssumption):
             n_outputs = setting.increment
             n_outputs = setting.action_space.n
             self.layer_size = [self.num_inputs, 256, n_outputs]
-            self.model = PnnClassifier(n_layers=len(self.layer_size) - 1,)
+            self.model = PnnClassifier(
+                n_layers=len(self.layer_size) - 1,
+            )
 
     def on_task_switch(self, task_id: Optional[int]) -> None:
-        """ Called when switching tasks in a CL setting. """
+        """Called when switching tasks in a CL setting."""
         # This method gets called if task boundaries are known in the current
         # setting. Furthermore, if task labels are available, task_id will be
         # the index of the new task. If not, task_id will be None.
@@ -179,13 +183,12 @@ class PnnMethod(Method, target_setting=IncrementalAssumption):
 
     def set_optimizer(self):
         self.optimizer = torch.optim.Adam(
-            self.model.parameters(self.task_id), lr=self.hparams.learning_rate,
+            self.model.parameters(self.task_id),
+            lr=self.hparams.learning_rate,
         )
 
-    def get_actions(
-        self, observations: Observations, action_space: spaces.Space
-    ) -> Actions:
-        """ Get a batch of predictions (aka actions) for the given observations. """
+    def get_actions(self, observations: Observations, action_space: spaces.Space) -> Actions:
+        """Get a batch of predictions (aka actions) for the given observations."""
 
         observations = observations.to(self.device)
         with torch.no_grad():
@@ -204,7 +207,7 @@ class PnnMethod(Method, target_setting=IncrementalAssumption):
         return action
 
     def fit(self, train_env: Environment, valid_env: Environment):
-        """ Train and validate this method using the "environments" for the current task.
+        """Train and validate this method using the "environments" for the current task.
 
         NOTE: `train_env` and `valid_env` are both `gym.Env`s as well as `DataLoader`s.
         This means that if you want to write a "regular" SL training loop, you totally
@@ -216,7 +219,7 @@ class PnnMethod(Method, target_setting=IncrementalAssumption):
             self.fit_rl(train_env, valid_env)
 
     def fit_rl(self, train_env: gym.Env, valid_env: gym.Env):
-        """ Training loop for Reinforcement Learning (a.k.a. "active") environment. """
+        """Training loop for Reinforcement Learning (a.k.a. "active") environment."""
         """
         base on https://towardsdatascience.com/understanding-actor-critic-methods-931b97b6df3f
         """
@@ -292,7 +295,7 @@ class PnnMethod(Method, target_setting=IncrementalAssumption):
             self.optimizer.step()
 
     def fit_sl(self, train_env: PassiveEnvironment, valid_env: PassiveEnvironment):
-        """ Train on a Supervised Learning (a.k.a. "passive") environment. """
+        """Train on a Supervised Learning (a.k.a. "passive") environment."""
         observations: TaskIncrementalSLSetting.Observations = train_env.reset()
         cuda_observations = observations.to(self.device)
         assert isinstance(self.model, PnnClassifier)
@@ -311,7 +314,8 @@ class PnnMethod(Method, target_setting=IncrementalAssumption):
                 train_pbar.set_description(f"Training Epoch {epoch}")
                 for i, batch in enumerate(train_pbar):
                     loss, metrics_dict = self.model.shared_step(
-                        batch, environment=train_env,
+                        batch,
+                        environment=train_env,
                     )
                     self.optimizer.zero_grad()
                     loss.backward()
@@ -328,7 +332,8 @@ class PnnMethod(Method, target_setting=IncrementalAssumption):
 
                 for i, batch in enumerate(val_pbar):
                     batch_val_loss, metrics_dict = self.model.shared_step(
-                        batch, environment=valid_env,
+                        batch,
+                        environment=valid_env,
                     )
                     epoch_val_loss += batch_val_loss
                     postfix.update(metrics_dict, val_loss=epoch_val_loss)
@@ -365,7 +370,7 @@ class PnnMethod(Method, target_setting=IncrementalAssumption):
 
         It is required that this method be implemented if you want to perform HPO sweeps
         with Orion.
-        
+
         Parameters
         ----------
         new_hparams : Dict[str, Any]
@@ -379,7 +384,7 @@ class PnnMethod(Method, target_setting=IncrementalAssumption):
         self.hparams = self.hparams.replace(**new_hparams)
 
     def setup_wandb(self, run: Run) -> None:
-        """ Called by the Setting when using Weights & Biases, after `wandb.init`.
+        """Called by the Setting when using Weights & Biases, after `wandb.init`.
 
         This method is here to provide Methods with the opportunity to log some of their
         configuration options or hyper-parameters to wandb.
@@ -396,7 +401,7 @@ class PnnMethod(Method, target_setting=IncrementalAssumption):
 
 
 def main_rl():
-    """ Applies the PnnMethod in a RL Setting. """
+    """Applies the PnnMethod in a RL Setting."""
     parser = ArgumentParser(description=__doc__, add_dest_to_option_strings=False)
 
     Config.add_argparse_args(parser, dest="config")
@@ -429,7 +434,7 @@ def main_rl():
 
 
 def main_sl():
-    """ Applies the PnnMethod in a SL Setting. """
+    """Applies the PnnMethod in a SL Setting."""
     parser = ArgumentParser(description=__doc__, add_dest_to_option_strings=False)
 
     # Add arguments for the Setting

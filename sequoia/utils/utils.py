@@ -1,41 +1,21 @@
 """ Miscelaneous utility functions. """
-import collections
 import functools
 import hashlib
 import inspect
 import itertools
 import operator
-import os
-import random
 import re
 import warnings
-from collections import defaultdict, deque
-from collections.abc import MutableMapping
+from collections import defaultdict
 from dataclasses import Field, fields
 from functools import reduce
-from inspect import getsourcefile, isabstract, isclass
+from inspect import getsourcefile, isclass
 from itertools import filterfalse, groupby
 from pathlib import Path
-from typing import (
-    Any,
-    Callable,
-    Deque,
-    Dict,
-    Iterable,
-    List,
-    MutableMapping,
-    Optional,
-    Set,
-    Tuple,
-    Type,
-    TypeVar,
-    Union,
-)
+from typing import Any, Callable, Dict, Iterable, List, Optional, Set, Tuple, Type, TypeVar, Union
 
-import numpy as np
-import torch
 from simple_parsing import field
-from torch import Tensor, cuda, nn
+from torch import Tensor, cuda
 
 cuda_available = cuda.is_available()
 gpus_available = cuda.device_count()
@@ -63,14 +43,12 @@ def pairwise(iterable: Iterable[T]) -> Iterable[Tuple[T, T]]:
     return zip(a, b)
 
 
-def n_consecutive(
-    items: Iterable[T], n: int = 2, yield_last_batch=True
-) -> Iterable[Tuple[T, ...]]:
+def n_consecutive(items: Iterable[T], n: int = 2, yield_last_batch=True) -> Iterable[Tuple[T, ...]]:
     """Collect data into chunks of up to `n` elements.
-    
+
     When `yield_last_batch` is True, the final chunk (which might have fewer
     than `n` items) will also be yielded.
-    
+
     >>> list(n_consecutive("ABCDEFG", 3))
     [('A', 'B', 'C'), ('D', 'E', 'F'), ('G',)]
     """
@@ -95,16 +73,14 @@ def fix_channels(x_batch: Tensor) -> Tensor:
             return x_batch
 
 
-def to_dict_of_lists(
-    list_of_dicts: Iterable[Dict[str, Any]]
-) -> Dict[str, List[Tensor]]:
-    """ Returns a dict of lists given a list of dicts.
-    
+def to_dict_of_lists(list_of_dicts: Iterable[Dict[str, Any]]) -> Dict[str, List[Tensor]]:
+    """Returns a dict of lists given a list of dicts.
+
     Assumes that all dictionaries have the same keys as the first dictionary.
-    
+
     Args:
         list_of_dicts (Iterable[Dict[str, Any]]): An iterable of dicts.
-    
+
     Returns:
         Dict[str, List[Tensor]]: A Dict of lists.
     """
@@ -112,30 +88,28 @@ def to_dict_of_lists(
     for i, d in enumerate(list_of_dicts):
         for key, value in d.items():
             result[key].append(value)
-        assert (
-            d.keys() == result.keys()
-        ), f"Dict {d} at index {i} does not contain all the keys!"
+        assert d.keys() == result.keys(), f"Dict {d} at index {i} does not contain all the keys!"
     return result
 
 
 def add_prefix(some_dict: Dict[str, T], prefix: str = "", sep=" ") -> Dict[str, T]:
-    """Adds the given prefix to all the keys in the dictionary that don't already start with it. 
-    
+    """Adds the given prefix to all the keys in the dictionary that don't already start with it.
+
     Parameters
     ----------
     - some_dict : Dict[str, T]
-    
+
         Some dictionary.
     - prefix : str, optional, by default ""
-    
+
         A string prefix to append.
-    
+
     - sep : str, optional, by default " "
 
         A string separator to add between the `prefix` and the existing keys
-        (which do no start by `prefix`). 
+        (which do no start by `prefix`).
 
-    
+
     Returns
     -------
     Dict[str, T]
@@ -179,7 +153,7 @@ def loss_str(loss_tensor: Tensor) -> str:
 
 
 def set_seed(seed: int):
-    """ Set the pytorch/numpy random seed. """
+    """Set the pytorch/numpy random seed."""
     import random
 
     import numpy as np
@@ -218,7 +192,7 @@ def compute_identity(size: int = 16, **sample) -> str:
 
 
 def prod(iterable: Iterable[T]) -> T:
-    """ Like sum() but returns the product of all numbers in the iterable.
+    """Like sum() but returns the product of all numbers in the iterable.
 
     >>> prod(range(1, 5))
     24
@@ -256,7 +230,7 @@ def add_dicts(d1: Dict, d2: Dict, add_values=True) -> Dict:
 
 
 def rsetattr(obj: Any, attr: str, val: Any) -> None:
-    """ Taken from https://stackoverflow.com/questions/31174295/getattr-and-setattr-on-nested-subobjects-chained-properties """
+    """Taken from https://stackoverflow.com/questions/31174295/getattr-and-setattr-on-nested-subobjects-chained-properties"""
     pre, _, post = attr.rpartition(".")
     return setattr(rgetattr(obj, pre) if pre else obj, post, val)
 
@@ -265,7 +239,7 @@ def rsetattr(obj: Any, attr: str, val: Any) -> None:
 
 
 def rgetattr(obj: Any, attr: str, *args):
-    """ Taken from https://stackoverflow.com/questions/31174295/getattr-and-setattr-on-nested-subobjects-chained-properties """
+    """Taken from https://stackoverflow.com/questions/31174295/getattr-and-setattr-on-nested-subobjects-chained-properties"""
 
     def _getattr(obj, attr):
         return getattr(obj, attr, *args)
@@ -301,9 +275,7 @@ def flatten_dict(d: D, separator: str = "/") -> D:
     return result
 
 
-def unique_consecutive(
-    iterable: Iterable[T], key: Callable[[T], Any] = None
-) -> Iterable[T]:
+def unique_consecutive(iterable: Iterable[T], key: Callable[[T], Any] = None) -> Iterable[T]:
     """List unique elements, preserving order. Remember only the element just seen.
 
     NOTE: If `key` is passed, it is only used to test for equality, the outputs of `key`
@@ -361,8 +333,8 @@ def roundrobin(*iterables: Iterable[T]) -> Iterable[T]:
 
 
 def take(iterable: Iterable[T], n: Optional[int]) -> Iterable[T]:
-    """ Takes only the first `n` elements from `iterable`.
-    
+    """Takes only the first `n` elements from `iterable`.
+
     if `n` is None, returns the entire iterable.
     """
     return itertools.islice(iterable, n) if n is not None else iterable
@@ -388,11 +360,9 @@ def flag(default: bool, *args, **kwargs):
     return field(default=default, nargs=1, *args, **kwargs)
 
 
-def dict_union(
-    *dicts: Dict[K, V], recurse: bool = True, dict_factory=dict
-) -> Dict[K, V]:
-    """ Simple dict union until we use python 3.9
-    
+def dict_union(*dicts: Dict[K, V], recurse: bool = True, dict_factory=dict) -> Dict[K, V]:
+    """Simple dict union until we use python 3.9
+
     If `recurse` is True, also does the union of nested dictionaries.
     NOTE: The returned dictionary has keys sorted alphabetically.
 
@@ -443,9 +413,7 @@ V = TypeVar("V")
 M = TypeVar("M")
 
 
-def zip_dicts(
-    *dicts: Dict[K, V], missing: M = None
-) -> Iterable[Tuple[K, Tuple[Union[M, V], ...]]]:
+def zip_dicts(*dicts: Dict[K, V], missing: M = None) -> Iterable[Tuple[K, Tuple[Union[M, V], ...]]]:
     """Iterator over the union of all keys, giving the value from each dict if
     present, else `missing`.
     """
@@ -457,7 +425,7 @@ def zip_dicts(
 
 
 def dict_intersection(*dicts: Dict[K, V]) -> Iterable[Tuple[K, Tuple[V, ...]]]:
-    """Gives back an iterator over the keys and values common to all dicts. """
+    """Gives back an iterator over the keys and values common to all dicts."""
     dicts = [dict(d.items()) for d in dicts]
     common_keys = set(dicts[0])
     for d in dicts:
@@ -476,9 +444,9 @@ def try_get(d: Dict[K, V], *keys: K, default: V = None) -> Optional[V]:
 
 
 def remove_suffix(s: str, suffix: str) -> str:
-    """ Remove the suffix from string s if present.
+    """Remove the suffix from string s if present.
     Doing this manually until we start using python 3.9.
-    
+
     >>> remove_suffix("bob.com", ".com")
     'bob'
     >>> remove_suffix("Henrietta", "match")
@@ -492,9 +460,9 @@ def remove_suffix(s: str, suffix: str) -> str:
 
 
 def remove_prefix(s: str, prefix: str) -> str:
-    """ Remove the prefix from string s if present.
+    """Remove the prefix from string s if present.
     Doing this manually until we start using python 3.9.
-    
+
     >>> remove_prefix("bob.com", "bo")
     'b.com'
     >>> remove_prefix("Henrietta", "match")
@@ -517,7 +485,7 @@ def get_all_concrete_subclasses_of(cls: Type[T]) -> Iterable[Type[T]]:
 
 
 def get_path_to_source_file(cls: Type) -> Path:
-    """ Attempts to give a relative path to the given source path. If not possible, then
+    """Attempts to give a relative path to the given source path. If not possible, then
     gives back an absolute path to the source file instead.
     """
     cwd = Path.cwd()
@@ -547,9 +515,7 @@ def constant_property(fixed_value: T) -> T:
             # do nothing here.
             pass
         elif value != fixed_value:
-            raise RuntimeError(
-                RuntimeWarning(f"This attribute is fixed at value {fixed_value}.")
-            )
+            raise RuntimeError(RuntimeWarning(f"This attribute is fixed at value {fixed_value}."))
 
     def getter(_) -> T:
         return fixed_value
@@ -558,15 +524,13 @@ def constant_property(fixed_value: T) -> T:
 
 
 def deprecated_property(old_name: str, new_name: str):
-    """ Marks a property as being deprecated, redirectly any changes to its value to the
+    """Marks a property as being deprecated, redirectly any changes to its value to the
     property with name 'new_name'.
     """
 
     def setter(self, value: Any):
         warnings.warn(
-            DeprecationWarning(
-                f"'{old_name}' property is deprecated, use '{new_name}' instead."
-            ),
+            DeprecationWarning(f"'{old_name}' property is deprecated, use '{new_name}' instead."),
             category=DeprecationWarning,
             stacklevel=2,
         )
@@ -580,9 +544,7 @@ def deprecated_property(old_name: str, new_name: str):
 
     def getter(self):
         warnings.warn(
-            DeprecationWarning(
-                f"'{old_name}' property is deprecated, use '{new_name}' instead."
-            ),
+            DeprecationWarning(f"'{old_name}' property is deprecated, use '{new_name}' instead."),
             category=DeprecationWarning,
             stacklevel=2,
         )

@@ -9,18 +9,19 @@ from gym import spaces
 from gym.spaces.utils import flatdim
 from gym.vector import SyncVectorEnv
 from gym.vector.utils import batch_space
+from torch import Tensor, nn
+
 from sequoia.common.gym_wrappers import (
     AddDoneToObservation,
     ConvertToFromTensors,
     EnvDataset,
+    PixelObservationWrapper,
 )
-from sequoia.common.gym_wrappers import PixelObservationWrapper
-from sequoia.settings.rl.continual.make_env import make_batched_env
 from sequoia.common.loss import Loss
 from sequoia.conftest import DummyEnvironment
 from sequoia.methods.models.forward_pass import ForwardPass
 from sequoia.settings.rl.continual import ContinualRLSetting
-from torch import Tensor, nn
+from sequoia.settings.rl.continual.make_env import make_batched_env
 
 from .policy_head import PolicyHead
 
@@ -68,7 +69,7 @@ class FakeEnvironment(SyncVectorEnv):
 
 @pytest.mark.parametrize("batch_size", [2, 5])
 def test_with_controllable_episode_lengths(batch_size: int, monkeypatch):
-    """ TODO: Test out the PolicyHead in a very controlled environment, where we
+    """TODO: Test out the PolicyHead in a very controlled environment, where we
     know exactly the lengths of each episode.
     """
     env = FakeEnvironment(
@@ -98,9 +99,7 @@ def test_with_controllable_episode_lengths(batch_size: int, monkeypatch):
         ),
     )
     # TODO: Simulating as if the output head were attached to a BaseModel.
-    PolicyHead.base_model_optimizer = torch.optim.Adam(
-        output_head.parameters(), lr=1e-3
-    )
+    PolicyHead.base_model_optimizer = torch.optim.Adam(output_head.parameters(), lr=1e-3)
 
     # Simplify the loss function so we know exactly what the loss should be at
     # each step.
@@ -126,20 +125,27 @@ def test_with_controllable_episode_lengths(batch_size: int, monkeypatch):
         assert np.array_equal(obs_done, step_done)
 
         representations = encoder(x)
-        observations = ContinualRLSetting.Observations(x=x, done=obs_done,)
+        observations = ContinualRLSetting.Observations(
+            x=x,
+            done=obs_done,
+        )
 
         actions_obj = output_head(observations, representations)
         actions = actions_obj.y_pred
 
         # TODO: kinda useless to wrap a single tensor in an object..
         forward_pass = ForwardPass(
-            observations=observations, representations=representations, actions=actions,
+            observations=observations,
+            representations=representations,
+            actions=actions,
         )
         obs, rewards, step_done, info = env.step(actions)
 
         rewards_obj = ContinualRLSetting.Rewards(y=rewards)
         loss = output_head.get_loss(
-            forward_pass=forward_pass, actions=actions_obj, rewards=rewards_obj,
+            forward_pass=forward_pass,
+            actions=actions_obj,
+            rewards=rewards_obj,
         )
         print(f"Step {step}")
         print(f"num episodes since update: {output_head.num_episodes_since_update}")
@@ -160,9 +166,7 @@ def test_with_controllable_episode_lengths(batch_size: int, monkeypatch):
             # This means that the gradient usage on the next time any env reaches
             # an end-of-episode will be one less than the total number of items.
             assert loss.loss == 10.0 * (batch_size - 1)
-            assert loss.metrics["gradient_usage"].used_gradients == 10.0 * (
-                batch_size - 1
-            )
+            assert loss.metrics["gradient_usage"].used_gradients == 10.0 * (batch_size - 1)
             assert loss.metrics["gradient_usage"].wasted_gradients == 0.0
         elif step == 15:
             # Env 0 second episode from steps 5 -> 15
@@ -177,9 +181,7 @@ def test_with_controllable_episode_lengths(batch_size: int, monkeypatch):
             # an end-of-episode will be one less than the total number of items.
             assert loss.loss == 10.0 * (batch_size - 1)
             assert loss.metrics["gradient_usage"].used_gradients == 9 * (batch_size - 1)
-            assert loss.metrics["gradient_usage"].wasted_gradients == 1 * (
-                batch_size - 1
-            )
+            assert loss.metrics["gradient_usage"].wasted_gradients == 1 * (batch_size - 1)
 
         elif step == 25:
             # Env 0 third episode from steps 5 -> 15
@@ -191,9 +193,7 @@ def test_with_controllable_episode_lengths(batch_size: int, monkeypatch):
             # Same pattern as step 20 above
             assert loss.loss == 10.0 * (batch_size - 1), step
             assert loss.metrics["gradient_usage"].used_gradients == 9 * (batch_size - 1)
-            assert loss.metrics["gradient_usage"].wasted_gradients == 1 * (
-                batch_size - 1
-            )
+            assert loss.metrics["gradient_usage"].wasted_gradients == 1 * (batch_size - 1)
 
         elif step > 0 and step % 5 == 0:
             # Same pattern as step 25 above
@@ -207,7 +207,7 @@ def test_with_controllable_episode_lengths(batch_size: int, monkeypatch):
 
 @pytest.mark.parametrize("batch_size", [1, 2, 5])
 def test_loss_is_nonzero_at_episode_end(batch_size: int):
-    """ Test that when stepping through the env, when the episode ends, a
+    """Test that when stepping through the env, when the episode ends, a
     non-zero loss is returned by the output head.
     """
     with gym.make("CartPole-v0") as temp_env:
@@ -290,8 +290,7 @@ def test_loss_is_nonzero_at_episode_end(batch_size: int):
 
 @pytest.mark.parametrize("batch_size", [1, 2, 5])
 def test_done_is_sometimes_True_when_iterating_through_env(batch_size: int):
-    """ Test that when *iterating* through the env, done is sometimes 'True'.
-    """
+    """Test that when *iterating* through the env, done is sometimes 'True'."""
     env = gym.vector.make("CartPole-v0", num_envs=batch_size, asynchronous=True)
     env = AddDoneToObservation(env)
     env = ConvertToFromTensors(env)
@@ -307,7 +306,7 @@ def test_done_is_sometimes_True_when_iterating_through_env(batch_size: int):
 
 @pytest.mark.parametrize("batch_size", [1, 2, 5])
 def test_loss_is_nonzero_at_episode_end_iterate(batch_size: int):
-    """ Test that when *iterating* through the env (active-dataloader style),
+    """Test that when *iterating* through the env (active-dataloader style),
     when the episode ends, a non-zero loss is returned by the output head.
     """
     with gym.make("CartPole-v0") as temp_env:
@@ -429,10 +428,7 @@ def test_buffers_are_stacked_correctly(monkeypatch):
 
         n_observations = len(inputs)
 
-        assert (
-            inputs.flatten().tolist()
-            == (env_index + np.arange(n_observations)).tolist()
-        )
+        assert inputs.flatten().tolist() == (env_index + np.arange(n_observations)).tolist()
         if done:
             # Unfortunately, we don't get the final state, because of how
             # VectorEnv works atm.
@@ -460,7 +456,9 @@ def test_buffers_are_stacked_correctly(monkeypatch):
         # BaseModel:
 
         forward_pass = ForwardPass(
-            observations=observations, representations=representations, actions=actions,
+            observations=observations,
+            representations=representations,
+            actions=actions,
         )
 
         action_np = actions.actions_np
@@ -486,10 +484,7 @@ def test_buffers_are_stacked_correctly(monkeypatch):
 
             if step >= batch_size:
                 if step + env_index == targets[env_index]:
-                    assert (
-                        len(representations_buffer) == 1
-                        and not output_head.done[env_index]
-                    )
+                    assert len(representations_buffer) == 1 and not output_head.done[env_index]
                 # if env_index == step - batch_size:
                 continue
             assert len(representations_buffer) == step + 1
@@ -525,9 +520,7 @@ def test_sanity_check_cartpole_done_vector():
     """TODO: Sanity check, make sure that cartpole has done=True at some point
     when using a BatchedEnv.
     """
-    env = make_batched_env(
-        "CartPole-v0", batch_size=5, wrappers=[PixelObservationWrapper]
-    )
+    env = make_batched_env("CartPole-v0", batch_size=5, wrappers=[PixelObservationWrapper])
     env = AddDoneToObservation(env)
     obs = env.reset()
 

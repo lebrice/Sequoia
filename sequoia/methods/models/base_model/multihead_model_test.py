@@ -2,9 +2,8 @@
 """
 # from sequoia.conftest import config
 from collections import defaultdict
-from typing import Dict, List, Tuple, Type, Optional
+from typing import Dict, List, Optional, Tuple, Type
 
-import gym
 import numpy as np
 import pytest
 import torch
@@ -12,22 +11,15 @@ from continuum import ClassIncremental
 from continuum.datasets import MNIST
 from continuum.tasks import TaskSet
 from gym import spaces
-from gym.spaces.utils import flatdim
-from gym.vector import SyncVectorEnv
-from gym.wrappers import TimeLimit
 from torch import Tensor, nn
-from torch.utils.data import DataLoader, Dataset
 
 from sequoia.common import Loss
 from sequoia.common.config import Config
-from sequoia.common.gym_wrappers import MultiTaskEnvironment
 from sequoia.methods.base_method import BaseMethod
 from sequoia.methods.models.forward_pass import ForwardPass
 from sequoia.methods.models.output_heads.rl.episodic_a2c import EpisodicA2C
-from sequoia.settings import ClassIncrementalSetting, TraditionalRLSetting, RLSetting
-from sequoia.settings.base import Environment
+from sequoia.settings import ClassIncrementalSetting, RLSetting, TraditionalRLSetting
 from sequoia.settings.rl import IncrementalRLSetting
-from sequoia.utils import take
 
 from .base_model import BaseModel
 from .multihead_model import MultiHeadModel, OutputHead, get_task_indices
@@ -35,7 +27,7 @@ from .multihead_model import MultiHeadModel, OutputHead, get_task_indices
 
 @pytest.fixture()
 def mixed_samples(config: Config):
-    """ Fixture that produces some samples from each task. """
+    """Fixture that produces some samples from each task."""
     dataset = MNIST(config.data_dir, download=True, train=True)
     datasets: List[TaskSet] = ClassIncremental(dataset, nb_tasks=5)
     n_samples_per_task = 10
@@ -55,7 +47,7 @@ class MockOutputHead(OutputHead):
         self.name = f"task_{task_id}"
 
     def forward(self, observations, representations) -> Tensor:  # type: ignore
-        """ This mock forward just creates an action that is related to the observation
+        """This mock forward just creates an action that is related to the observation
         and the task id for this output head.
         """
         x: Tensor = observations.x
@@ -66,9 +58,8 @@ class MockOutputHead(OutputHead):
         actions = [x_i.mean() * self.task_id for x_i in x]
         actions = torch.stack(actions)
         fake_logits = torch.rand([actions.shape[0], self.action_space.n])
-        from sequoia.methods.models.output_heads.classification_head import (
-            ClassificationOutput,
-        )
+        from sequoia.methods.models.output_heads.classification_head import ClassificationOutput
+
         # assert issubclass(ClassificationOutput, self.Actions)
         # TODO: Ideally self.Actions would already be a subclass of ClassificationActions!
         # return self.Actions(y_pred=actions, logits=fake_logits)
@@ -100,7 +91,7 @@ def test_multiple_tasks_within_same_batch(
     monkeypatch,
     config: Config,
 ):
-    """ TODO: Write out a test that checks that when given a batch with data
+    """TODO: Write out a test that checks that when given a batch with data
     from different tasks, and when the model is multiheaded, it will use the
     right output head for each image.
     """
@@ -142,7 +133,7 @@ def test_multiple_tasks_within_same_batch(
 
 
 def test_multitask_rl_bug_without_PL(monkeypatch):
-    """ TODO: on_task_switch is called on the new observation, but we need to produce a
+    """TODO: on_task_switch is called on the new observation, but we need to produce a
     loss for the output head that we were just using!
     """
     # NOTE: Tasks don't have anything to do with the task schedule. They are sampled at
@@ -240,12 +231,12 @@ def test_multitask_rl_bug_without_PL(monkeypatch):
                 break
     # assert False, losses
 
+
 # @pytest.mark.xfail(
 #     reason=f"Not quite sure why, but getting weird device bug here *sometimes*:"
 # )
 def test_multitask_rl_bug_with_PL(monkeypatch, config: Config):
-    """
-    """
+    """ """
     # NOTE: Tasks don't have anything to do with the task schedule. They are sampled at
     # each episode.
 
@@ -282,8 +273,6 @@ def test_multitask_rl_bug_with_PL(monkeypatch, config: Config):
     model.train()
     assert not model.automatic_optimization
 
-    from pytorch_lightning import Trainer
-
     # Import this and use it to create the Trainer, rather than creating the Trainer
     # directly, so we don't get the same bug (due to with_is_last in PL) from the
     # DataConnector.
@@ -295,7 +284,9 @@ def test_multitask_rl_bug_with_PL(monkeypatch, config: Config):
         trainer_config = TrainerConfig(fast_dev_run=True)
     else:
         trainer_config = TrainerConfig(
-            fast_dev_run=True, gpus=0, distributed_backend=None,
+            fast_dev_run=True,
+            gpus=0,
+            distributed_backend=None,
         )
 
     trainer = trainer_config.make_trainer(config=cpu_config)
@@ -305,10 +296,10 @@ def test_multitask_rl_bug_with_PL(monkeypatch, config: Config):
         temp_env.seed(123)
         trainer.fit(model, train_dataloader=temp_env)
 
-    #NOTE: If we don't clear the buffers, there is a bug because the things that get put
+    # NOTE: If we don't clear the buffers, there is a bug because the things that get put
     # in buffers aren't on the same device as later.
     model.output_head.clear_all_buffers()
-    
+
     optimizer = torch.optim.Adam(model.parameters(), lr=0.01)
     episodes = 0
     max_episodes = 5
@@ -325,7 +316,6 @@ def test_multitask_rl_bug_with_PL(monkeypatch, config: Config):
         # envs, but only on the outer env.
         for step, obs in enumerate(env):
             assert isinstance(obs, RLSetting.Observations)
-            from sequoia.utils.generic_functions import to_tensor
 
             print(step, env.is_closed())
             forward_pass = model.training_step(batch=obs, batch_idx=step)
@@ -392,7 +382,7 @@ def test_task_inference_sl(
     indices: slice,
     config: Config,
 ):
-    """ TODO: Write out a test that checks that when given a batch with data
+    """TODO: Write out a test that checks that when given a batch with data
     from different tasks, and when the model is multiheaded, it will use the
     right output head for each image.
     """
@@ -487,15 +477,13 @@ def test_task_inference_multi_task_sl(config: Config):
     method = BaseMethod(config=config, max_epochs=1)
     setting.setup()
     setting.train_datasets = [
-        subset(dataset, list(range(dataset_length)))
-        for dataset in setting.train_datasets
+        subset(dataset, list(range(dataset_length))) for dataset in setting.train_datasets
     ]
     setting.val_datasets = [
         subset(dataset, list(range(dataset_length))) for dataset in setting.val_datasets
     ]
     setting.test_datasets = [
-        subset(dataset, list(range(dataset_length)))
-        for dataset in setting.test_datasets
+        subset(dataset, list(range(dataset_length))) for dataset in setting.test_datasets
     ]
 
     results = setting.apply(method)

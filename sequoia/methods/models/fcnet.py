@@ -1,23 +1,23 @@
 """ TODO: Take out the dense network from the OutputHead. """
-from torch import nn
-from typing import ClassVar, Dict, Type, List
-from simple_parsing import list_field
 from dataclasses import dataclass
-from sequoia.utils import Parseable, Serializable
-from sequoia.common.hparams import HyperParameters, uniform, log_uniform, categorical
-from typing import overload, Union, Optional
+from typing import ClassVar, Dict, List, Optional, Type, Union, overload
+
+from torch import nn
+
+from sequoia.common.hparams import HyperParameters, categorical, uniform
+
 
 class FCNet(nn.Sequential):
-    """ Fully-connected network. """
+    """Fully-connected network."""
 
     @dataclass
     class HParams(HyperParameters):
-        """ Hyper-parameters of a fully-connected network. """
-        
+        """Hyper-parameters of a fully-connected network."""
+
         available_activations: ClassVar[Dict[str, Type[nn.Module]]] = {
             "relu": nn.ReLU,
             "tanh": nn.Tanh,
-            "elu": nn.ELU, # No idea what these do, but hey, they are available!
+            "elu": nn.ELU,  # No idea what these do, but hey, they are available!
             "gelu": nn.GELU,
             "relu6": nn.ReLU6,
         }
@@ -25,7 +25,7 @@ class FCNet(nn.Sequential):
         hidden_layers: int = uniform(0, 10, default=3)
         # Number of neurons in each hidden layer of the output head.
         # If a single value is given, than each of the `hidden_layers` layers
-        # will have that number of neurons. 
+        # will have that number of neurons.
         # If `n > 1` values are given, then `hidden_layers` must either be 0 or
         # `n`, otherwise a RuntimeError will be raised.
         hidden_neurons: Union[int, List[int]] = uniform(16, 512, default=64)
@@ -64,12 +64,21 @@ class FCNet(nn.Sequential):
                 )
 
     @overload
-    def __init__(self, in_features: int, out_features: int, hparams: HParams=None): ...
-        
+    def __init__(self, in_features: int, out_features: int, hparams: HParams = None):
+        ...
+
     @overload
-    def __init__(self, in_features: int, out_features: int, hidden_layers: int=1, hidden_neurons: List[int]=None, activation: Type[nn.Module]=nn.Tanh): ...
-    
-    def __init__(self, in_features: int, out_features: int, hparams: HParams=None, **kwargs):
+    def __init__(
+        self,
+        in_features: int,
+        out_features: int,
+        hidden_layers: int = 1,
+        hidden_neurons: List[int] = None,
+        activation: Type[nn.Module] = nn.Tanh,
+    ):
+        ...
+
+    def __init__(self, in_features: int, out_features: int, hparams: HParams = None, **kwargs):
         self.in_features = in_features
         self.out_features = out_features
         self.hparams = hparams or self.HParams(**kwargs)
@@ -82,12 +91,8 @@ class FCNet(nn.Sequential):
                 hidden_layers.append(nn.Dropout(p=self.hparams.dropout_prob))
             hidden_layers.append(nn.Linear(in_features, out_features))
             hidden_layers.append(self.hparams.activation())
-            in_features = out_features # next input size is output size of prev.
-        super().__init__(
-            nn.Flatten(),
-            *hidden_layers,
-            nn.Linear(in_features, output_size)
-        )
+            in_features = out_features  # next input size is output size of prev.
+        super().__init__(nn.Flatten(), *hidden_layers, nn.Linear(in_features, output_size))
 
     # TODO: IDEA: use @singledispatchmethod to add a `forward` implementation
     # for mapping input space to output space.

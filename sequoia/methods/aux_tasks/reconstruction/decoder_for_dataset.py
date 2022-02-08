@@ -1,12 +1,8 @@
-from typing import Dict, Type, Union, Tuple
+from typing import Dict, Tuple, Type, Union
 
-import torch
 from torch import nn
 
 from .decoders import CifarDecoder, ImageNetDecoder, MnistDecoder
-
-import functools
-
 
 # Dict mapping from image (height, width) to the type of decoder to use.
 # TODO: Add some more decoders for other image datasets/shapes.
@@ -15,6 +11,7 @@ registered_decoders: Dict[Tuple[int, int], Type[nn.Module]] = {
     (32, 32): CifarDecoder,
     (224, 224): ImageNetDecoder,
 }
+
 
 def get_decoder_class_for_dataset(input_shape: Union[Tuple[int, int, int]]) -> Type[nn.Module]:
     assert len(input_shape) == 3, input_shape

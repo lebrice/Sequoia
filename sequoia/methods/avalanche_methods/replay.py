@@ -5,32 +5,24 @@ See `avalanche.training.plugins.replay.ReplayPlugin` or
 """
 import warnings
 from dataclasses import dataclass
-from typing import ClassVar, Type, Optional
+from typing import ClassVar, Optional, Type
 
-from avalanche.training.strategies import Replay, BaseStrategy
+from avalanche.training.plugins.replay import (
+    ExperienceBalancedStoragePolicy as ExperienceBalancedStoragePolicy_,
+)
+from avalanche.training.plugins.replay import ReplayPlugin as ReplayPlugin_
+from avalanche.training.plugins.replay import StoragePolicy
+from avalanche.training.strategies import BaseStrategy, Replay
 from simple_parsing.helpers.hparams import uniform
 
 from sequoia.methods import register_method
-from sequoia.settings.sl import (
-    ClassIncrementalSetting,
-    TaskIncrementalSLSetting,
-    SLSetting,
-)
+from sequoia.settings.sl import SLSetting, TaskIncrementalSLSetting
 
 from .base import AvalancheMethod
 
 
-from avalanche.training.plugins.replay import StoragePolicy
-from avalanche.training.plugins.replay import (
-    ReplayPlugin as ReplayPlugin_,
-    ExperienceBalancedStoragePolicy as ExperienceBalancedStoragePolicy_,
-)
-
-
 class ReplayPlugin(ReplayPlugin_):
-    def __init__(
-        self, mem_size: int = 200, storage_policy: Optional["StoragePolicy"] = None
-    ):
+    def __init__(self, mem_size: int = 200, storage_policy: Optional["StoragePolicy"] = None):
         super().__init__(mem_size=mem_size, storage_policy=storage_policy)
         # "patch" the ExperienceBalanchedStoragePolicy:
         if type(self.storage_policy) is ExperienceBalancedStoragePolicy_:
@@ -58,7 +50,7 @@ class ExperienceBalancedStoragePolicy(ExperienceBalancedStoragePolicy_):
 
         # buffer size should always equal self.mem_size
         len_tot = sum(len(el) for el in self.ext_mem.values())
-        
+
         # TODO: Just disabling the failing assert check for now. Should check if this
         # makes any difference in the performance of the plugin:
         # assert len_tot == self.mem_size
@@ -79,7 +71,7 @@ class ExperienceBalancedStoragePolicy(ExperienceBalancedStoragePolicy_):
 @register_method
 @dataclass
 class ReplayMethod(AvalancheMethod[Replay]):
-    """ Replay strategy from Avalanche.
+    """Replay strategy from Avalanche.
     See Replay plugin for details.
     This strategy does not use task identities.
 
@@ -105,7 +97,8 @@ class ReplayMethod(AvalancheMethod[Replay]):
 
         old_plugin: ReplayPlugin_ = strategy.plugins[plugin_index]
         new_plugin = ReplayPlugin(
-            mem_size=old_plugin.mem_size, storage_policy=old_plugin.storage_policy,
+            mem_size=old_plugin.mem_size,
+            storage_policy=old_plugin.storage_policy,
         )
         strategy.plugins[plugin_index] = new_plugin
         return strategy

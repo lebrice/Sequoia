@@ -1,18 +1,15 @@
 """ Subclass of `spaces.Dict` that allows custom dtypes and uses type annotations.
 """
 import dataclasses
-from inspect import isclass
 from collections import OrderedDict
 from collections.abc import Mapping as MappingABC
-from dataclasses import (
-    fields,
-    is_dataclass,
-)
+from copy import deepcopy
+from dataclasses import fields, is_dataclass
+from inspect import isclass
 from typing import (
     Any,
     ClassVar,
     Dict,
-    Generic,
     Iterable,
     List,
     Mapping,
@@ -24,14 +21,12 @@ from typing import (
     get_type_hints,
 )
 
-from copy import deepcopy
-import numpy as np
 import gym
+import numpy as np
 from gym import Space, spaces
 from gym.vector.utils import batch_space, concatenate
 
 from .sparse import batch_space, concatenate
-
 
 try:
     from typing import get_origin
@@ -47,7 +42,7 @@ Dataclass = TypeVar("Dataclass")
 
 
 class TypedDictSpace(spaces.Dict, Space[M]):
-    """ Subclass of `spaces.Dict` that allows custom dtypes and uses type annotations.
+    """Subclass of `spaces.Dict` that allows custom dtypes and uses type annotations.
 
     ## Examples:
 
@@ -137,9 +132,7 @@ class TypedDictSpace(spaces.Dict, Space[M]):
      [4 4]], (4, 2), int64))
     """
 
-    def __init__(
-        self, spaces: Mapping[str, Space] = None, dtype: Type[M] = dict, **spaces_kwargs
-    ):
+    def __init__(self, spaces: Mapping[str, Space] = None, dtype: Type[M] = dict, **spaces_kwargs):
         """Creates the TypedDict space.
 
         Can either pass a dict of spaces, or pass the spaces as keyword arguments.
@@ -195,9 +188,7 @@ class TypedDictSpace(spaces.Dict, Space[M]):
                 else:
                     origin = get_origin(type_annotation)
                     is_space = (
-                        origin is not None
-                        and isclass(origin)
-                        and issubclass(origin, gym.Space)
+                        origin is not None and isclass(origin) and issubclass(origin, gym.Space)
                     )
 
                 # NOTE: emulate a 'required argument' when there is a type
@@ -221,9 +212,7 @@ class TypedDictSpace(spaces.Dict, Space[M]):
         # regular dict.
         spaces = OrderedDict()  # Need to use this for 3.6.x
         spaces.update(spaces_from_annotations)
-        spaces.update(
-            spaces_from_args
-        )  # Arguments overwrite the spaces from the annotations.
+        spaces.update(spaces_from_args)  # Arguments overwrite the spaces from the annotations.
 
         if not spaces:
             raise TypeError(
@@ -325,8 +314,6 @@ class TypedDictSpace(spaces.Dict, Space[M]):
         return super().__eq__(other)
 
 
-
-
 @batch_space.register(TypedDictSpace)
 def _batch_typed_dict_space(space: TypedDictSpace, n: int = 1) -> spaces.Dict:
     return type(space)(
@@ -348,3 +335,24 @@ def _concatenate_typed_dicts(
         }
     )
 
+from sequoia.utils.generic_functions.to_from_tensor import from_tensor, to_tensor
+T = TypeVar("T")
+
+@from_tensor.register(TypedDictSpace)
+def _(space: TypedDictSpace, sample: Union[T, Mapping]) -> T:
+    return space.dtype(
+        **{key: from_tensor(sub_space, sample[key]) for key, sub_space in space.spaces.items()}
+    )
+import torch
+@to_tensor.register(TypedDictSpace)
+def _(
+    space: TypedDictSpace[T],
+    sample: Dict[str, Union[np.ndarray, Any]],
+    device: torch.device = None,
+) -> T:
+    return space.dtype(
+        **{
+            key: to_tensor(subspace, sample=sample[key], device=device)
+            for key, subspace in space.items()
+        }
+    )

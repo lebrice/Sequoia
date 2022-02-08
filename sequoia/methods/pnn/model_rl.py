@@ -1,7 +1,8 @@
+from typing import List
+
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from typing import List
 from torchvision import transforms
 
 from .layers import PNNConvLayer, PNNLinearBlock
@@ -68,9 +69,7 @@ class PnnA2CAgent(nn.Module):
             for i, column in enumerate(self.columns_conv):
                 outputs.append(column[5](column[4](inputs[: i + 1])))
 
-            inputs_critic = [
-                c[6](outputs[i]).view(1, -1) for i, c in enumerate(self.columns_conv)
-            ]
+            inputs_critic = [c[6](outputs[i]).view(1, -1) for i, c in enumerate(self.columns_conv)]
             inputs_actor = inputs_critic[:]
 
             outputs_critic = []
@@ -98,17 +97,11 @@ class PnnA2CAgent(nn.Module):
             sizes = [num_inputs, 32, 64, self.hidden_size]
             modules_conv = nn.Sequential()
 
-            modules_conv.add_module(
-                "Conv1", PNNConvLayer(task_id, 0, sizes[0], sizes[1])
-            )
+            modules_conv.add_module("Conv1", PNNConvLayer(task_id, 0, sizes[0], sizes[1]))
             modules_conv.add_module("MaxPool1", nn.MaxPool2d(3))
-            modules_conv.add_module(
-                "Conv2", PNNConvLayer(task_id, 1, sizes[1], sizes[2])
-            )
+            modules_conv.add_module("Conv2", PNNConvLayer(task_id, 1, sizes[1], sizes[2]))
             modules_conv.add_module("MaxPool2", nn.MaxPool2d(3))
-            modules_conv.add_module(
-                "Conv3", PNNConvLayer(task_id, 2, sizes[2], sizes[3])
-            )
+            modules_conv.add_module("Conv3", PNNConvLayer(task_id, 2, sizes[2], sizes[3]))
             modules_conv.add_module("MaxPool3", nn.MaxPool2d(3))
             modules_conv.add_module("globavgpool2d", nn.AdaptiveAvgPool2d((1, 1)))
             self.columns_conv.append(modules_conv)

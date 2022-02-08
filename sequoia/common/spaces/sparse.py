@@ -5,12 +5,11 @@ As a result, `None` is always a valid sample from any Sparse space.
 """
 import multiprocessing as mp
 from ctypes import c_bool
+
 # from gym.spaces.utils import flatdim, flatten
 from functools import singledispatch
-from multiprocessing import Array, Value
 from multiprocessing.context import BaseContext
-from typing import (Any, Dict, Generic, Optional, Sequence, Tuple, TypeVar,
-                    Union)
+from typing import Any, Dict, Optional, Sequence, Tuple, Union
 
 import gym
 import gym.spaces.utils
@@ -19,8 +18,7 @@ import gym.vector.utils.shared_memory
 import numpy as np
 import torch
 from gym import spaces
-from gym.vector.utils import (batch_space, concatenate, create_empty_array,
-                              create_shared_memory)
+from gym.vector.utils import batch_space, concatenate
 from gym.vector.utils.numpy_utils import concatenate
 from torch import Tensor
 
@@ -28,7 +26,7 @@ from .space import Space, T
 
 
 class Sparse(Space[Optional[T]]):
-    """ Space which returns a value of `None` `sparsity`% of the time when sampled.
+    """Space which returns a value of `None` `sparsity`% of the time when sampled.
 
     `None` is also a valid sample of this space in addition to those of the wrapped space.
 
@@ -114,9 +112,9 @@ def _is_singledispatch(module_function):
 
 
 def register_sparse_variant(module, module_fn_name: str):
-    """ Converts a function from the given module to a singledispatch callable,
+    """Converts a function from the given module to a singledispatch callable,
     and registers the wrapped function as the callable to use for Sparse spaces.
-    
+
     The module function must have the space as the first argument for this to
     work.
     """
@@ -166,9 +164,7 @@ def create_empty_array_sparse(space: Sparse, n=1, fn=np.zeros) -> np.ndarray:
 
 
 @register_sparse_variant(gym.vector.utils.shared_memory, "create_shared_memory")
-def create_shared_memory_for_sparse_space(
-    space: Sparse, n: int = 1, ctx: BaseContext = mp
-):
+def create_shared_memory_for_sparse_space(space: Sparse, n: int = 1, ctx: BaseContext = mp):
     # The shared memory should be something that can accomodate either 'None'
     # or a sample from the space. Therefore we should probably just create the
     # array for the base space, but then how would store a 'None' value in that
@@ -178,9 +174,7 @@ def create_shared_memory_for_sparse_space(
 
     return {
         "is_none": ctx.Array(c_bool, np.zeros(n, dtype=np.bool)),
-        "value": gym.vector.utils.shared_memory.create_shared_memory(
-            space.base, n, ctx
-        ),
+        "value": gym.vector.utils.shared_memory.create_shared_memory(space.base, n, ctx),
     }
 
 
@@ -212,8 +206,7 @@ def write_to_shared_memory(
         return gym.vector.utils.shared_memory(index, value, shared_memory, space)
 
 
-from gym.vector.utils.shared_memory import \
-    read_from_shared_memory as read_from_shared_memory_
+from gym.vector.utils.shared_memory import read_from_shared_memory as read_from_shared_memory_
 
 
 @register_sparse_variant(gym.vector.utils.shared_memory, "read_from_shared_memory")
@@ -233,9 +226,7 @@ def read_from_shared_memory(
         print(f"Read values from space: {read_values}")
         print(f"is_none array: {list(is_none_array)}")
         # assert False, (list(is_none_array), read_values, space)
-        values = [
-            None if is_none_array[index] else read_values[index] for index in range(n)
-        ]
+        values = [None if is_none_array[index] else read_values[index] for index in range(n)]
         print(f"resulting values: {values}")
         return values
         return read_from_shared_memory_(shared_memory, space.base, n)
@@ -257,15 +248,15 @@ def batch_sparse_space(space: Sparse, n: int = 1) -> gym.Space:
     # assert _is_singledispatch(batch_space)
 
     sparsity = space.sparsity
-    
+
     # NOTE: It is tempting to just make this more consistent by always returning the same kind of
-    # result, because it's nice to avoid dealing with arrays like `np.array([None, 1, ])` 
-    # or, even worse, `np.array([None, None])` which are not fun. 
+    # result, because it's nice to avoid dealing with arrays like `np.array([None, 1, ])`
+    # or, even worse, `np.array([None, None])` which are not fun.
     # *HOWEVER*, it's not a good idea! As an example, when using VectorEnvs, the spaces are just to
     # represent what the observations of the VectorEnv will look like. Since each env has 'its own'
     # Sparse[Discrete] space, and they are "sampled" independantly, then if 0 < sparsity < 1 we WILL
     # have some entries be None and other not. Therefore, it's better in that case to just return
-    # the tuple of sparse spaces. 
+    # the tuple of sparse spaces.
     # return Sparse(batch_space(space.base, n), sparsity=sparsity)
 
     # TODO: Use something like this eventually. There are still problem with to_tensor.
@@ -333,6 +324,7 @@ def concatenate_sparse_items(
 
 
 from sequoia.utils.generic_functions.to_from_tensor import to_tensor
+
 
 @to_tensor.register(Sparse)
 def sparse_sample_to_tensor(

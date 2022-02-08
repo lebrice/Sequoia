@@ -1,14 +1,8 @@
-from sequoia.common.spaces.image import Image
-from gym import spaces, Space
-import torch
-from torch import nn, Tensor
-import numpy as np
-from typing import List, Tuple
-from sequoia.common.layers import Conv2d, Sequential
+from torch import Tensor, nn
 
 
 class SimpleConvNet(nn.Module):
-    def __init__(self, in_channels: int=3, n_classes: int = 10):
+    def __init__(self, in_channels: int = 3, n_classes: int = 10):
         super().__init__()
 
         self.features = nn.Sequential(
@@ -20,11 +14,11 @@ class SimpleConvNet(nn.Module):
             nn.ReLU(inplace=True),
             nn.Conv2d(16, 16, kernel_size=3, stride=1, padding=1, bias=False),
             nn.BatchNorm2d(16),
-            nn.AdaptiveAvgPool2d(output_size=(8, 8)), # [16, 8, 8]
-            nn.Conv2d(16, 32, kernel_size=3, stride=1, padding=0, bias=False), # [32, 6, 6]
-            nn.BatchNorm2d(32), 
+            nn.AdaptiveAvgPool2d(output_size=(8, 8)),  # [16, 8, 8]
+            nn.Conv2d(16, 32, kernel_size=3, stride=1, padding=0, bias=False),  # [32, 6, 6]
+            nn.BatchNorm2d(32),
             nn.ReLU(inplace=True),
-            nn.Conv2d(32, 32, kernel_size=3, stride=1, padding=0, bias=False), # [32, 4, 4]
+            nn.Conv2d(32, 32, kernel_size=3, stride=1, padding=0, bias=False),  # [32, 4, 4]
             nn.BatchNorm2d(32),
             nn.Flatten(),
         )

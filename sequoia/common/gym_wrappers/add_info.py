@@ -1,8 +1,8 @@
 """ Wrapper that adds the 'info' as a part of the environment's observations.
 """
-from dataclasses import dataclass, is_dataclass, replace
+from dataclasses import is_dataclass, replace
 from functools import singledispatch
-from typing import Any, Dict, Sequence, Tuple, TypeVar, Union
+from typing import Dict, Sequence, Tuple, TypeVar, Union
 
 import gym
 import numpy as np
@@ -11,7 +11,7 @@ from gym.vector import VectorEnv
 from gym.vector.utils import batch_space
 from torch import Tensor
 
-from .utils import IterableWrapper, has_wrapper
+from .utils import IterableWrapper
 
 Info = TypeVar("Info", bound=Union[Dict, Sequence[Dict]])
 K = TypeVar("K")
@@ -20,18 +20,17 @@ V = TypeVar("V")
 
 @singledispatch
 def add_info(observation, info):
-    """ Generic function that adds the provided `info` value to an observation.
+    """Generic function that adds the provided `info` value to an observation.
     Returns the modified observation, which might not always be of the same type.
 
-    NOTE: Can also be applied to spaces. 
+    NOTE: Can also be applied to spaces.
     """
     if is_dataclass(observation):
         # TODO: This assumes that the dataclass already has the 'info' field, if
         # that dataclass is frozen.
         return replace(observation, info=info)
     raise NotImplementedError(
-        f"Function add_info has no handler registered for inputs of type "
-        f"{type(observation)}."
+        f"Function add_info has no handler registered for inputs of type " f"{type(observation)}."
     )
 
 
@@ -55,29 +54,32 @@ def _add_info_to_dict_obs(observation: Dict[K, V], info: Info) -> Dict[K, Union[
 
 @add_info.register(spaces.Space)
 def add_info_to_space(observation: Space, info: Space) -> Space:
-    """ Adds the space of the 'info' value from the env to this observation
+    """Adds the space of the 'info' value from the env to this observation
     space.
     """
     raise NotImplementedError(
-        f"No handler registered for spaces of type {type(observation)}. "
-        f"(value = {observation})"
+        f"No handler registered for spaces of type {type(observation)}. " f"(value = {observation})"
     )
 
 
 @add_info.register
 def _add_info_to_box_space(observation: spaces.Box, info: Space) -> spaces.Tuple:
-    return spaces.Tuple([
-        observation,
-        info,
-    ])
+    return spaces.Tuple(
+        [
+            observation,
+            info,
+        ]
+    )
 
 
 @add_info.register
 def _add_info_to_tuple_space(observation: spaces.Tuple, info: Space) -> spaces.Tuple:
-    return spaces.Tuple([
-        *observation.spaces,
-        info,
-    ])
+    return spaces.Tuple(
+        [
+            *observation.spaces,
+            info,
+        ]
+    )
 
 
 @add_info.register
@@ -93,12 +95,10 @@ class AddInfoToObservation(IterableWrapper):
     # access to the final observation (which gets stored in the info dict at key
     # 'final_state'.
     # Do we through?
-    
+
     # TODO: Should we also add the 'final state' to the observations as well?
 
-    def __init__(self,
-                 env: gym.Env,
-                 info_space: spaces.Space = None):
+    def __init__(self, env: gym.Env, info_space: spaces.Space = None):
         super().__init__(env)
         self.is_vectorized = isinstance(env.unwrapped, VectorEnv)
         # TODO: Should we make 'info_space' mandatory here?

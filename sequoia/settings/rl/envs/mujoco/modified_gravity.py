@@ -2,6 +2,7 @@ import warnings
 from typing import ClassVar
 
 from gym.envs.mujoco import MujocoEnv
+
 from sequoia.utils.logging_utils import get_logger
 
 logger = get_logger(__file__)
@@ -19,9 +20,7 @@ class ModifiedGravityEnv(MujocoEnv):
     # new environment for each task.
     CAN_BE_UPDATED_IN_PLACE: ClassVar[bool] = True
 
-    def __init__(
-        self, model_path: str, frame_skip: int, gravity: float = -9.81, **kwargs
-    ):
+    def __init__(self, model_path: str, frame_skip: int, gravity: float = -9.81, **kwargs):
         super().__init__(model_path=model_path, frame_skip=frame_skip, **kwargs)
         # self.model.opt.gravity = (mujoco_py.mjtypes.c_double * 3)(*[0., 0., gravity])
         if gravity != -9.81:
@@ -50,5 +49,4 @@ class ModifiedGravityEnv(MujocoEnv):
                 )
             )
             # IDEA: always convert to negative value in the setter?
-            pass
         self.gravity = value

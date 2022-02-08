@@ -12,7 +12,7 @@ from gym import spaces
 from simple_parsing import mutable_field
 from stable_baselines3.common.on_policy_algorithm import OnPolicyAlgorithm
 
-from sequoia.common.hparams import uniform, log_uniform
+from sequoia.common.hparams import log_uniform, uniform
 from sequoia.settings.rl import ContinualRLSetting
 from sequoia.utils.logging_utils import get_logger
 
@@ -22,11 +22,11 @@ logger = get_logger(__file__)
 
 
 class OnPolicyModel(OnPolicyAlgorithm, ABC):
-    """ Tweaked version of the OnPolicyAlgorithm from SB3. """
+    """Tweaked version of the OnPolicyAlgorithm from SB3."""
 
     @dataclass
     class HParams(SB3BaseHParams):
-        """ Hyper-parameters common to all on-policy algos from SB3. """
+        """Hyper-parameters common to all on-policy algos from SB3."""
 
         # learning rate for the optimizer, it can be a function of the current
         # progress remaining (from 1 to 0)
@@ -96,7 +96,7 @@ class OnPolicyModel(OnPolicyAlgorithm, ABC):
 
 @dataclass
 class OnPolicyMethod(StableBaselines3Method, ABC):
-    """ Method that uses the A2C model from stable-baselines3. """
+    """Method that uses the A2C model from stable-baselines3."""
 
     Model: ClassVar[Type[OnPolicyModel]] = OnPolicyModel
 
@@ -126,14 +126,10 @@ class OnPolicyMethod(StableBaselines3Method, ABC):
                 self.train_steps_per_task,
                 setting.steps_per_phase - self.hparams.n_steps - 1,
             )
-            logger.info(
-                f"Limitting training steps per task to {self.train_steps_per_task}"
-            )
+            logger.info(f"Limitting training steps per task to {self.train_steps_per_task}")
 
     def create_model(self, train_env: gym.Env, valid_env: gym.Env) -> OnPolicyModel:
-        logger.info(
-            "Creating model with hparams: \n" + self.hparams.dumps_json(indent="\t")
-        )
+        logger.info("Creating model with hparams: \n" + self.hparams.dumps_json(indent="\t"))
         return self.Model(env=train_env, **self.hparams.to_dict())
 
     def fit(self, train_env: gym.Env, valid_env: gym.Env):
@@ -143,11 +139,12 @@ class OnPolicyMethod(StableBaselines3Method, ABC):
         self, observations: ContinualRLSetting.Observations, action_space: spaces.Space
     ) -> ContinualRLSetting.Actions:
         return super().get_actions(
-            observations=observations, action_space=action_space,
+            observations=observations,
+            action_space=action_space,
         )
 
     def on_task_switch(self, task_id: Optional[int]) -> None:
-        """ Called when switching tasks in a CL setting.
+        """Called when switching tasks in a CL setting.
 
         If task labels are available, `task_id` will correspond to the index of
         the new task. Otherwise, if task labels aren't available, `task_id` will
@@ -158,7 +155,7 @@ class OnPolicyMethod(StableBaselines3Method, ABC):
         super().on_task_switch(task_id=task_id)
 
     def clear_buffers(self):
-        """ Clears out the experience buffer of the Policy. """
+        """Clears out the experience buffer of the Policy."""
         # I think that's the right way to do it.. not sure.
         if self.model:
             # TODO: These are really interesting methods!
@@ -166,9 +163,7 @@ class OnPolicyMethod(StableBaselines3Method, ABC):
             # self.model.load_replay_buffer
             self.model.rollout_buffer.reset()
 
-    def get_search_space(
-        self, setting: ContinualRLSetting
-    ) -> Mapping[str, Union[str, Dict]]:
+    def get_search_space(self, setting: ContinualRLSetting) -> Mapping[str, Union[str, Dict]]:
         search_space = super().get_search_space(setting)
         if isinstance(setting.action_space, spaces.Discrete):
             # From stable_baselines3/common/base_class.py", line 170:

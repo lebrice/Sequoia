@@ -6,35 +6,36 @@ in shape resulting from the transforms, à-la-Tensorflow.
 
 """
 
-from dataclasses import dataclass
 from enum import Enum
 from typing import Any, Callable, List, Tuple, TypeVar, Union
 
 import gym
-import numpy as np
 import torch
-from gym import spaces
-from torch import Tensor
+from simple_parsing.helpers.serialization.encoding import encode
 from torchvision.transforms import Compose as ComposeBase
 from torchvision.transforms import RandomGrayscale
-from torchvision.transforms import ToTensor as ToTensor_
 
 from sequoia.utils.logging_utils import get_logger
-from sequoia.utils.serialization import encode, register_decoding_fn, decode
-
+from sequoia.utils.serialization import decode
 logger = get_logger(__file__)
 
-from .channels import (ChannelsFirst, ChannelsFirstIfNeeded, ChannelsLast,
-                       ChannelsLastIfNeeded, ThreeChannels)
+from .channels import (
+    ChannelsFirst,
+    ChannelsFirstIfNeeded,
+    ChannelsLast,
+    ChannelsLastIfNeeded,
+    ThreeChannels,
+)
+from .resize import Resize
 from .to_tensor import ToTensor
 from .transform import Transform
-from .resize import Resize
+
 # TODO: Add names to the dimensions in the transforms!
 
 # from pl_bolts.models.self_supervised.simclr import (SimCLREvalDataTransform,
 #                                                     SimCLRTrainDataTransform)
 class Transforms(Enum):
-    """ Enum of possible transforms.
+    """Enum of possible transforms.
 
     By having this as an Enum, we can choose which transforms to use from the
     command-line.
@@ -44,6 +45,7 @@ class Transforms(Enum):
     TODO: Add the SimCLR/MOCO/etc transforms from  https://pytorch-lightning-bolts.readthedocs.io/en/latest/transforms.html
     TODO: Figure out a way to let people customize the arguments to the transforms?
     """
+
     three_channels = ThreeChannels()
     to_tensor = ToTensor()
     random_grayscale = RandomGrayscale()
@@ -82,8 +84,9 @@ class Transforms(Enum):
 
 T = TypeVar("T", bound=Callable)
 
+
 class Compose(List[T], ComposeBase):
-    """ Extend the Compose class of torchvision with methods of `list`.
+    """Extend the Compose class of torchvision with methods of `list`.
 
     This can also be passed in members of the `Transforms` enum, which makes it
     possible to do something like this:
@@ -105,6 +108,7 @@ class Compose(List[T], ComposeBase):
     >>> transforms(image_space)
     TensorBox(0.0, 1.0, (3, 32, 32), torch.float32)
     """
+
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         ComposeBase.__init__(self, transforms=self)
@@ -129,6 +133,7 @@ class Compose(List[T], ComposeBase):
 def encode_transforms(v: Transforms) -> str:
     return v.name
 
+
 @decode.register
 def decode_transforms(v: str) -> Transforms:
     return Transforms[v]
@@ -136,4 +141,5 @@ def decode_transforms(v: str) -> Transforms:
 
 if __name__ == "__main__":
     import doctest
+
     doctest.testmod()

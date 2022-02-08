@@ -1,23 +1,19 @@
-import gym
-from .multienv_wrappers import (
-    RoundRobinWrapper,
-    ConcatEnvsWrapper,
-    RandomMultiEnvWrapper,
-)
-from gym.wrappers import TimeLimit
-from sequoia.common.gym_wrappers.episode_limit import EpisodeLimit
-from sequoia.common.gym_wrappers.action_limit import ActionLimit
-from sequoia.common.spaces import TypedDictSpace
-from sequoia.common.gym_wrappers.env_dataset import EnvDataset
-from sequoia.common.spaces import Sparse
+from collections import Counter
+from functools import partial
 from typing import List, Optional
+
+import gym
 import pytest
 from gym import spaces
+from gym.wrappers import TimeLimit
 
-from sequoia.utils.utils import unique_consecutive, unique_consecutive_with_index
-from functools import partial
+from sequoia.common.gym_wrappers.env_dataset import EnvDataset
+from sequoia.common.gym_wrappers.episode_limit import EpisodeLimit
+from sequoia.common.spaces import TypedDictSpace
 from sequoia.settings.rl.continual.make_env import wrap
-from collections import Counter
+from sequoia.utils.utils import unique_consecutive_with_index
+
+from .multienv_wrappers import ConcatEnvsWrapper, RandomMultiEnvWrapper, RoundRobinWrapper
 
 
 class TestMultiEnvWrappers:
@@ -36,7 +32,8 @@ class TestMultiEnvWrappers:
 
         max_episodes_per_task = 5
         envs = [
-            partial(EpisodeLimit,
+            partial(
+                EpisodeLimit,
                 TimeLimit(
                     set_attributes(gym.make("CartPole-v0"), length=0.1 + 0.2 * i),
                     max_episode_steps=10,
@@ -46,13 +43,11 @@ class TestMultiEnvWrappers:
             for i in range(nb_tasks)
         ]
         if not pass_fn_instead_of_env:
-            envs = [
-                env_fn() for env_fn in envs
-            ]
+            envs = [env_fn() for env_fn in envs]
 
         env = ConcatEnvsWrapper(envs, add_task_ids=add_task_ids)
         assert env.nb_tasks == nb_tasks
-        
+
         if add_task_ids:
             assert env.observation_space["task_labels"] == spaces.Discrete(env.nb_tasks)
         lengths = []
@@ -77,7 +72,7 @@ class TestMultiEnvWrappers:
         # NOTE: It's pretty cool that we actually recover something like the task
         # schedule here! :D
         episode_task_schedule = dict(unique_consecutive_with_index(lengths))
-        assert episode_task_schedule == {   
+        assert episode_task_schedule == {
             i * max_episodes_per_task: 0.1 + 0.2 * i for i in range(nb_tasks)
         }
         assert env.is_closed()
@@ -186,7 +181,7 @@ class TestMultiEnvWrappers:
         assert Counter(task_ids) == {i: episodes_per_task for i in range(nb_tasks)}
 
     def test_iteration(self, iterable_env: gym.Env):
-        """ TODO: Interesting bug! Might be because when switching between envs, we're
+        """TODO: Interesting bug! Might be because when switching between envs, we're
         setting the 'cached' attributes onto the unwrapped env, and so when we move to
         another env, we all of a sudden don't have those attributes!
         """
@@ -195,13 +190,13 @@ class TestMultiEnvWrappers:
         add_task_ids = True
         nb_tasks = 5
 
-
         def set_attributes(env: gym.Env, **attributes) -> gym.Env:
             for k, v in attributes.items():
                 setattr(env.unwrapped, k, v)
             return env
 
         from functools import partial
+
         envs = [
             wrap(
                 gym.make("CartPole-v0"),
@@ -209,7 +204,7 @@ class TestMultiEnvWrappers:
                     partial(TimeLimit, max_episode_steps=max_episode_steps),
                     partial(set_attributes, length=0.1 + 0.2 * i),
                     partial(EpisodeLimit, max_episodes=episodes_per_task),
-                ]
+                ],
             )
             for i in range(nb_tasks)
         ]
@@ -229,7 +224,8 @@ class TestMultiEnvWrappers:
         assert env.nb_tasks == nb_tasks
         if add_task_ids:
             assert env.observation_space == TypedDictSpace(
-                x=env.env._envs[0].observation_space, task_labels=spaces.Discrete(nb_tasks),
+                x=env.env._envs[0].observation_space,
+                task_labels=spaces.Discrete(nb_tasks),
             )
         else:
             assert env.observation_space == env.env._envs[0].observation_space
@@ -242,7 +238,7 @@ class TestMultiEnvWrappers:
             env_id = episode // episodes_per_task
 
             episode_task_ids: List[int] = []
-            
+
             for step, obs in enumerate(env):
                 assert obs in env.observation_space
                 print(f"Episode {episode}, Step {step}: obs: {obs}, length: {env.unwrapped.length}")
@@ -271,11 +267,8 @@ class TestMultiEnvWrappers:
         assert len(actual_task_schedule) == nb_tasks
         assert env.is_closed()
 
-
         if add_task_ids:
-            assert task_ids == sum(
-                [[i] * episodes_per_task for i in range(nb_tasks)], []
-            )
+            assert task_ids == sum([[i] * episodes_per_task for i in range(nb_tasks)], [])
             # should have received one per boundary
             assert on_task_switch_received_task_ids == list(range(1, nb_tasks))
             assert Counter(task_ids) == {i: episodes_per_task for i in range(nb_tasks)}
@@ -286,14 +279,10 @@ class TestMultiEnvWrappers:
         from sequoia.common.gym_wrappers.env_dataset import EnvDataset
 
         env_1 = EnvDataset(
-            EpisodeLimit(
-                TimeLimit(gym.make("CartPole-v1"), max_episode_steps=10), max_episodes=5
-            )
+            EpisodeLimit(TimeLimit(gym.make("CartPole-v1"), max_episode_steps=10), max_episodes=5)
         )
         env_2 = EnvDataset(
-            EpisodeLimit(
-                TimeLimit(gym.make("CartPole-v1"), max_episode_steps=10), max_episodes=5
-            )
+            EpisodeLimit(TimeLimit(gym.make("CartPole-v1"), max_episode_steps=10), max_episodes=5)
         )
         chained_env = env_1 + env_2
         assert chained_env._envs[0] is env_1
@@ -304,6 +293,6 @@ class TestMultiEnvWrappers:
 
 
 def test_batched_envs():
-    """ TODO: Not sure how this will work with batched envs, but if it did, we could
+    """TODO: Not sure how this will work with batched envs, but if it did, we could
     allow batch_size > 1 in Discrete, or batched custom envs in Incremental.
     """

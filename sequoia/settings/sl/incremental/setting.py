@@ -21,63 +21,31 @@ Class-Incremental definition from [iCaRL](https://arxiv.org/abs/1611.07725):
 import itertools
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Callable, ClassVar, Dict, List, Optional, Tuple, Type, Union
-import wandb
-import gym
-import numpy as np
-import torch
+from typing import Callable, ClassVar, Dict, List, Optional, Tuple, Type, Union
+
 from continuum import ClassIncremental
-from continuum.datasets import (
-    CIFARFellowship,
-    MNISTFellowship,
-    ImageNet100,
-    ImageNet1000,
-    CIFAR10,
-    CIFAR100,
-    EMNIST,
-    KMNIST,
-    MNIST,
-    QMNIST,
-    FashionMNIST,
-    Synbols,
-)
 from continuum.datasets import _ContinuumDataset
 from continuum.scenarios.base import _BaseScenario
-from continuum.tasks import split_train_val
-from gym import Space, spaces
-from simple_parsing import choice, field, list_field
+from simple_parsing import choice, field
 from torch import Tensor
-from torch.utils.data import ConcatDataset, Dataset
+from torch.utils.data import Dataset
 
+import wandb
 from sequoia.common.config import Config
 from sequoia.common.gym_wrappers import TransformObservation
-from sequoia.settings.assumptions.incremental import (
-    IncrementalAssumption,
-    IncrementalResults,
-)
-from sequoia.settings.base import Method, Results
-from sequoia.utils import get_logger
-
+from sequoia.settings.assumptions.incremental import IncrementalAssumption, IncrementalResults
+from sequoia.settings.base import Method
+from sequoia.settings.rl.wrappers import HideTaskLabelsWrapper
+from sequoia.settings.sl.continual.wrappers import relabel
 from sequoia.settings.sl.environment import Actions, PassiveEnvironment, Rewards
 from sequoia.settings.sl.setting import SLSetting
-from sequoia.settings.sl.continual import ContinualSLSetting
-from sequoia.settings.sl.continual.wrappers import relabel
 from sequoia.settings.sl.wrappers import MeasureSLPerformanceWrapper
-from sequoia.settings.rl.wrappers import HideTaskLabelsWrapper
-from continuum.tasks import concat
+from sequoia.utils import get_logger
 
-from ..continual import ContinualSLTestEnvironment
 from ..discrete.setting import DiscreteTaskAgnosticSLSetting
-from .results import IncrementalSLResults
 from .environment import IncrementalSLEnvironment, IncrementalSLTestEnvironment
-from .objects import (
-    Observations,
-    ObservationType,
-    Actions,
-    ActionType,
-    Rewards,
-    RewardType,
-)
+from .objects import Actions, Observations, Rewards
+from .results import IncrementalSLResults
 
 logger = get_logger(__file__)
 # # NOTE: This dict reflects the observation space of the different datasets
@@ -112,7 +80,9 @@ class IncrementalSLSetting(IncrementalAssumption, DiscreteTaskAgnosticSLSetting)
 
     # Class variable holding a dict of the names and types of all available
     # datasets.
-    available_datasets: ClassVar[Dict[str, Type[_ContinuumDataset]]] = DiscreteTaskAgnosticSLSetting.available_datasets.copy()
+    available_datasets: ClassVar[
+        Dict[str, Type[_ContinuumDataset]]
+    ] = DiscreteTaskAgnosticSLSetting.available_datasets.copy()
 
     # A continual dataset to use. (Should be taken from the continuum package).
     dataset: str = choice(available_datasets.keys(), default="mnist")
@@ -120,12 +90,8 @@ class IncrementalSLSetting(IncrementalAssumption, DiscreteTaskAgnosticSLSetting)
     # TODO: IDEA: Adding these fields/constructor arguments so that people can pass a
     # custom ready-made `Scenario` from continuum to use (not sure this is a good idea
     # though)
-    train_cl_scenario: Optional[_BaseScenario] = field(
-        default=None, cmd=False, to_dict=False
-    )
-    test_cl_scenario: Optional[_BaseScenario] = field(
-        default=None, cmd=False, to_dict=False
-    )
+    train_cl_scenario: Optional[_BaseScenario] = field(default=None, cmd=False, to_dict=False)
+    test_cl_scenario: Optional[_BaseScenario] = field(default=None, cmd=False, to_dict=False)
 
     def __post_init__(self):
         """Initializes the fields of the Setting (and LightningDataModule),
@@ -146,7 +112,7 @@ class IncrementalSLSetting(IncrementalAssumption, DiscreteTaskAgnosticSLSetting)
         """Apply the given method on this setting to producing some results."""
         # TODO: It still isn't super clear what should be in charge of creating
         # the config, and how to create it, when it isn't passed explicitly.
-        self.config = config or self._setup_config(method) 
+        self.config = config or self._setup_config(method)
         assert self.config
 
         method.configure(setting=self)
@@ -177,9 +143,9 @@ class IncrementalSLSetting(IncrementalAssumption, DiscreteTaskAgnosticSLSetting)
         super().setup(stage=stage)
         # TODO: Adding this temporarily just for the competition: The TestEnvironment
         # needs access to this information in order to split the metrics for each task.
-        self.test_boundary_steps = [0] + list(
-            itertools.accumulate(map(len, self.test_datasets))
-        )[:-1]
+        self.test_boundary_steps = [0] + list(itertools.accumulate(map(len, self.test_datasets)))[
+            :-1
+        ]
         self.test_steps = sum(map(len, self.test_datasets))
         # self.test_steps = [0] + list(
         #     itertools.accumulate(map(len, self.test_datasets))
@@ -197,10 +163,8 @@ class IncrementalSLSetting(IncrementalAssumption, DiscreteTaskAgnosticSLSetting)
     def train_dataloader(
         self, batch_size: int = None, num_workers: int = None
     ) -> IncrementalSLEnvironment:
-        """ Returns a DataLoader for the train dataset of the current task. """
-        train_env = super().train_dataloader(
-            batch_size=batch_size, num_workers=num_workers
-        )
+        """Returns a DataLoader for the train dataset of the current task."""
+        train_env = super().train_dataloader(batch_size=batch_size, num_workers=num_workers)
         # Overwrite the wandb prefix for the `MeasureSLPerformanceWrapper` to include
         # the task id.
         if self.monitor_training_performance:
@@ -210,17 +174,15 @@ class IncrementalSLSetting(IncrementalAssumption, DiscreteTaskAgnosticSLSetting)
         self.train_env = train_env
         return self.train_env
 
-    def val_dataloader(
-        self, batch_size: int = None, num_workers: int = None
-    ) -> PassiveEnvironment:
-        """ Returns a DataLoader for the validation dataset of the current task. """
+    def val_dataloader(self, batch_size: int = None, num_workers: int = None) -> PassiveEnvironment:
+        """Returns a DataLoader for the validation dataset of the current task."""
         val_env = super().val_dataloader(batch_size=batch_size, num_workers=num_workers)
         return self.val_env
 
     def test_dataloader(
         self, batch_size: int = None, num_workers: int = None
     ) -> PassiveEnvironment["ClassIncrementalSetting.Observations", Actions, Rewards]:
-        """ Returns a DataLoader for the test dataset of the current task. """
+        """Returns a DataLoader for the test dataset of the current task."""
         if not self.has_prepared_data:
             self.prepare_data()
         if not self.has_setup_test:
@@ -256,6 +218,7 @@ class IncrementalSLSetting(IncrementalAssumption, DiscreteTaskAgnosticSLSetting)
         if self.config.device:
             # TODO: Put this before or after the image transforms?
             from sequoia.common.gym_wrappers.convert_tensors import ConvertToFromTensors
+
             env = ConvertToFromTensors(env, device=self.config.device)
 
         # TODO: Remove this, I don't think it's used anymore, since `hide_task_labels`
@@ -269,9 +232,7 @@ class IncrementalSLSetting(IncrementalAssumption, DiscreteTaskAgnosticSLSetting)
 
         # Testing this out, we're gonna have a "test schedule" like this to try
         # to imitate the MultiTaskEnvironment in RL.
-        transition_steps = [0] + list(
-            itertools.accumulate(map(len, self.test_datasets))
-        )[:-1]
+        transition_steps = [0] + list(itertools.accumulate(map(len, self.test_datasets)))[:-1]
         # FIXME: Creating a 'task schedule' for the TestEnvironment, mimicing what's in
         # the RL settings.
         test_task_schedule = dict.fromkeys(
@@ -305,12 +266,9 @@ class IncrementalSLSetting(IncrementalAssumption, DiscreteTaskAgnosticSLSetting)
     def split_batch_function(
         self, training: bool
     ) -> Callable[[Tuple[Tensor, ...]], Tuple[Observations, Rewards]]:
-        """ Returns a callable that is used to split a batch into observations and rewards.
-        """
+        """Returns a callable that is used to split a batch into observations and rewards."""
         assert False, "TODO: Removing this."
-        task_classes = {
-            i: self.task_classes(i, train=training) for i in range(self.nb_tasks)
-        }
+        task_classes = {i: self.task_classes(i, train=training) for i in range(self.nb_tasks)}
 
         def split_batch(batch: Tuple[Tensor, ...]) -> Tuple[Observations, Rewards]:
             """Splits the batch into a tuple of Observations and Rewards.
@@ -350,7 +308,7 @@ class IncrementalSLSetting(IncrementalAssumption, DiscreteTaskAgnosticSLSetting)
         return split_batch
 
     def make_train_cl_scenario(self, train_dataset: _ContinuumDataset) -> _BaseScenario:
-        """ Creates a train ClassIncremental object from continuum. """
+        """Creates a train ClassIncremental object from continuum."""
         return ClassIncremental(
             train_dataset,
             nb_tasks=self.nb_tasks,
@@ -361,7 +319,7 @@ class IncrementalSLSetting(IncrementalAssumption, DiscreteTaskAgnosticSLSetting)
         )
 
     def make_test_cl_scenario(self, test_dataset: _ContinuumDataset) -> _BaseScenario:
-        """ Creates a test ClassIncremental object from continuum. """
+        """Creates a test ClassIncremental object from continuum."""
         return ClassIncremental(
             test_dataset,
             nb_tasks=self.nb_tasks,
@@ -383,15 +341,11 @@ class IncrementalSLSetting(IncrementalAssumption, DiscreteTaskAgnosticSLSetting)
 
         if self.dataset in self.available_datasets:
             dataset_class = self.available_datasets[self.dataset]
-            return dataset_class(
-                data_path=data_dir, download=download, train=train, **kwargs
-            )
+            return dataset_class(data_path=data_dir, download=download, train=train, **kwargs)
 
         elif self.dataset in self.available_datasets.values():
             dataset_class = self.dataset
-            return dataset_class(
-                data_path=data_dir, download=download, train=train, **kwargs
-            )
+            return dataset_class(data_path=data_dir, download=download, train=train, **kwargs)
 
         elif isinstance(self.dataset, Dataset):
             logger.info(f"Using a custom dataset {self.dataset}")
@@ -408,20 +362,20 @@ class IncrementalSLSetting(IncrementalAssumption, DiscreteTaskAgnosticSLSetting)
     # task for now...
 
     def num_classes_in_task(self, task_id: int, train: bool) -> Union[int, List[int]]:
-        """ Returns the number of classes in the given task. """
+        """Returns the number of classes in the given task."""
         increment = self.increment if train else self.test_increment
         if isinstance(increment, list):
             return increment[task_id]
         return increment
 
     def num_classes_in_current_task(self, train: bool = None) -> int:
-        """ Returns the number of classes in the current task. """
+        """Returns the number of classes in the current task."""
         # TODO: Its ugly to have the 'method' tell us if we're currently in
         # train/eval/test, no? Maybe just make a method for each?
         return self.num_classes_in_task(self._current_task_id, train=train)
 
     def task_classes(self, task_id: int, train: bool) -> List[int]:
-        """ Gives back the 'true' labels present in the given task. """
+        """Gives back the 'true' labels present in the given task."""
         start_index = sum(self.num_classes_in_task(i, train) for i in range(task_id))
         end_index = start_index + self.num_classes_in_task(task_id, train)
         if train:
@@ -431,11 +385,11 @@ class IncrementalSLSetting(IncrementalAssumption, DiscreteTaskAgnosticSLSetting)
         return self.test_class_order[start_index:end_index]
 
     def current_task_classes(self, train: bool) -> List[int]:
-        """ Gives back the labels present in the current task. """
+        """Gives back the labels present in the current task."""
         return self.task_classes(self._current_task_id, train)
 
     def _check_environments(self):
-        """ Do a quick check to make sure that the dataloaders give back the
+        """Do a quick check to make sure that the dataloaders give back the
         right observations / reward types.
         """
         for loader_method in [

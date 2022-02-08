@@ -1,20 +1,18 @@
 """ Wrapper that adds 'done' as part of the environment's observations.
 """
-from dataclasses import dataclass, is_dataclass, replace
+from dataclasses import is_dataclass, replace
 from functools import singledispatch
 from typing import Any, Dict, Sequence, Tuple, TypeVar, Union
 
 import gym
 import numpy as np
 from gym import Space, spaces
-from gym.vector import VectorEnv
 from gym.vector.utils import batch_space
 from torch import Tensor
-from sequoia.common.spaces import TypedDictSpace
 
 from sequoia.common.spaces import TypedDictSpace
 
-from .utils import IterableWrapper, has_wrapper
+from .utils import IterableWrapper
 
 T = TypeVar("T")
 Bool = TypeVar("Bool", bound=Union[bool, Sequence[bool]])
@@ -24,7 +22,7 @@ V = TypeVar("V")
 
 @singledispatch
 def add_done(observation: Any, done: Any) -> Any:
-    """ Generic function that adds the provided `done` value to an observation.
+    """Generic function that adds the provided `done` value to an observation.
     Returns the modified observation, which might not always be of the same type.
     """
     if is_dataclass(observation):
@@ -33,6 +31,7 @@ def add_done(observation: Any, done: Any) -> Any:
         f"Function add_done has no handler registered for observations of type "
         f"{type(observation)}."
     )
+
 
 @add_done.register(int)
 @add_done.register(float)
@@ -57,10 +56,10 @@ def _add_done_to_dict_obs(observation: Dict[K, V], done: bool) -> Dict[K, Union[
 
 @add_done.register
 def add_done_to_space(observation: Space, done: Space) -> Space:
-    """ Adds the space of the 'done' value to the given space.
-    
+    """Adds the space of the 'done' value to the given space.
+
     By default, `done` corresponds to what you'd get from a single
-    (i.e. non-vectorized) environment. 
+    (i.e. non-vectorized) environment.
     """
     raise NotImplementedError(
         f"No handler registered for spaces of type {type(observation)}. "
@@ -82,10 +81,12 @@ def _add_done_to_box_space(observation: Space, done: Space) -> spaces.Dict:
 
 @add_done.register
 def _add_done_to_tuple_space(observation: spaces.Tuple, done: Space) -> spaces.Tuple:
-    return spaces.Tuple([
-        *observation.spaces,
-        done,
-    ])
+    return spaces.Tuple(
+        [
+            *observation.spaces,
+            done,
+        ]
+    )
 
 
 @add_done.register
@@ -97,17 +98,18 @@ def _add_done_to_dict_space(observation: spaces.Dict, done: Space) -> spaces.Dic
 
 
 class AddDoneToObservation(IterableWrapper):
-    """Wrapper that adds the 'done' from step to the 
+    """Wrapper that adds the 'done' from step to the
     Need to add the 'done' vector to the observation, so we can
     get access to the 'end of episode' signal in the shared_step, since
     when iterating over the env like a dataloader, the yielded items only
     have the observations, and dont have the 'done' vector. (so as to be
     consistent with supervised learning).
-    
+
     NOTE: NEVER use this *BEFORE* batching, because of how the 'reset' works in
     all VectorEnvs, the observations will always be the 'new' ones, so `done`
     (in the obs) will always be False!
     """
+
     def __init__(self, env: gym.Env, done_space: Space = None):
         super().__init__(env)
         # boolean value. (0 or 1)
@@ -118,7 +120,6 @@ class AddDoneToObservation(IterableWrapper):
                 done_space = batch_space(done_space, self.env.num_envs)
         self.done_space = done_space
         self.observation_space = add_done(self.env.observation_space, self.done_space)
-
 
     def reset(self, **kwargs):
         observation = self.env.reset()

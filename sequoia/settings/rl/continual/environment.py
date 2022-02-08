@@ -22,46 +22,23 @@ In either case, we can easily keep the `step` API from gym available.
 Need to talk more about this for sure.
 """
 import warnings
-from typing import (
-    Any,
-    Callable,
-    Dict,
-    Generator,
-    Iterable,
-    List,
-    Optional,
-    Sequence,
-    Tuple,
-    Type,
-    TypeVar,
-    Union,
-    Iterator,
-)
-from gym.utils import colorize
-import multiprocessing as mp
+from typing import Any, Iterable, Iterator, Optional, TypeVar, Union
+
 import gym
 import numpy as np
-from gym import Env, Wrapper, spaces
-from gym.vector import VectorEnv
+from gym import Wrapper, spaces
+from gym.utils.colorize import colorize
+from gym.vector import AsyncVectorEnv, VectorEnv
 from gym.vector.utils import batch_space
 from torch import Tensor
 from torch.utils.data import IterableDataset
 
-
-from sequoia.common.batch import Batch
-from gym.vector import AsyncVectorEnv
-from sequoia.common.gym_wrappers.utils import StepResult, has_wrapper
+from sequoia.common.gym_wrappers import EnvDataset, IterableWrapper
 from sequoia.common.gym_wrappers.policy_env import PolicyEnv
-from sequoia.common.gym_wrappers.convert_tensors import (
-    has_tensor_support,
-    add_tensor_support,
-)
+from sequoia.common.gym_wrappers.utils import StepResult
+from sequoia.settings.base.objects import Actions
 from sequoia.settings.rl.environment import ActiveEnvironment
 from sequoia.utils.logging_utils import get_logger
-from sequoia.common.gym_wrappers import EnvDataset
-from sequoia.common.gym_wrappers import IterableWrapper
-from sequoia.settings.base.environment import Observations, Actions, Rewards
-from .make_env import make_batched_env
 
 logger = get_logger(__file__)
 T = TypeVar("T")
@@ -87,21 +64,21 @@ class GymDataLoader(
     This is useful because it makes it easy to adapt a method originally made for SL so
     that it can also work in a reinforcement learning context, where the rewards (e.g.
     image labels, or correct/incorrect prediction, etc.) are only given *after* the
-    action (e.g. y_pred) has been received by the environment. 
+    action (e.g. y_pred) has been received by the environment.
 
     meaning you
     can use this in two different ways:
 
     1. Gym-style using `step`:
-        1. Agent   --------- action ----------------> Env 
-        2. Agent   <---(state, reward, done, info)--- Env 
-    
+        1. Agent   --------- action ----------------> Env
+        2. Agent   <---(state, reward, done, info)--- Env
+
     2. ActiveDataLoader style, using `iter` and `send`:
         1. Agent   <--- (state, done, info) --- Env
         2. Agent   ---------- action ---------> Env
         3. Agent   <--------- reward ---------- Env
 
-    
+
     This would look something like this in code:
 
     ```python
@@ -119,7 +96,7 @@ class GymDataLoader(
         states, reward, done, info = env.step(action)
         loss = loss_function(...)
     ```
-    
+
     """
 
     def __init__(
@@ -177,9 +154,7 @@ class GymDataLoader(
             **kwargs,
         )
         Wrapper.__init__(self, env=self.env)
-        assert not isinstance(
-            self.env, GymDataLoader
-        ), "Something very wrong is happening."
+        assert not isinstance(self.env, GymDataLoader), "Something very wrong is happening."
         # self.max_epochs: int = max_epochs
         self.observation_space: gym.Space = self.env.observation_space
         self.action_space: gym.Space = self.env.action_space
@@ -194,7 +169,10 @@ class GymDataLoader(
 
         if not hasattr(self.env, "reward_space"):
             self.reward_space = spaces.Box(
-                low=self.env.reward_range[0], high=self.env.reward_range[1], shape=(), dtype=np.float64,
+                low=self.env.reward_range[0],
+                high=self.env.reward_range[1],
+                shape=(),
+                dtype=np.float64,
             )
             if isinstance(self.env.unwrapped, VectorEnv):
                 # Same here, we use a 'batched' space rather than Tuple.
@@ -244,8 +222,11 @@ class GymDataLoader(
     #     raise NotImplementedError(f"TODO: Can't tell the length of the env {self.env}.")
 
     def _obs_have_done_signal(self) -> bool:
-        """ Try to determine if the observations contain the 'done' signal or not. """
-        if isinstance(self.observation_space, spaces.Dict) and "done" in self.observation_space.spaces:
+        """Try to determine if the observations contain the 'done' signal or not."""
+        if (
+            isinstance(self.observation_space, spaces.Dict)
+            and "done" in self.observation_space.spaces
+        ):
             return True
         return False
 
@@ -256,16 +237,20 @@ class GymDataLoader(
         if self.is_vectorized:
             # elif isinstance(self.observation_space, spaces.Tuple)
             if not self._obs_have_done_signal():
-                warnings.warn(RuntimeWarning(colorize(
-                    f"You are iterating over a vectorized env, but the observations "
-                    f"don't seem to contain the 'done' signal! You should definitely "
-                    f"consider applying something like an `AddDoneToObservation` "
-                    f"wrapper to each individual env before vectorization. ",
-                    "red"
-                )))
+                warnings.warn(
+                    RuntimeWarning(
+                        colorize(
+                            f"You are iterating over a vectorized env, but the observations "
+                            f"don't seem to contain the 'done' signal! You should definitely "
+                            f"consider applying something like an `AddDoneToObservation` "
+                            f"wrapper to each individual env before vectorization. ",
+                            "red",
+                        )
+                    )
+                )
         return self.env.__iter__()
         # yield from IterableWrapper.__iter__(self)
-        
+
         # self.observation_ = self.reset()
         # self.done_ = False
         # self.action_ = None
@@ -341,9 +326,7 @@ class GymDataLoader(
             action = action.detach().cpu().numpy()
         if isinstance(action, np.ndarray) and not action.shape:
             action = action.item()
-        if isinstance(self.env.action_space, spaces.Tuple) and isinstance(
-            action, np.ndarray
-        ):
+        if isinstance(self.env.action_space, spaces.Tuple) and isinstance(action, np.ndarray):
             action = action.tolist()
         assert action in self.env.action_space, (action, self.env.action_space)
         return super().send(action)

@@ -1,20 +1,22 @@
 """ TODO: Tests for the TestEnvironment of the ContinualSLSetting. """
 
-from typing import Type, ClassVar
-from sequoia.common.transforms import Transforms, Compose
-from .environment import ContinualSLTestEnvironment, TestEnvironment
-from torchvision.datasets import MNIST
-from sequoia.common.spaces import Image
+from pathlib import Path
+from typing import ClassVar, Type
+
+import gym
 import numpy as np
 import pytest
-import gym
-from pathlib import Path
 from torch.utils.data import Subset
-from .environment import ContinualSLEnvironment
-from sequoia.settings.sl.environment import Environment, PassiveEnvironment
+from torchvision.datasets import MNIST
+
 from sequoia.common.config import Config
-from .results import ContinualSLResults, Results
 from sequoia.common.metrics import ClassificationMetrics
+from sequoia.common.spaces import Image
+from sequoia.common.transforms import Compose, Transforms
+from sequoia.settings.sl.environment import PassiveEnvironment
+
+from .environment import ContinualSLEnvironment, ContinualSLTestEnvironment
+from .results import ContinualSLResults
 
 
 class TestContinualSLTestEnvironment:
@@ -54,11 +56,14 @@ class TestContinualSLTestEnvironment:
         tmp_path: Path,
         config: Config,
     ):
-        """ TODO: Test that when iterating through the env as a dataloader and sending
+        """TODO: Test that when iterating through the env as a dataloader and sending
         actions produces results.
         """
         env = self.TestEnvironment(
-            base_env, directory=tmp_path, step_limit=100 // base_env.batch_size, no_rewards=no_rewards
+            base_env,
+            directory=tmp_path,
+            step_limit=100 // base_env.batch_size,
+            no_rewards=no_rewards,
         )
         env.config = config
 
@@ -71,10 +76,10 @@ class TestContinualSLTestEnvironment:
         assert env.is_closed()
         results = env.get_results()
         self.validate_results(results)
-        
+
     def validate_results(self, results: ContinualSLResults):
         assert isinstance(results, ContinualSLResults)
-        assert isinstance(results.average_metrics, ClassificationMetrics) 
+        assert isinstance(results.average_metrics, ClassificationMetrics)
         assert results.objective > 0
         # TODO: Fix this problem:
         assert results.average_metrics.n_samples in [95, 100]
@@ -83,11 +88,14 @@ class TestContinualSLTestEnvironment:
     def test_gym_interaction_produces_results(
         self, no_rewards: bool, base_env: PassiveEnvironment, tmp_path: Path, config: Config
     ):
-        """ TODO: Test that when iterating through the env as a dataloader and sending
+        """TODO: Test that when iterating through the env as a dataloader and sending
         actions produces results.
         """
         env = self.TestEnvironment(
-            base_env, directory=tmp_path, step_limit=100 // base_env.batch_size, no_rewards=no_rewards
+            base_env,
+            directory=tmp_path,
+            step_limit=100 // base_env.batch_size,
+            no_rewards=no_rewards,
         )
         env.config = config
         done = False
@@ -105,12 +113,12 @@ class TestContinualSLTestEnvironment:
         # BUG: There's currently a weird off-by-1 error with the total number of steps,
         # which makes these checks for `is_closed()` fail. However, in practice we don't
         # try to iterate twice on the env, so it's not a big deal.
-        # FIXME: Fix this check: 
+        # FIXME: Fix this check:
         assert env.is_closed()
-        # FIXME: Fix this check: 
+        # FIXME: Fix this check:
         with pytest.raises((gym.error.ClosedEnvironmentError, gym.error.Error)):
             env.reset()
-        # FIXME: Fix this check: 
+        # FIXME: Fix this check:
         with pytest.raises(gym.error.ClosedEnvironmentError):
             _ = env.step(env.action_space.sample())
 

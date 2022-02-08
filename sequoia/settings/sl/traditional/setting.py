@@ -2,17 +2,9 @@
 only one task.
 """
 from dataclasses import dataclass
-from typing import (Callable, ClassVar, Dict, List, Optional, Tuple, Type,
-                    TypeVar, Union)
-import itertools
-import tqdm
-from torch import Tensor
+from typing import ClassVar, List, Optional, Type, TypeVar, Union
 
-from sequoia.common.loss import Loss
-from sequoia.common.metrics import Metrics
-from sequoia.common.config import Config
-from sequoia.settings.base import Results
-from sequoia.utils.utils import constant, dict_union
+from sequoia.utils.utils import constant
 
 # TODO: Re-arrange the 'multiple-inheritance' with domain-incremental and
 # task-incremental, this might not be 100% accurate, as the "IID" you get from
@@ -20,7 +12,6 @@ from sequoia.utils.utils import constant, dict_union
 # the one you get form TaskIncremental (+ only one task)
 from ..incremental import IncrementalSLSetting
 from .results import IIDResults
-
 
 # TODO: IDEA: Add the pytorch lightning datamodules in the list of
 # 'available datasets' for the IID setting, and make sure that it doesn't mess
@@ -36,12 +27,13 @@ from .results import IIDResults
 @dataclass
 class TraditionalSLSetting(IncrementalSLSetting):
     """Your 'usual' supervised learning Setting, where the samples are i.i.d.
-    
+
     This Setting is slightly different than the others, in that it can be recovered in
     *two* different ways:
     - As a variant of Task-Incremental learning, but where there is only one task;
     - As a variant of Domain-Incremental learning, but where there is only one task.
     """
+
     Results: ClassVar[Type[Results]] = IIDResults
 
     # Number of tasks.

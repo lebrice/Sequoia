@@ -6,17 +6,18 @@ from dataclasses import dataclass
 from typing import ClassVar, Type
 
 from avalanche.training.strategies import AR1, BaseStrategy
-from simple_parsing.helpers.hparams import uniform, log_uniform
+from simple_parsing.helpers.hparams import log_uniform, uniform
 
 from sequoia.methods import register_method
-from sequoia.settings.sl import ClassIncrementalSetting, TaskIncrementalSLSetting
+from sequoia.settings.sl import TaskIncrementalSLSetting
+
 from .base import AvalancheMethod
 
 
 @register_method
 @dataclass
 class AR1Method(AvalancheMethod[AR1]):
-    """ AR1 strategy from Avalanche.
+    """AR1 strategy from Avalanche.
     See AR1 plugin for details.
     This strategy does not use task identities.
 

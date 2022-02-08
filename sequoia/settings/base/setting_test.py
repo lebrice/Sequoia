@@ -1,10 +1,12 @@
-from dataclasses import dataclass
 import functools
-from typing import Union
-import pytest
 import inspect
+from dataclasses import dataclass
+from typing import Union
+
+import pytest
+
 from sequoia.methods import Method
-from sequoia.utils import constant
+from sequoia.utils.utils import constant
 
 from .setting import Setting
 
@@ -96,7 +98,7 @@ class CoolGeneralMethod(Method, target_setting=Setting):
 
 
 def test_that_transforms_can_be_set_through_command_line():
-    from sequoia.common.transforms import Transforms, Compose
+    from sequoia.common.transforms import Compose, Transforms
 
     setting = Setting(train_transforms=[])
     assert setting.train_transforms == []
@@ -110,10 +112,11 @@ def test_that_transforms_can_be_set_through_command_line():
     assert isinstance(setting.train_transforms, Compose)
 
 
-from typing import ClassVar, Type, Dict, Any
+from typing import Any, ClassVar, Dict, Type
+
 from sequoia.common.config import Config
 from sequoia.methods.random_baseline import RandomBaselineMethod
-from sequoia.settings.base.results import Results
+
 from .setting import Setting
 
 
@@ -177,7 +180,7 @@ class SettingTests:
     fast_dev_run_kwargs: ClassVar[Dict[str, Any]] = {}
 
     def __init_subclass__(cls, setting: Type[Setting] = None):
-        """ Autogenerates fixtures on the class under test. """
+        """Autogenerates fixtures on the class under test."""
         super().__init_subclass__()
         if not setting and not hasattr(cls, "Setting"):
             raise RuntimeError(

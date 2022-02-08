@@ -9,13 +9,7 @@ from gym.vector import SyncVectorEnv
 from gym.wrappers import TimeLimit
 
 from sequoia.common.gym_wrappers import MultiTaskEnvironment
-from sequoia.common.spaces import TypedDictSpace
-from sequoia.conftest import (
-    monsterkong_required,
-    param_requires_monsterkong,
-    atari_py_required,
-)
-from sequoia.settings import RLSetting
+from sequoia.conftest import atari_py_required, monsterkong_required, param_requires_monsterkong
 from sequoia.utils.utils import dict_union
 
 from .multi_task_environment import MultiTaskEnvironment
@@ -92,7 +86,6 @@ def test_monitor_env(environment_name):
 
     task_param_values: List[Dict] = []
     default_length: float = env.length
-    from gym.wrappers import Monitor
 
     for task_id in range(20):
         for i in range(100):
@@ -131,7 +124,7 @@ def test_update_task():
 
 
 def test_add_task_dict_to_info():
-    """ Test that the 'info' dict contains the task dict. """
+    """Test that the 'info' dict contains the task dict."""
     original: CartPoleEnv = gym.make("CartPole-v0")
     starting_length = original.length
     starting_gravity = original.gravity
@@ -142,7 +135,9 @@ def test_add_task_dict_to_info():
         30: dict(gravity=0.9),
     }
     env = MultiTaskEnvironment(
-        original, task_schedule=task_schedule, add_task_dict_to_info=True,
+        original,
+        task_schedule=task_schedule,
+        add_task_dict_to_info=True,
     )
     env.seed(123)
     env.reset()
@@ -169,7 +164,7 @@ def test_add_task_dict_to_info():
 
 
 def test_add_task_id_to_obs():
-    """ Test that the 'info' dict contains the task dict. """
+    """Test that the 'info' dict contains the task dict."""
     original: CartPoleEnv = gym.make("CartPole-v0")
     starting_length = original.length
     starting_gravity = original.gravity
@@ -180,13 +175,16 @@ def test_add_task_id_to_obs():
         30: dict(gravity=0.9),
     }
     env = MultiTaskEnvironment(
-        original, task_schedule=task_schedule, add_task_id_to_obs=True,
+        original,
+        task_schedule=task_schedule,
+        add_task_id_to_obs=True,
     )
     env.seed(123)
     env.reset()
 
     assert env.observation_space == spaces.Dict(
-        x=original.observation_space, task_labels=spaces.Discrete(4),
+        x=original.observation_space,
+        task_labels=spaces.Discrete(4),
     )
 
     for step in range(100):
@@ -219,7 +217,7 @@ def test_add_task_id_to_obs():
 
 
 def test_starting_step_and_max_step():
-    """ Test that when start_step and max_step arg given, the env stays within
+    """Test that when start_step and max_step arg given, the env stays within
     the [start_step, max_step] portion of the task schedule.
     """
     original: CartPoleEnv = gym.make("CartPole-v0")
@@ -242,7 +240,8 @@ def test_starting_step_and_max_step():
     env.reset()
 
     assert env.observation_space == spaces.Dict(
-        x=original.observation_space, task_labels=spaces.Discrete(4),
+        x=original.observation_space,
+        task_labels=spaces.Discrete(4),
     )
 
     # Trying to set the 'steps' to something smaller than the starting step
@@ -283,17 +282,21 @@ def test_starting_step_and_max_step():
 
 @atari_py_required
 def test_task_id_is_added_even_when_no_known_task_schedule():
-    """ Test that even when the env is unknown or there are no task params, the
+    """Test that even when the env is unknown or there are no task params, the
     task_id is still added correctly and is zero at all times.
     """
     # Breakout doesn't have default task params.
-    original: CartPoleEnv = gym.make("Breakout-v0")
-    env = MultiTaskEnvironment(original, add_task_id_to_obs=True,)
+    original: CartPoleEnv = gym.make("ALE/Breakout-v5")
+    env = MultiTaskEnvironment(
+        original,
+        add_task_id_to_obs=True,
+    )
     env.seed(123)
     env.reset()
 
     assert env.observation_space == spaces.Dict(
-        x=original.observation_space, task_labels=spaces.Discrete(1),
+        x=original.observation_space,
+        task_labels=spaces.Discrete(1),
     )
     for step in range(0, 100):
         obs, _, done, info = env.step(env.action_space.sample())
@@ -358,9 +361,7 @@ def test_task_schedule_monsterkong():
 
 @monsterkong_required
 def test_task_schedule_with_callables():
-    """ Apply functions to the env at a given step.
-
-    """
+    """Apply functions to the env at a given step."""
     env: MetaMonsterKongEnv = gym.make("MetaMonsterKong-v1")
     from gym.wrappers import TimeLimit
 
@@ -451,7 +452,7 @@ from sequoia.conftest import monsterkong_required
 
 
 def test_random_task_on_each_episode_and_only_one_task_in_schedule():
-    """ BUG: When the goal is to have only one task, it instead keeps sampling a new
+    """BUG: When the goal is to have only one task, it instead keeps sampling a new
     task from the 'distribution', in the case of cartpole!
     """
     env: MetaMonsterKongEnv = gym.make("CartPole-v1")
@@ -460,7 +461,9 @@ def test_random_task_on_each_episode_and_only_one_task_in_schedule():
     env = TimeLimit(env, max_episode_steps=10)
     env = MultiTaskEnvironment(
         env,
-        task_schedule={0: {"length": 0.1},},
+        task_schedule={
+            0: {"length": 0.1},
+        },
         add_task_id_to_obs=True,
         new_random_task_on_reset=True,
     )
@@ -526,9 +529,7 @@ def test_task_sequence_is_reproducible(env: str):
     elif env == "monsterkong":
         env_fn = env_fn_monsterkong
     else:
-        assert (
-            False
-        ), f"just testing on cartpole and monsterkong for now, but got env {env}"
+        assert False, f"just testing on cartpole and monsterkong for now, but got env {env}"
 
     batch_size = 1
 

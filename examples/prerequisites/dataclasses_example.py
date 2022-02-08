@@ -31,7 +31,7 @@ from simple_parsing.helpers import choice
 
 @dataclass
 class HParams:
-    """ Hyper-Parameters of my model."""
+    """Hyper-Parameters of my model."""
 
     # Learning rate.
     learning_rate: float = 3e-4

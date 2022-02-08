@@ -1,29 +1,25 @@
 """ Current most general Setting in the Reinforcement Learning side of the tree.
 """
 import difflib
-import itertools
 import json
-import math
 import textwrap
 import warnings
-from copy import deepcopy
 from dataclasses import dataclass, fields
 from functools import partial
 from pathlib import Path
-from typing import Any, Callable, ClassVar, Dict, List, Optional, Sequence, Type, Union
+from typing import Any, Callable, ClassVar, Dict, List, Optional, Type, Union
 
 import gym
 import numpy as np
-import wandb
 from gym import spaces
-from gym.envs.classic_control import CartPoleEnv, MountainCarEnv, PendulumEnv
-from gym.envs.registration import EnvRegistry, EnvSpec, load, registry, spec
+from gym.envs.registration import EnvSpec, registry
 from gym.utils import colorize
 from gym.wrappers import TimeLimit
 from simple_parsing import choice, field, list_field
 from simple_parsing.helpers import dict_field
 from stable_baselines3.common.atari_wrappers import AtariWrapper
 
+import wandb
 from sequoia.common import Config
 from sequoia.common.gym_wrappers import (
     AddDoneToObservation,
@@ -37,25 +33,12 @@ from sequoia.common.gym_wrappers.action_limit import ActionLimit
 from sequoia.common.gym_wrappers.convert_tensors import add_tensor_support
 from sequoia.common.gym_wrappers.env_dataset import EnvDataset
 from sequoia.common.gym_wrappers.episode_limit import EpisodeLimit
-from sequoia.common.gym_wrappers.pixel_observation import (
-    ImageObservations,
-    PixelObservationWrapper,
-)
-from sequoia.common.gym_wrappers.utils import (
-    IterableWrapper,
-    is_atari_env,
-    is_classic_control_env,
-    is_monsterkong_env,
-)
-from sequoia.common.metrics.rl_metrics import EpisodeMetrics
+from sequoia.common.gym_wrappers.pixel_observation import ImageObservations
+from sequoia.common.gym_wrappers.utils import is_atari_env
 from sequoia.common.spaces import Sparse, TypedDictSpace
 from sequoia.common.transforms import Transforms
-from sequoia.settings.assumptions.continual import (
-    ContinualAssumption,
-    ContinualResults,
-    TestEnvironment,
-)
-from sequoia.settings.base import Method, Results
+from sequoia.settings.assumptions.continual import ContinualAssumption
+from sequoia.settings.base import Method
 from sequoia.settings.rl import ActiveEnvironment, RLSetting
 from sequoia.settings.rl.wrappers import (
     HideTaskLabelsWrapper,
@@ -64,28 +47,14 @@ from sequoia.settings.rl.wrappers import (
 )
 from sequoia.utils import get_logger
 from sequoia.utils.generic_functions import move
-from sequoia.utils.utils import camel_case, deprecated_property, flag, pairwise
+from sequoia.utils.utils import flag, pairwise
 
 from .environment import GymDataLoader
 from .make_env import make_batched_env
-from .objects import (
-    Actions,
-    ActionType,
-    Observations,
-    ObservationType,
-    Rewards,
-    RewardType,
-)
 from .results import ContinualRLResults
-from .tasks import (
-    ContinuousTask,
-    TaskSchedule,
-    is_supported,
-    make_continuous_task,
-    names_match,
-)
+from .tasks import ContinuousTask, TaskSchedule, is_supported, make_continuous_task, names_match
 from .test_environment import ContinualRLTestEnvironment
-
+from .objects import Observations, Actions, Rewards  # type: ignore
 logger = get_logger(__file__)
 
 
@@ -188,7 +157,7 @@ class ContinualRLSetting(RLSetting, ContinualAssumption):
     # When `True`, will do one of the following, depending on the choice of environment:
     # - For classic control envs, it adds a `PixelObservationsWrapper` to the env.
     # - For atari envs:
-    #     - If `self.dataset` is a regular atari env (e.g. "Breakout-v0"), does nothing.
+    #     - If `self.dataset` is a regular atari env (e.g. "ALE/Breakout-v5"), does nothing.
     #     - if `self.dataset` is the 'RAM' version of an atari env, raises an error.
     # - For mujoco envs, this raises a NotImplementedError, as we don't yet know how to
     #   make a pixel-version the Mujoco Envs.

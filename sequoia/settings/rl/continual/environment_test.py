@@ -1,16 +1,17 @@
-from typing import Type, ClassVar, Optional
+from typing import ClassVar, Optional, Type
+
 import gym
 import numpy as np
 import pytest
 import torch
 from gym import spaces
-from gym.envs.classic_control import CartPoleEnv
 from gym.vector.utils import batch_space
+from torch import Tensor
+
 from sequoia.common.gym_wrappers import EnvDataset, PixelObservationWrapper
 from sequoia.conftest import param_requires_atari_py
-from sequoia.utils import take
+from sequoia.utils.utils import take
 from sequoia.utils.logging_utils import get_logger
-from torch import Tensor
 
 from .environment import GymDataLoader
 from .make_env import make_batched_env
@@ -25,7 +26,7 @@ class TestGymDataLoader:
 
     @pytest.mark.parametrize("batch_size", [1, 2, 5])
     @pytest.mark.parametrize(
-        "env_name", ["CartPole-v0", param_requires_atari_py("Breakout-v0")]
+        "env_name", ["CartPole-v0", param_requires_atari_py("ALE/Breakout-v5")]
     )
     def test_spaces(self, env_name: str, batch_size: int):
         dataset = EnvDataset(make_batched_env(env_name, batch_size=batch_size))
@@ -57,7 +58,7 @@ class TestGymDataLoader:
 
     @pytest.mark.parametrize("batch_size", [None, 1, 2, 5])
     @pytest.mark.parametrize(
-        "env_name", ["CartPole-v0", param_requires_atari_py("Breakout-v0")]
+        "env_name", ["CartPole-v0", param_requires_atari_py("ALE/Breakout-v5")]
     )
     def test_max_steps_is_respected(self, env_name: str, batch_size: int):
         max_steps = 5
@@ -65,6 +66,7 @@ class TestGymDataLoader:
         env = make_batched_env(env_name, batch_size=batch_size)
         dataset = EnvDataset(env)
         from sequoia.common.gym_wrappers.action_limit import ActionLimit
+
         dataset = ActionLimit(dataset, max_steps=max_steps * (batch_size or 1))
         env: GymDataLoader = self.GymDataLoader(dataset)
         env.reset()
@@ -79,14 +81,16 @@ class TestGymDataLoader:
     @pytest.mark.parametrize("batch_size", [None, 1, 2, 5])
     @pytest.mark.parametrize("seed", [None, 123, 456])
     # @pytest.mark.parametrize(
-    #     "env_name", ["CartPole-v0", param_requires_atari_py("Breakout-v0")]
+    #     "env_name", ["CartPole-v0", param_requires_atari_py("ALE/Breakout-v5")]
     # )
     def test_multiple_epochs_works(self, batch_size: Optional[int], seed: Optional[int]):
         epochs = 3
         max_steps_per_episode = 10
         from gym.wrappers import TimeLimit
-        from sequoia.conftest import DummyEnvironment
+
         from sequoia.common.gym_wrappers import AddDoneToObservation
+        from sequoia.conftest import DummyEnvironment
+
         def env_fn():
             # FIXME: Using the DummyEnvironment for now since it's easier to debug with.
             # env = gym.make(env_name)
@@ -98,12 +102,12 @@ class TestGymDataLoader:
         # assert False, [env_fn(i).unwrapped for i in range(4)]
         # env = gym.vector.make(env_name, num_envs=(batch_size or 1))
         env = make_batched_env(env_fn, batch_size=batch_size)
-        
-        
+
         batched_env = env
         # from sequoia.common.gym_wrappers.episode_limit import EpisodeLimit
         # env = EpisodeLimit(env, max_episodes=epochs)
         from sequoia.common.gym_wrappers.convert_tensors import ConvertToFromTensors
+
         env = ConvertToFromTensors(env)
 
         env = EnvDataset(env, max_steps_per_episode=max_steps_per_episode)
@@ -149,7 +153,7 @@ class TestGymDataLoader:
             assert len(all_rewards) == epochs * max_steps_per_episode * batch_size
 
     @pytest.mark.parametrize("batch_size", [1, 2, 5])
-    @pytest.mark.parametrize("env_name", [param_requires_atari_py("Breakout-v0")])
+    @pytest.mark.parametrize("env_name", [param_requires_atari_py("ALE/Breakout-v5")])
     def test_reward_isnt_always_one(self, env_name: str, batch_size: int):
         epochs = 3
         max_steps_per_episode = 100
@@ -177,7 +181,8 @@ class TestGymDataLoader:
         dataset = EnvDataset(env, max_steps_per_episode=max_steps_per_episode)
 
         env: GymDataLoader = GymDataLoader(
-            dataset, batch_size=batch_size,
+            dataset,
+            batch_size=batch_size,
         )
         with gym.make(env_name) as temp_env:
             state_shape = temp_env.observation_space.shape
@@ -207,7 +212,7 @@ class TestGymDataLoader:
     @pytest.mark.parametrize("batch_size", [1, 2, 5, 10])
     def test_batched_pixels(self, env_name: str, batch_size: int):
         max_steps_per_episode = 10
-
+        pyglet = pytest.importorskip("pyglet")
         wrappers = [PixelObservationWrapper]
         env = make_batched_env(env_name, wrappers=wrappers, batch_size=batch_size)
         dataset = EnvDataset(env, max_steps_per_episode=max_steps_per_episode)
@@ -223,7 +228,10 @@ class TestGymDataLoader:
         action_shape = (batch_size, *action_shape)
         reward_shape = (batch_size,)
 
-        env = self.GymDataLoader(dataset, batch_size=batch_size,)
+        env = self.GymDataLoader(
+            dataset,
+            batch_size=batch_size,
+        )
         assert isinstance(env.observation_space, spaces.Box)
         assert len(env.observation_space.shape) == 4
         assert env.observation_space.shape[0] == batch_size

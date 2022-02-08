@@ -1,11 +1,12 @@
+from typing import Any, Iterable, Optional, Union
+
 import torch
-from torch.distributions import Categorical as Categorical_
-from typing import Optional, Iterable, Union, Any
 from torch import Tensor
+from torch.distributions import Categorical as Categorical_
 
 
 class Categorical(Categorical_):
-    """ Simple little addition to the `torch.distributions.Categorical`,
+    """Simple little addition to the `torch.distributions.Categorical`,
     allowing it to be 'split' into a sequence of distributions (to help with the
     splitting in the output
     heads)
@@ -40,15 +41,15 @@ class Categorical(Categorical_):
 
     @property
     def device(self) -> torch.device:
-        """ The device of the tensors of this distribution.
+        """The device of the tensors of this distribution.
 
-        @lebrice: Not sure why this isn't already part of torch.Distribution base-class. 
+        @lebrice: Not sure why this isn't already part of torch.Distribution base-class.
         """
         return self._device
 
     def to(self, device: Union[str, torch.device]) -> "Categorical":
-        """ Moves this distribution to another device. 
-        
-        @lebrice: Not sure why this isn't already part of torch.Distribution base-class. 
+        """Moves this distribution to another device.
+
+        @lebrice: Not sure why this isn't already part of torch.Distribution base-class.
         """
         return type(self)(logits=self.logits.to(device=device))

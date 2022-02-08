@@ -5,14 +5,12 @@ the task, rather than setting a brand new random task.
 There could also be some kind of 'task_duration' parameter, and the model does
 linear or smoothed-out transitions between them depending on the step number?
 """
-from functools import singledispatch
-from typing import Dict, List, Optional, TypeVar
+from typing import Dict, List, Optional
 
 import gym
 import numpy as np
 from gym import spaces
 
-from torch import Tensor
 from sequoia.common.spaces.sparse import Sparse
 from sequoia.utils.logging_utils import get_logger
 
@@ -26,7 +24,7 @@ logger = get_logger(__file__)
 
 
 class SmoothTransitions(MultiTaskEnvironment):
-    """ Extends MultiTaskEnvironment to support smooth task boudaries.
+    """Extends MultiTaskEnvironment to support smooth task boudaries.
 
     Same as `MultiTaskEnvironment`, but when in between two tasks, the
     environment will have its values set to a linear interpolation of the
@@ -59,7 +57,7 @@ class SmoothTransitions(MultiTaskEnvironment):
         nb_tasks: int = None,
         **kwargs
     ):
-        """ Wraps the environment, allowing for smooth task transitions.
+        """Wraps the environment, allowing for smooth task transitions.
 
         Same as `MultiTaskEnvironment`, but when in between two tasks, the
         environment will have its values set to a linear interpolation of the
@@ -125,7 +123,7 @@ class SmoothTransitions(MultiTaskEnvironment):
 
     @property
     def current_task_id(self) -> Optional[int]:
-        """ Returns the 'index' of the current task within the task schedule.
+        """Returns the 'index' of the current task within the task schedule.
 
         In this case, we return None, since there aren't clear task boundaries.
         """
@@ -135,7 +133,7 @@ class SmoothTransitions(MultiTaskEnvironment):
         return np.array([task.get(k, self.default_task[k]) for k in self.task_params])
 
     def smooth_update(self) -> None:
-        """ Update the curren_task at every step, based on a smooth mix of the
+        """Update the curren_task at every step, based on a smooth mix of the
         previous and the next task. Every time we reach a _step that is in the
         task schedule, we update the 'prev_task_step' and 'next_task_step'
         attributes.
@@ -151,10 +149,11 @@ class SmoothTransitions(MultiTaskEnvironment):
                 fixed_points.append(task.get(attr, self.default_task[attr]))
             # logger.debug(f"{attr}: steps={steps}, fp={fixed_points}")
             interpolated_value: float = np.interp(
-                x=self.steps, xp=steps, fp=fixed_points,
+                x=self.steps,
+                xp=steps,
+                fp=fixed_points,
             )
             current_task[attr] = interpolated_value
             # logger.debug(f"interpolated value of {attr} at step {self.step}: {interpolated_value}")
         # logger.debug(f"Updating task at step {self.step}: {current_task}")
         self.current_task = current_task
-

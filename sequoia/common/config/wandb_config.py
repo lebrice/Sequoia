@@ -6,13 +6,11 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import *
 
-import wandb
-from wandb.wandb_run import Run
 from pytorch_lightning.loggers import WandbLogger
 from simple_parsing import field, list_field
 
+import wandb
 from sequoia.utils.logging_utils import get_logger
-from sequoia.utils.parseable import Parseable
 from sequoia.utils.serialization import Serializable
 
 
@@ -38,9 +36,7 @@ def patched_monitor():
         wandb.log({key: wandb.Video(self.output_path)})
 
     vcr.ImageEncoder.close = close
-    wandb.patched["gym"].append(
-        ["gym.wrappers.monitoring.video_recorder.ImageEncoder", "close"]
-    )
+    wandb.patched["gym"].append(["gym.wrappers.monitoring.video_recorder.ImageEncoder", "close"])
 
 
 import wandb.integration.gym
@@ -58,10 +54,9 @@ wandb.integration.gym.monitor = patched_monitor
 logger = get_logger(__file__)
 
 
-
 @dataclass
 class WandbConfig(Serializable):
-    """ Set of configurations options for calling wandb.init directly. """
+    """Set of configurations options for calling wandb.init directly."""
 
     # Which user to use
     entity: str = ""
@@ -89,9 +84,9 @@ class WandbConfig(Serializable):
     # Path where the wandb files should be stored. If the 'WANDB_DIR'
     # environment variable is set, uses that value. Otherwise, defaults to
     # the value of "<log_dir_root>/wandb"
-    wandb_path: Optional[Path] = Path(
-        os.environ["WANDB_DIR"]
-    ) if "WANDB_DIR" in os.environ else None
+    wandb_path: Optional[Path] = (
+        Path(os.environ["WANDB_DIR"]) if "WANDB_DIR" in os.environ else None
+    )
 
     # Tags to add to this run with wandb.
     tags: List[str] = list_field()
@@ -123,7 +118,7 @@ class WandbConfig(Serializable):
     # Save checkpoints in wandb dir to upload on W&B servers.
     log_model: bool = False
 
-    # Class variables used to check wether wandb.login has already been called or not. 
+    # Class variables used to check wether wandb.login has already been called or not.
     logged_in: ClassVar[bool] = False
     key_configured: ClassVar[bool] = False
 
@@ -159,7 +154,7 @@ class WandbConfig(Serializable):
         return cls.key_configured
 
     def wandb_init_kwargs(self) -> Dict:
-        """ Return the kwargs to pass to wandb.init() """
+        """Return the kwargs to pass to wandb.init()"""
         if self.run_name is None:
             # TODO: Create a run name using the coefficients of the tasks, etc?
             # At the moment, if no run name is given, the 'random' name from wandb is used.
@@ -207,9 +202,7 @@ class WandbConfig(Serializable):
         init_kwargs = self.wandb_init_kwargs()
         init_kwargs["config"] = config_dict
 
-        run = wandb.init(
-            **init_kwargs
-        )
+        run = wandb.init(**init_kwargs)
         logger.info(f"Run: {run}")
         if run:
             if self.run_name is None:

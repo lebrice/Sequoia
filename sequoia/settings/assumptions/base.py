@@ -1,5 +1,4 @@
 from sequoia.settings.base.bases import SettingABC
-from typing import Type, Any, Union
 from sequoia.utils.logging_utils import get_logger
 
 logger = get_logger(__file__)
@@ -9,7 +8,7 @@ logger = get_logger(__file__)
 # though.
 # It's also quite dumb that we have to extend a metaclass from pytorch lightning!
 
-# class AssumptionMeta(_DataModuleWrapper):    
+# class AssumptionMeta(_DataModuleWrapper):
 #     def __instancecheck__(self, instance: Union[SettingABC, Any]):
 #         logger.debug(f"InstanceCheck on assumption {self} for instance {instance}")
 #         return super().__instancecheck__(instance)
@@ -17,4 +16,3 @@ logger = get_logger(__file__)
 
 class AssumptionBase(SettingABC):
     pass
-

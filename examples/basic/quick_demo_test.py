@@ -4,14 +4,14 @@ import contextlib
 import sys
 
 import pytest
-from sequoia.settings import ClassIncrementalSetting, Results
 
 from examples.basic.quick_demo import demo_command_line, demo_simple
+from sequoia.settings import ClassIncrementalSetting, Results
 
 
 @pytest.mark.timeout(120)
 def test_quick_demo(monkeypatch):
-    """ Test that runs the quick demo and checks that the results correspond to
+    """Test that runs the quick demo and checks that the results correspond to
     what you'd expect.
     """
     results: ClassIncrementalSetting.Results = None
@@ -37,7 +37,7 @@ def test_quick_demo(monkeypatch):
     #     ClassificationMetrics(n_samples=2016, accuracy=0.835317),
     #     ClassificationMetrics(n_samples=1984, accuracy=0.99748),
     # ]
-    
+
     assert results.final_performance_metrics[0].n_samples == 1984
     assert results.final_performance_metrics[1].n_samples == 2016
     assert results.final_performance_metrics[2].n_samples == 1984

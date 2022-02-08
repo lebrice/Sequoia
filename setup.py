@@ -1,8 +1,9 @@
-from setuptools import setup, find_packages
 import os
-import versioneer
-from typing import Dict, Union, List
+from typing import Dict, List, Union
 
+from setuptools import find_packages, setup
+
+import versioneer
 
 with open(os.path.join(os.path.dirname(__file__), "requirements.txt"), "r") as file:
     lines = [ln.strip() for ln in file.readlines()]
@@ -19,7 +20,7 @@ extras_require: Dict[str, Union[str, List[str]]] = {
     "hpo": ["orion>=0.1.15", "orion.algo.skopt>=0.1.6"],
     "avalanche": [
         "gdown",  # BUG: Avalanche needs this to download cub200 dataset.
-        "avalanche-lib @ git+https://github.com/ContinualAI/avalanche.git#egg=avalanche-lib",
+        "avalanche @ git+https://github.com/ContinualAI/avalanche.git@83b3cb9a92b75a59c1b9d31fc6f0dce9436e5fc5#egg=avalanche-lib",
     ],
     # NOTE: Removing this for now, because it has very strict requirements, and includes
     # a lot of copy-pasted code, and doesn't really add anything compared to metaworld.

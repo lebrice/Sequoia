@@ -2,28 +2,30 @@
 settings in the tree.
 """
 from dataclasses import dataclass
-from typing import ClassVar, Optional, Type, Union, Callable
+from typing import Callable, ClassVar, Optional, Type, Union
 
 import gym
 from gym import spaces
 from simple_parsing import mutable_field
 from stable_baselines3.sac.sac import SAC
 
-from sequoia.methods import register_method
 from sequoia.common.hparams import log_uniform
+from sequoia.methods import register_method
 from sequoia.settings.rl import ContinualRLSetting
 from sequoia.utils.logging_utils import get_logger
+
 from .off_policy_method import OffPolicyMethod, OffPolicyModel
 
 logger = get_logger(__file__)
 
 
 class SACModel(SAC, OffPolicyModel):
-    """ Customized version of the SAC model from stable-baselines-3. """
+    """Customized version of the SAC model from stable-baselines-3."""
 
     @dataclass
     class HParams(OffPolicyModel.HParams):
-        """ Hyper-parameters of the SAC Model. """
+        """Hyper-parameters of the SAC Model."""
+
         # The learning rate, it can be a function of the current progress (from
         # 1 to 0)
         learning_rate: Union[float, Callable] = log_uniform(1e-6, 1e-2, default=3e-4)
@@ -46,7 +48,7 @@ class SACModel(SAC, OffPolicyModel):
 @register_method
 @dataclass
 class SACMethod(OffPolicyMethod):
-    """ Method that uses the SAC model from stable-baselines3. """
+    """Method that uses the SAC model from stable-baselines3."""
 
     Model: ClassVar[Type[SACModel]] = SACModel
 
@@ -69,11 +71,12 @@ class SACMethod(OffPolicyMethod):
         self, observations: ContinualRLSetting.Observations, action_space: spaces.Space
     ) -> ContinualRLSetting.Actions:
         return super().get_actions(
-            observations=observations, action_space=action_space,
+            observations=observations,
+            action_space=action_space,
         )
 
     def on_task_switch(self, task_id: Optional[int]) -> None:
-        """ Called when switching tasks in a CL setting.
+        """Called when switching tasks in a CL setting.
 
         If task labels are available, `task_id` will correspond to the index of
         the new task. Otherwise, if task labels aren't available, `task_id` will

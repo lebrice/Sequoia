@@ -1,11 +1,11 @@
-from typing import Dict, List
+from typing import Dict
 
 import gym
 import matplotlib.pyplot as plt
 import numpy as np
-import pytest
 
 from .smooth_environment import SmoothTransitions
+
 
 def test_task_schedule():
     environment_name = "CartPole-v0"
@@ -13,7 +13,7 @@ def test_task_schedule():
     original = gym.make(environment_name)
     starting_length = original.length
     starting_gravity = original.gravity
-    
+
     end_length = 5 * starting_length
     end_gravity = 5 * starting_gravity
     total_steps = 100
@@ -39,7 +39,9 @@ def test_task_schedule():
 
     for step in range(total_steps):
         expected_steps = starting_length + (step / total_steps) * (end_length - starting_length)
-        expected_gravity = starting_gravity + (step / total_steps) * (end_gravity - starting_gravity)
+        expected_gravity = starting_gravity + (step / total_steps) * (
+            end_gravity - starting_gravity
+        )
 
         _, reward, done, _ = env.step(env.action_space.sample())
         assert np.isclose(env.length, expected_steps)
@@ -68,14 +70,11 @@ def test_update_only_on_reset():
     original = gym.make("CartPole-v0")
     start_length = original.length
     end_length = 10.0
-    task_schedule = {
-        total_steps: dict(length=end_length)
-    }
+    task_schedule = {total_steps: dict(length=end_length)}
     env = SmoothTransitions(
         original,
         task_schedule=task_schedule,
         only_update_on_episode_end=True,
-
     )
     env.reset()
     env.seed(123)
@@ -86,7 +85,7 @@ def test_update_only_on_reset():
         assert env.steps == i + 1
         if done:
             _ = env.reset()
-            expected_length = start_length + ((i+1) / total_steps) * (end_length - start_length)
+            expected_length = start_length + ((i + 1) / total_steps) * (end_length - start_length)
         assert np.isclose(env.length, expected_length)
 
 
@@ -95,9 +94,7 @@ def test_task_id_is_always_None():
     original = gym.make("CartPole-v0")
     start_length = original.length
     end_length = 10.0
-    task_schedule = {
-        total_steps: dict(length=end_length)
-    }
+    task_schedule = {total_steps: dict(length=end_length)}
     env = SmoothTransitions(
         original,
         task_schedule=task_schedule,
@@ -119,12 +116,12 @@ def test_task_id_is_always_None():
 
         x, task_id = obs["x"], obs["task_labels"]
         assert task_id is None
-                
+
         assert env.steps == i + 1
         if done:
             obs = env.reset()
             x, task_id = obs["x"], obs["task_labels"]
             assert task_id is None
-            
-            expected_length = start_length + ((i+1) / total_steps) * (end_length - start_length)
+
+            expected_length = start_length + ((i + 1) / total_steps) * (end_length - start_length)
         assert np.isclose(env.length, expected_length)

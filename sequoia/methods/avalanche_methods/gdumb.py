@@ -6,14 +6,15 @@ See `avalanche.training.plugins.gdumb.GDumbPlugin` or
 BUG: There appears to be a bug in the GDumb plugin, caused by a mismatch in the tensor
 shapes when concatenating them into a TensorDataset, when batch size > 1.
 """
-from dataclasses import dataclass
-from typing import ClassVar, Type, Optional, Any, Dict, List, Tuple
 from collections import defaultdict
+from dataclasses import dataclass
+from typing import Any, ClassVar, Dict, List, Optional, Tuple, Type
+
 import torch
 import tqdm
 from avalanche.benchmarks.utils import AvalancheConcatDataset
-from avalanche.training.strategies import GDumb, BaseStrategy
 from avalanche.training.plugins.gdumb import GDumbPlugin as _GDumbPlugin
+from avalanche.training.strategies import BaseStrategy, GDumb
 from simple_parsing import ArgumentParser
 from simple_parsing.helpers.hparams import uniform
 from torch import Tensor
@@ -24,11 +25,12 @@ from sequoia.settings.sl import ClassIncrementalSetting, TaskIncrementalSLSettin
 from sequoia.utils.logging_utils import get_logger
 
 from .base import AvalancheMethod
+
 logger = get_logger(__file__)
 
 
 class GDumbPlugin(_GDumbPlugin):
-    """ Patched version of the GDumbPlugin from Avalanche.
+    """Patched version of the GDumbPlugin from Avalanche.
 
     The base implementation is quite inefficient: for each new item, it does an entire
     concatenation with the current dataset.
@@ -45,8 +47,8 @@ class GDumbPlugin(_GDumbPlugin):
         self.counter: Dict[Any, Dict[Any, int]] = {}
 
     def after_train_dataset_adaptation(self, strategy: BaseStrategy, **kwargs):
-        """ Before training we make sure to organize the memory following
-            GDumb approach and updating the dataset accordingly.
+        """Before training we make sure to organize the memory following
+        GDumb approach and updating the dataset accordingly.
         """
 
         # for each pattern, add it to the memory or not
@@ -105,13 +107,10 @@ class GDumbPlugin(_GDumbPlugin):
         task_datasets: Dict[Any, TensorDataset] = {}
         for task_id, task_mem_tuple in self.ext_mem.items():
             patterns, targets = task_mem_tuple
-            task_dataset = TensorDataset(
-                torch.stack(patterns, dim=0), torch.stack(targets, dim=0)
-            )
+            task_dataset = TensorDataset(torch.stack(patterns, dim=0), torch.stack(targets, dim=0))
             task_datasets[task_id] = task_dataset
             logger.debug(
-                f"There are {len(task_dataset)} entries from task {task_id} in the new "
-                f"dataset."
+                f"There are {len(task_dataset)} entries from task {task_id} in the new " f"dataset."
             )
 
         adapted_dataset = AvalancheConcatDataset(task_datasets.values())

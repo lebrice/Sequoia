@@ -1,13 +1,11 @@
 from typing import ClassVar, List, Type
 
+import pytest
+
 from sequoia.common.gym_wrappers import MultiTaskEnvironment
-from sequoia.conftest import DummyEnvironment
-from sequoia.settings import Setting
-from sequoia.settings.assumptions.incremental_test import DummyMethod
 from sequoia.settings.rl.incremental.setting_test import (
     TestIncrementalRLSetting as IncrementalRLSettingTests,
 )
-import pytest
 
 from .setting import TaskIncrementalRLSetting
 
@@ -27,9 +25,11 @@ def test_task_label_space_of_env_has_right_n():
 
 
 def test_task_schedule_is_used():
-    """ Test that the tasks are switching over time. """
+    """Test that the tasks are switching over time."""
     setting = TaskIncrementalRLSetting(
-        dataset="CartPole-v0", train_max_steps=100, nb_tasks=2,
+        dataset="CartPole-v0",
+        train_max_steps=100,
+        nb_tasks=2,
     )
 
     default_length = 0.5

@@ -3,17 +3,16 @@ tasks, by selecting random prediction.
 """
 import warnings
 from abc import abstractmethod
-from typing import Optional, List, Any
+from typing import Any, List, Optional
 
 import torch
-from torch import Tensor
-from torch.nn import functional as F
-
 from avalanche.models import MTSimpleCNN as _MTSimpleCNN
 from avalanche.models import MTSimpleMLP as _MTSimpleMLP
 from avalanche.models import MultiHeadClassifier as _MultiHeadClassifier
-from avalanche.models import SimpleCNN, SimpleMLP
 from avalanche.models.dynamic_modules import MultiTaskModule
+from torch import Tensor
+from torch.nn import functional as F
+
 from sequoia.utils import get_logger
 
 logger = get_logger(__file__)
@@ -26,8 +25,7 @@ class PatchedMultiTaskModule(MultiTaskModule):
         pass
 
     def task_inference_forward_pass(self, x: Tensor) -> Tensor:
-        """ Forward pass with a simple form of task inference.
-        """
+        """Forward pass with a simple form of task inference."""
         # We don't have access to task labels (`task_labels` is None).
         # --> Perform a simple kind of task inference:
         # 1. Perform a forward pass with each task's output head;
@@ -71,9 +69,7 @@ class PatchedMultiTaskModule(MultiTaskModule):
         # different shape. Therefore we need to handle it like a list of tensors rather
         # than a stacked tensor.
         if all(not task_output.shape[-1] == N for task_output in task_outputs):
-            raise NotImplementedError(
-                "TODO: Output heads didn't give outputs of the same shape!"
-            )
+            raise NotImplementedError("TODO: Output heads didn't give outputs of the same shape!")
             # logits_from_each_head = task_outputs
             # probs_from_each_head = [
             #     torch.softmax(head_logits, dim=-1) for head_logits in logits_from_each_head
@@ -117,9 +113,7 @@ class PatchedMultiTaskModule(MultiTaskModule):
         # chosen_output_head_per_item: [0]
 
         # Create a bool tensor to select items associated with the chosen output head.
-        selected_mask = F.one_hot(chosen_output_head_per_item, T).to(
-            dtype=bool, device=x.device
-        )
+        selected_mask = F.one_hot(chosen_output_head_per_item, T).to(dtype=bool, device=x.device)
         assert selected_mask.shape == (B, T)
         # Select the logits using the mask:
         selected_outputs = logits_from_each_head[selected_mask]
@@ -132,7 +126,7 @@ from avalanche.benchmarks.utils import AvalancheDataset
 
 class MultiHeadClassifier(_MultiHeadClassifier):
     def __init__(self, in_features: int, initial_out_features: int = 2):
-        """ Multi-head classifier with separate classifiers for each task.
+        """Multi-head classifier with separate classifiers for each task.
 
         Typically used in task-incremental scenarios where task labels are
         available and provided to the model.
@@ -141,12 +135,10 @@ class MultiHeadClassifier(_MultiHeadClassifier):
         :param initial_out_features: initial number of classes (can be
             dynamically expanded).
         """
-        super().__init__(
-            in_features=in_features, initial_out_features=initial_out_features
-        )
+        super().__init__(in_features=in_features, initial_out_features=initial_out_features)
 
     def adaptation(self, dataset: AvalancheDataset):
-        """ If `dataset` contains new tasks, a new head is initialized.
+        """If `dataset` contains new tasks, a new head is initialized.
 
         :param dataset: data from the current experience.
         :return:
@@ -157,15 +149,13 @@ class MultiHeadClassifier(_MultiHeadClassifier):
         if task_labels is None:
             # We don't do task inference in this layer, since it's handled in the
             # patched models below.
-            raise NotImplementedError(
-                "Shouldn't get None task labels in the MultiHeadClassifier!"
-            )
+            raise NotImplementedError("Shouldn't get None task labels in the MultiHeadClassifier!")
         else:
             assert isinstance(task_labels, Tensor)
         return super().forward(x, task_labels)
 
     def forward_single_task(self, x: Tensor, task_label: Optional[Tensor]):
-        """ compute the output given the input `x`. This module uses the task
+        """compute the output given the input `x`. This module uses the task
         label to activate the correct head.
 
         :param x:
@@ -208,9 +198,9 @@ class MTSimpleCNN(_MTSimpleCNN, PatchedMultiTaskModule):
             # of GEM though, it doesnt pass the task id when calculating the
             # reference gradient, so I'm not sure we want to be using this in this case.
             if self.training:
-                warnings.warn(RuntimeWarning(
-                    "Using task inference in the forward pass while training?"
-                ))
+                warnings.warn(
+                    RuntimeWarning("Using task inference in the forward pass while training?")
+                )
             return self.task_inference_forward_pass(x=x)
         return super().forward(x=x, task_labels=task_labels)
 
@@ -222,7 +212,7 @@ class MTSimpleCNN(_MTSimpleCNN, PatchedMultiTaskModule):
 class MTSimpleMLP(_MTSimpleMLP, PatchedMultiTaskModule):
     def __init__(self, input_size: int = 28 * 28, hidden_size: int = 512):
         """
-            Multi-task MLP with multi-head classifier.
+        Multi-task MLP with multi-head classifier.
         """
         super().__init__(input_size=input_size, hidden_size=hidden_size)
         self.classifier = MultiHeadClassifier(in_features=hidden_size)
@@ -230,9 +220,9 @@ class MTSimpleMLP(_MTSimpleMLP, PatchedMultiTaskModule):
     def forward(self, x: Tensor, task_labels: Optional[Tensor] = None) -> Tensor:
         if task_labels is None:
             if self.training:
-                warnings.warn(RuntimeWarning(
-                    "Using task inference in the forward pass while training?"
-                ))
+                warnings.warn(
+                    RuntimeWarning("Using task inference in the forward pass while training?")
+                )
             return self.task_inference_forward_pass(x=x)
         return super().forward(x=x, task_labels=task_labels)
 

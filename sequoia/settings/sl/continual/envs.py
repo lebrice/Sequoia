@@ -1,12 +1,10 @@
 """ Utility functions for determining the observation space for a given SL dataset.
 """
-import itertools
-import warnings
-from functools import partial
-from typing import Any, Callable, Dict, List, Optional, Sequence, Tuple, Type, Union
+from typing import Any, Dict, List, Optional, Sequence
 
 import gym
 import numpy as np
+import torch
 from continuum.datasets import (
     CIFAR10,
     CIFAR100,
@@ -24,35 +22,14 @@ from continuum.datasets import (
     ImageNet1000,
     MNISTFellowship,
     Synbols,
-    _ContinuumDataset,
 )
-import torch
-
 from continuum.tasks import TaskSet
 from gym import Space, spaces
-from torch import Tensor
-from torch.nn import functional as F
-from torch.utils.data import DataLoader, Dataset, IterableDataset, Subset, ConcatDataset
-from sequoia.common.spaces.image import could_become_image
-from sequoia.common.spaces import TensorBox, TensorDiscrete
-from sequoia.common.gym_wrappers.utils import tile_images
-from sequoia.common.gym_wrappers.convert_tensors import (
-    add_tensor_support as tensor_space,
-)
-from torch.utils.data import TensorDataset
-from sequoia.common.spaces import ImageTensorSpace, TypedDictSpace
-from sequoia.common.transforms import Transforms
-from sequoia.settings.sl.environment import PassiveEnvironment
-from sequoia.utils.logging_utils import get_logger
+from torch.utils.data import Subset, TensorDataset
 
-from .objects import (
-    Actions,
-    ActionType,
-    Observations,
-    ObservationType,
-    Rewards,
-    RewardType,
-)
+from sequoia.common.spaces import ImageTensorSpace, TensorBox, TensorDiscrete
+from sequoia.common.spaces.image import could_become_image
+from sequoia.utils.logging_utils import get_logger
 
 logger = get_logger(__file__)
 
@@ -118,14 +95,17 @@ CTRL_INSTALLED: bool = False
 CTRL_STREAMS: List[str] = []
 CTRL_NB_TASKS: Dict[str, Optional[int]] = {}
 try:
-    import ctrl
     from ctrl.tasks.task import Task
     from ctrl.tasks.task_generator import TaskGenerator
 except ImportError as exc:
     logger.debug(f"ctrl-bench isn't installed: {exc}")
     # Creating those just for type hinting.
-    class Task: pass
-    class TaskGenerator: pass
+    class Task:
+        pass
+
+    class TaskGenerator:
+        pass
+
 else:
     CTRL_INSTALLED = True
     CTRL_STREAMS = ["s_plus", "s_minus", "s_in", "s_out", "s_pl", "s_long"]
@@ -134,11 +114,10 @@ else:
     x_dims = [(3, 32, 32)] * len(CTRL_STREAMS)
     n_classes = [10, 10, 10, 10, 10, 5]
 
-
     for i, stream_name in enumerate(CTRL_STREAMS):
-        # Create the 'base observation space' for this stream. 
+        # Create the 'base observation space' for this stream.
         obs_space = ImageTensorSpace(0, 1, shape=x_dims[i], dtype=torch.float32)
-        
+
         # TODO: Not sure if the classes should be considered 'shared' or 'distinct'.
         # For now assume they are shared, so the setting's action space is always [0, 5]
         # but the action changes.
@@ -146,12 +125,13 @@ else:
         # action_space = TensorDiscrete(n=total_n_classes)
         n_classes_per_task = n_classes[i]
         action_space = TensorDiscrete(n=n_classes_per_task)
-        
+
         base_observation_spaces[stream_name] = obs_space
         base_action_spaces[stream_name] = action_space
 
 
 from functools import singledispatch
+
 
 @singledispatch
 def get_observation_space(dataset: Any) -> gym.Space:
@@ -202,13 +182,12 @@ def _get_observation_space_for_tensor_dataset(dataset: TensorDataset) -> gym.Spa
     return obs_space
 
 
-
 @singledispatch
 def get_action_space(dataset: Any) -> gym.Space:
     raise NotImplementedError(
-        f"Don't yet have a registered handler to get the action space of dataset "
-        f"{dataset}."
+        f"Don't yet have a registered handler to get the action space of dataset " f"{dataset}."
     )
+
 
 @get_action_space.register(Subset)
 def _get_action_space_for_subset(dataset: Subset) -> gym.Space:
@@ -231,8 +210,7 @@ def _get_action_space_for_dataset_name(dataset: str) -> gym.Space:
 @singledispatch
 def get_reward_space(dataset: Any) -> gym.Space:
     raise NotImplementedError(
-        f"Don't yet have a registered handler to get the reward space of dataset "
-        f"{dataset}."
+        f"Don't yet have a registered handler to get the reward space of dataset " f"{dataset}."
     )
 
 
@@ -279,6 +257,7 @@ def get_y_space_for_tensor_dataset(dataset: TensorDataset) -> gym.Space:
     # TODO: Add a space like DiscreteWithOffset ?
     return TensorBox(low, high, shape=y_sample_shape, dtype=y.dtype)
 
+
 @get_action_space.register(list)
 @get_action_space.register(tuple)
 def _get_action_space_for_list_of_datasets(datasets: Sequence[TaskSet]) -> gym.Space:
@@ -287,16 +266,20 @@ def _get_action_space_for_list_of_datasets(datasets: Sequence[TaskSet]) -> gym.S
     # passed for each task, like [0, 2), [3, 4], etc.
     action_spaces = [get_action_space(dataset) for dataset in datasets]
     if isinstance(action_spaces[0], spaces.Discrete):
-        lows = [0 if isinstance(space, spaces.Discrete) else space.low for space in action_spaces] 
-        highs = [space.n - 1 if isinstance(space, spaces.Discrete) else space.high for space in action_spaces] 
-    
+        lows = [0 if isinstance(space, spaces.Discrete) else space.low for space in action_spaces]
+        highs = [
+            space.n - 1 if isinstance(space, spaces.Discrete) else space.high
+            for space in action_spaces
+        ]
+
     if isinstance(reward_spaces[0], spaces.Discrete) and min(lows) == 0:
-        return TensorDiscrete(max(highs)+1)
+        return TensorDiscrete(max(highs) + 1)
 
     raise NotImplementedError(
         f"Don't yet know how to get the 'union' of the action spaces ({action_spaces}) "
         f" of datasets {datasets}"
     )
+
 
 @get_reward_space.register(list)
 @get_reward_space.register(tuple)
@@ -306,11 +289,14 @@ def _get_reward_space_for_list_of_datasets(datasets: Sequence[TaskSet]) -> gym.S
     # passed for each task, like [0, 2), [3, 4], etc.
     reward_spaces = [get_reward_space(dataset) for dataset in datasets]
     if isinstance(reward_spaces[0], spaces.Discrete):
-        lows = [0 if isinstance(space, spaces.Discrete) else space.low for space in reward_spaces] 
-        highs = [space.n - 1 if isinstance(space, spaces.Discrete) else space.high for space in reward_spaces] 
-    
+        lows = [0 if isinstance(space, spaces.Discrete) else space.low for space in reward_spaces]
+        highs = [
+            space.n - 1 if isinstance(space, spaces.Discrete) else space.high
+            for space in reward_spaces
+        ]
+
     if isinstance(reward_spaces[0], spaces.Discrete) and min(lows) == 0:
-        return TensorDiscrete(max(highs)+1)
+        return TensorDiscrete(max(highs) + 1)
 
     raise NotImplementedError(
         f"Don't yet know how to get the 'union' of the reward spaces ({reward_spaces}) "

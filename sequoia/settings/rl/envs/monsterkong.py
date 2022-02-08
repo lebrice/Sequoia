@@ -1,19 +1,28 @@
-from io import StringIO
 from contextlib import redirect_stdout
-from gym import spaces
+from io import StringIO
+
 import numpy as np
-from gym.envs.registration import EnvRegistry, registry, EnvSpec
+from gym import spaces
+from gym.envs.registration import EnvRegistry, EnvSpec, registry
 
 # Avoid print statements from pygame package.
 with redirect_stdout(StringIO()):
-    from meta_monsterkong.make_env import MetaMonsterKongEnv, MkConfig
+    from meta_monsterkong.make_env import MetaMonsterKongEnv
+
 from .variant_spec import EnvVariantSpec
 
 
 def observe_state(env: MetaMonsterKongEnv) -> MetaMonsterKongEnv:
     if not env.observe_state:
         env.unwrapped.observe_state = True
-        env.unwrapped.observation_space = spaces.Box(0, 292, [402,], np.int16)
+        env.unwrapped.observation_space = spaces.Box(
+            0,
+            292,
+            [
+                402,
+            ],
+            np.int16,
+        )
     return env
 
 

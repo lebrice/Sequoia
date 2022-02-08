@@ -1,34 +1,24 @@
+from collections.abc import Mapping
 from functools import singledispatch
-from typing import Any, Callable, Sequence, Tuple, TypeVar, Union, List, Dict
+from typing import Dict, List, Tuple
 
-import gym
 import numpy as np
 import torch
 from gym import spaces
 from PIL import Image
-from sequoia.utils.logging_utils import get_logger
 from torch import Tensor
 from torch.nn.functional import interpolate
 from torchvision.transforms import InterpolationMode
 from torchvision.transforms import Resize as Resize_
-from torchvision.transforms import ToTensor as ToTensor_
 from torchvision.transforms import functional as F
 
-from .channels import (
-    channels_first,
-    channels_last,
-    has_channels_first,
-    has_channels_last,
-)
-from .transform import Img, Transform
+from sequoia.common.gym_wrappers.convert_tensors import add_tensor_support, has_tensor_support
 from sequoia.common.spaces import NamedTupleSpace, TypedDictSpace
 from sequoia.common.spaces.image import Image as ImageSpace
-from sequoia.common.gym_wrappers.convert_tensors import (
-    has_tensor_support,
-    add_tensor_support,
-)
-from collections.abc import Mapping
-from sequoia.settings.base import Observations
+from sequoia.utils.logging_utils import get_logger
+
+from .channels import channels_first, channels_last, has_channels_first, has_channels_last
+from .transform import Img, Transform
 from .utils import is_image
 
 logger = get_logger(__file__)
@@ -36,7 +26,7 @@ logger = get_logger(__file__)
 
 @singledispatch
 def resize(x: Img, size: Tuple[int, ...], **kwargs) -> Img:
-    """ Resizes a PIL.Image, a Tensor, ndarray, or a Box space. """
+    """Resizes a PIL.Image, a Tensor, ndarray, or a Box space."""
     raise NotImplementedError(f"Transform doesn't support input {x} of type {type(x)}")
 
 
@@ -47,10 +37,8 @@ def _(x: Image.Image, size: Tuple[int, ...], **kwargs) -> Image.Image:
 
 @resize.register(np.ndarray)
 @resize.register(Tensor)
-def _resize_array_or_tensor(
-    x: np.ndarray, size: Tuple[int, ...], **kwargs
-) -> np.ndarray:
-    """ TODO: This resizes numpy arrays by converting them to tensors and then
+def _resize_array_or_tensor(x: np.ndarray, size: Tuple[int, ...], **kwargs) -> np.ndarray:
+    """TODO: This resizes numpy arrays by converting them to tensors and then
     using the `interpolate` function. There is for sure a more efficient way to
     do this.
     """
@@ -65,9 +53,7 @@ def _resize_array_or_tensor(
         # Need to make it channels first (for interpolate to work).
         x = channels_first(x)
 
-    assert has_channels_first(
-        x
-    ), f"Image needs to have channels first (shape is {x.shape})"
+    assert has_channels_first(x), f"Image needs to have channels first (shape is {x.shape})"
 
     x = interpolate(x, size, mode="area")
     if isinstance(original, np.ndarray):
@@ -83,7 +69,7 @@ def _resize_array_or_tensor(
 def _resize_namedtuple_space(
     x: NamedTupleSpace, size: Tuple[int, ...], **kwargs
 ) -> NamedTupleSpace:
-    """ When presented with a NamedTupleSpace input, this transform will be
+    """When presented with a NamedTupleSpace input, this transform will be
     applied to all 'Image' spaces.
     """
     return type(x)(
@@ -96,7 +82,7 @@ def _resize_namedtuple_space(
 
 @resize.register(Mapping)
 def _resize_namedtuple(x: Dict, size: Tuple[int, ...], **kwargs) -> Dict:
-    """ When presented with a Mapping-like input, this transform will be
+    """When presented with a Mapping-like input, this transform will be
     applied to all 'Image' spaces.
     """
     return type(x)(
@@ -109,22 +95,21 @@ def _resize_namedtuple(x: Dict, size: Tuple[int, ...], **kwargs) -> Dict:
 
 @resize.register(TypedDictSpace)
 def _resize_typed_dict(x: TypedDictSpace, size: Tuple[int, ...], **kwargs) -> TypedDictSpace:
-    """ When presented with a Mapping-like input, this transform will be
+    """When presented with a Mapping-like input, this transform will be
     applied to all 'Image' spaces.
     """
     return type(x)(
         {
             key: resize(value, size, **kwargs) if is_image(value) else value
             for key, value in x.items()
-        }, dtype=x.dtype,
+        },
+        dtype=x.dtype,
     )
 
 
 @resize.register(tuple)
-def _resize_image_shape(
-    x: Tuple[int, ...], size: Tuple[int, ...], **kwargs
-) -> Tuple[int, ...]:
-    """ Give the resized image shape, given the input shape. """
+def _resize_image_shape(x: Tuple[int, ...], size: Tuple[int, ...], **kwargs) -> Tuple[int, ...]:
+    """Give the resized image shape, given the input shape."""
     new_shape: List[int] = list(size)
     if len(size) == 2:
         # Preserve the number of channels.

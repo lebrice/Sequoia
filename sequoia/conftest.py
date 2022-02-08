@@ -1,32 +1,29 @@
-import argparse
 import json
 import logging
-import os
 import sys
-
-from argparse import ArgumentParser
-from dataclasses import replace
 from pathlib import Path
-from typing import (
-    Any,
-    Dict,
-    Iterable,
-    List,
-    Optional,
-    Tuple,
-    Type,
-    Union,
-    get_type_hints,
-)
+from typing import Any, Iterable, List, Optional, Type, get_type_hints
 
 import gym
+import numpy as np
 import pytest
-from simple_parsing import Serializable
 
-from sequoia.methods.trainer import TrainerConfig
 from sequoia.common.config import Config
-from sequoia.settings import Method, Setting
+from sequoia.methods.trainer import TrainerConfig
+from sequoia.settings import Method
+from sequoia.settings.rl.envs import (
+    ATARI_PY_INSTALLED,
+    METAWORLD_INSTALLED,
+    MONSTERKONG_INSTALLED,
+    MTENV_INSTALLED,
+    MUJOCO_INSTALLED,
+)
 
+collect_ignore = []
+collect_ignore_glob = []
+
+if not MONSTERKONG_INSTALLED:
+    collect_ignore.append("sequoia/settings/rl/envs/monsterkong.py")
 
 logger = logging.getLogger(__file__)
 
@@ -45,8 +42,6 @@ def skip_param(*args, reason: str):
 
 def skipif_param(condition, *args, reason: str):
     return pytest.param(*args, marks=pytest.mark.skipif(condition, reason=reason))
-
-import numpy as np
 
 
 @pytest.fixture(autouse=True)
@@ -131,9 +126,7 @@ test_datasets_option_name: str = "datasets"
 
 def pytest_addoption(parser):
     parser.addoption("--slow", action="store_true", default=False)
-    parser.addoption(
-        f"--{test_datasets_option_name}", action="store", nargs="*", default=[]
-    )
+    parser.addoption(f"--{test_datasets_option_name}", action="store", nargs="*", default=[])
 
 
 slow = pytest.mark.skipif(
@@ -143,7 +136,7 @@ slow = pytest.mark.skipif(
 
 
 def slow_param(*args):
-    """ Mark a parameter as 'slow', so it's only run when using the "--slow" flag. """
+    """Mark a parameter as 'slow', so it's only run when using the "--slow" flag."""
     return pytest.param(*args, marks=slow)
 
 
@@ -159,8 +152,7 @@ def find_class_under_test(
         cls = type_hints.get(k)
         if cls:
             logger.debug(
-                f"function {function_name} has annotation of type "
-                f"{cls} for argument {k}."
+                f"function {function_name} has annotation of type " f"{cls} for argument {k}."
             )
             break
     if cls is None:
@@ -194,7 +186,9 @@ def parametrize_test_datasets(metafunc):
 
     if "ALL" in datasets_from_command_line:
         method_class: Optional[Type[Method]] = find_class_under_test(
-            module, function, name="method",
+            module,
+            function,
+            name="method",
         )
         test_datasets = get_all_dataset_names(method_class)
     elif "NONE" in datasets_from_command_line:
@@ -229,16 +223,16 @@ def parametrize_test_datasets(metafunc):
 
 
 def pytest_generate_tests(metafunc):
-    """ Automatically Parametrize the tests.
+    """Automatically Parametrize the tests.
     TODO: Having some fun parametrizing tests automatically, but should check
-    that it's worth it, because otherwise it might make things too confusing. 
+    that it's worth it, because otherwise it might make things too confusing.
     """
     parametrize_test_datasets(metafunc)
 
 
 class DummyEnvironment(gym.Env):
-    """ Dummy environment for testing.
-    
+    """Dummy environment for testing.
+
     The reward is how close to the target value the state (a counter) is. The
     actions are:
     0:  keep the counter the same.
@@ -289,14 +283,6 @@ class DummyEnvironment(gym.Env):
         return seeds
 
 
-from sequoia.settings.rl.envs import (
-    METAWORLD_INSTALLED,
-    MONSTERKONG_INSTALLED,
-    MTENV_INSTALLED,
-    ATARI_PY_INSTALLED,
-    MUJOCO_INSTALLED,
-)
-
 monsterkong_required = pytest.mark.skipif(
     not MONSTERKONG_INSTALLED, reason="monsterkong is required for this test."
 )
@@ -323,15 +309,16 @@ def param_requires_atari_py(*args):
     )
 
 
-mtenv_required = pytest.mark.skipif(
-    not MTENV_INSTALLED, reason="mtenv is required for this test."
-)
+mtenv_required = pytest.mark.skipif(not MTENV_INSTALLED, reason="mtenv is required for this test.")
 
 
 def param_requires_mtenv(*args):
     return skipif_param(
-        not MTENV_INSTALLED, *args, reason="mtenv is required for this parameter.",
+        not MTENV_INSTALLED,
+        *args,
+        reason="mtenv is required for this parameter.",
     )
+
 
 # Metaworld needs mujoco
 metaworld_required = pytest.mark.skipif(
@@ -354,6 +341,7 @@ mujoco_required = pytest.mark.skipif(
 
 def param_requires_mujoco(*args):
     return skipif_param(
-        not MUJOCO_INSTALLED, *args, reason="mujoco-py is required for this parameter.",
+        not MUJOCO_INSTALLED,
+        *args,
+        reason="mujoco-py is required for this parameter.",
     )
-

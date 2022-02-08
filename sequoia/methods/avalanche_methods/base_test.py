@@ -5,27 +5,19 @@ from typing import ClassVar, List, Optional, Type
 import pytest
 import tqdm
 
-# from avalanche.models import MTSimpleCNN, MTSimpleMLP, SimpleCNN, SimpleMLP
+from avalanche.models import SimpleCNN, SimpleMLP
 from avalanche.models.utils import avalanche_forward
 from avalanche.training.strategies import BaseStrategy
-from torch.nn import Module
 
 from sequoia.common.config import Config
-from sequoia.conftest import xfail_param
-from sequoia.settings.sl import (
-    ClassIncrementalSetting,
-    TaskIncrementalSLSetting,
-    ContinualSLSetting,
-    DiscreteTaskAgnosticSLSetting,
-    SLSetting,
-)
+from sequoia.conftest import slow
+from sequoia.methods.method_test import MethodTests
+from sequoia.settings.sl import ClassIncrementalSetting, SLSetting
 from sequoia.settings.sl.incremental.objects import Observations, Rewards
-from sequoia.conftest import slow, slow_param
 
 from .base import AvalancheMethod
 from .experience import SequoiaExperience
-from .patched_models import MTSimpleCNN, MTSimpleMLP, SimpleCNN, SimpleMLP
-from sequoia.methods.method_test import MethodTests
+from .patched_models import MTSimpleCNN, MTSimpleMLP
 
 
 class _TestAvalancheMethod(MethodTests):
@@ -46,8 +38,7 @@ class _TestAvalancheMethod(MethodTests):
     @classmethod
     @pytest.fixture(params=[SimpleCNN, SimpleMLP, MTSimpleCNN, MTSimpleMLP])
     def method(cls, config: Config, request) -> AvalancheMethod:
-        """ Fixture that returns the Method instance to use when testing/debugging.
-        """
+        """Fixture that returns the Method instance to use when testing/debugging."""
         model_type = request.param
         return cls.Method(model=model_type, train_mb_size=10, train_epochs=1)
 
@@ -109,8 +100,7 @@ class _TestAvalancheMethod(MethodTests):
 
 
 def test_warning_if_environment_to_experience_isnt_overwritten(short_sl_track_setting):
-    """ When
-    """
+    """When"""
     method = AvalancheMethod()
     assert short_sl_track_setting.monitor_training_performance
     with pytest.warns(UserWarning, match="chance accuracy"):
@@ -175,13 +165,11 @@ class MyDummyMethod(AvalancheMethod):
         task_labels = stacked_observations.task_labels
         stacked_rewards: Rewards = Rewards.concatenate(all_rewards)
         y = stacked_rewards.y
-        return SequoiaExperience(
-            env=env, setting=setting, x=x, y=y, task_labels=task_labels
-        )
+        return SequoiaExperience(env=env, setting=setting, x=x, y=y, task_labels=task_labels)
 
 
 def test_no_warning_if_environment_to_experience_is_overwritten(short_sl_track_setting):
-    """ When the Method doesn't overwrite the `environment_to_experience` method, we
+    """When the Method doesn't overwrite the `environment_to_experience` method, we
     raise a Warning to let the User know that they can only expect chance online
     accuracy.
     """

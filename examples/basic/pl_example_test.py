@@ -5,23 +5,21 @@ Can be run like so:
 $ pytest examples/basic/pl_example_test.py
 ```
 """
-import pytest
 from typing import Type
 
+import pytest
+
+from examples.basic.pl_example import ExampleMethod, Model
 from sequoia.common.config import Config
 from sequoia.common.metrics import ClassificationMetrics
 from sequoia.methods import Method
 from sequoia.methods.method_test import MethodTests, config, session_config  # type: ignore
 from sequoia.settings import Results
-from sequoia.settings.sl import (
-    ContinualSLSetting,
-    IncrementalSLSetting,
-)
-from examples.basic.pl_example import ExampleMethod, Model
+from sequoia.settings.sl import ContinualSLSetting, IncrementalSLSetting
 
 
 class TestPLExample(MethodTests):
-    """ Tests for this PL Example.
+    """Tests for this PL Example.
 
     This `MethodTests` base class generates a `test_debug` test for us.
     """
@@ -30,14 +28,13 @@ class TestPLExample(MethodTests):
 
     @pytest.fixture()
     def method(self, config: Config):
-        """ Required fixture, which creates a Method that can be used for quick tests.
-        """
+        """Required fixture, which creates a Method that can be used for quick tests."""
         return ExampleMethod(hparams=Model.HParams(max_epochs_per_task=1))
 
     def validate_results(
         self, setting: ContinualSLSetting, method: ExampleMethod, results: Results
     ):
-        """ This gets called by `test_debug` to check that the results make sense for
+        """This gets called by `test_debug` to check that the results make sense for
         the given setting and method.
 
         """

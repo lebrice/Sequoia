@@ -5,14 +5,14 @@ from typing import List
 
 import numpy as np
 import torch
-from avalanche.training.strategies import BaseStrategy
 from avalanche.training.plugins import StrategyPlugin
+from avalanche.training.strategies import BaseStrategy
 from torch import Tensor
 from torch.utils.data import TensorDataset
 
 
 class GatherDataset(StrategyPlugin):
-    """ IDEA: A Plugin that accumulates the tensors from the env to create a "proper"
+    """IDEA: A Plugin that accumulates the tensors from the env to create a "proper"
     Dataset to be used by the plugins.
     """
 

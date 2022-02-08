@@ -4,19 +4,20 @@ See `avalanche.training.plugins.ewc.EWCPlugin` or
 `avalanche.training.strategies.strategy_wrappers.EWC` for more info.
 """
 from dataclasses import dataclass
-from typing import ClassVar, Optional, Type, Dict, Union
+from typing import ClassVar, Dict, Optional, Type, Union
 
+from avalanche.training.strategies import EWC, BaseStrategy
 from simple_parsing import ArgumentParser
 from simple_parsing.helpers import choice
 from simple_parsing.helpers.hparams import categorical, uniform
-from avalanche.training.strategies import EWC, BaseStrategy
-
-from sequoia.methods import register_method
-from sequoia.settings.sl import ClassIncrementalSetting, TaskIncrementalSLSetting
 from torch import nn
 
+from sequoia.methods import register_method
+from sequoia.settings.sl import TaskIncrementalSLSetting
+
 from .base import AvalancheMethod
-from .patched_models import SimpleCNN, SimpleMLP
+from avalanche.models import SimpleCNN, SimpleMLP
+
 
 @register_method
 @dataclass
@@ -42,12 +43,10 @@ class EWCMethod(AvalancheMethod[EWC]):
 
     # The model.
     model: Union[nn.Module, Type[nn.Module]] = choice(available_models, default=SimpleCNN)
-    
+
     # Hyperparameter to weigh the penalty inside the total loss. The larger the lambda,
     # the larger the regularization.
-    ewc_lambda: float = uniform(
-        1e-3, 1.0, default=0.1
-    )  # todo: set the right value to use here.
+    ewc_lambda: float = uniform(1e-3, 1.0, default=0.1)  # todo: set the right value to use here.
     # `separate` to keep a separate penalty for each previous experience. `online` to
     # keep a single penalty summed with a decay factor over all previous tasks.
     mode: str = categorical("separate", "online", default="separate")

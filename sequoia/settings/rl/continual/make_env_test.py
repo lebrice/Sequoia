@@ -2,14 +2,16 @@
 Tests that check that combining wrappers works fine in combination.
 """
 
-from typing import Callable, Union
+from typing import Union
 
 import gym
 import pytest
 import torch
+from gym.vector import AsyncVectorEnv, SyncVectorEnv
+
 from sequoia.conftest import slow_param
+
 from .make_env import make_batched_env
-from gym.vector import SyncVectorEnv, AsyncVectorEnv
 
 
 @pytest.mark.parametrize("env_name", ["CartPole-v0"])
@@ -35,9 +37,7 @@ def test_make_batched_env(env_name: str, batch_size: int):
 @pytest.mark.parametrize("env_name", ["CartPole-v0"])
 @pytest.mark.parametrize("batch_size", [4])
 @pytest.mark.parametrize("num_workers", [0, 4])
-def test_make_batched_env_envs_have_distinct_ids(
-    env_name: str, batch_size: int, num_workers: int
-):
+def test_make_batched_env_envs_have_distinct_ids(env_name: str, batch_size: int, num_workers: int):
     # NOTE: We get a SyncVectorEnv if num_workers == 0, else we get an AsyncVectorEnv if
     # num_workers == batch_size, else we get a BatchVectorEnv.
     from gym.wrappers import TimeLimit
@@ -71,7 +71,9 @@ def get_unwrapped_id(env):
 @pytest.mark.parametrize("batch_size", [1, 5, slow_param(10)])
 def test_make_env_with_wrapper(env_name: str, batch_size: int):
     env = make_batched_env(
-        base_env=env_name, batch_size=batch_size, wrappers=[PixelObservationWrapper],
+        base_env=env_name,
+        batch_size=batch_size,
+        wrappers=[PixelObservationWrapper],
     )
     start_state = env.reset()
     expected_state_shape = (batch_size, 400, 600, 3)
@@ -85,8 +87,9 @@ def test_make_env_with_wrapper(env_name: str, batch_size: int):
         assert reward.shape == (batch_size,)
 
 
-from sequoia.common.gym_wrappers import PixelObservationWrapper, MultiTaskEnvironment
 from gym.vector import AsyncVectorEnv
+
+from sequoia.common.gym_wrappers import MultiTaskEnvironment, PixelObservationWrapper
 
 
 @pytest.mark.parametrize("env_name", ["CartPole-v0"])
@@ -118,4 +121,3 @@ def test_make_env_with_wrapper_and_kwargs(env_name: str, batch_size: int):
         obs, reward, done, info = env.step(action)
         assert obs.shape == expected_state_shape
         assert reward.shape == (batch_size,)
-

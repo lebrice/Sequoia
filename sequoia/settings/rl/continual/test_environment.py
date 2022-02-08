@@ -1,19 +1,19 @@
-from sequoia.settings.assumptions.continual import TestEnvironment, ContinualResults
-from typing import Dict
-import math
-from sequoia.common.metrics.rl_metrics import EpisodeMetrics
 import itertools
+import math
+from typing import Dict
+
+from sequoia.common.metrics.rl_metrics import EpisodeMetrics
+from sequoia.settings.assumptions.continual import ContinualResults, TestEnvironment
 
 # TODO: Refactor those so they are based on the MeasureRLPerformanceWrapper, which works
 # with vectorized envs.
+
 
 class ContinualRLTestEnvironment(TestEnvironment):
     def __init__(self, *args, task_schedule: Dict, **kwargs):
         super().__init__(*args, **kwargs)
         self.task_schedule = task_schedule
-        self.boundary_steps = [
-            step // (self.batch_size or 1) for step in self.task_schedule.keys()
-        ]
+        self.boundary_steps = [step // (self.batch_size or 1) for step in self.task_schedule.keys()]
 
     def __len__(self):
         return math.ceil(self.step_limit / (getattr(self.env, "batch_size", 1) or 1))

@@ -4,21 +4,14 @@ from Avalanche.
 from typing import List, Optional
 
 import tqdm
-from sequoia.common.gym_wrappers.utils import IterableWrapper
-from sequoia.settings.sl import (
-    IncrementalSLSetting,
-    PassiveEnvironment,
-    SLSetting,
-)
-from sequoia.settings.sl.incremental.objects import Observations, Rewards
+from avalanche.benchmarks.scenarios import Experience
+from avalanche.benchmarks.utils.avalanche_dataset import AvalancheDataset, AvalancheDatasetType
 from torch import Tensor
 from torch.utils.data import TensorDataset
 
-from avalanche.benchmarks.scenarios import Experience
-from avalanche.benchmarks.utils.avalanche_dataset import (
-    AvalancheDataset,
-    AvalancheDatasetType,
-)
+from sequoia.common.gym_wrappers.utils import IterableWrapper
+from sequoia.settings.sl import IncrementalSLSetting, PassiveEnvironment, SLSetting
+from sequoia.settings.sl.incremental.objects import Observations, Rewards
 
 
 class SequoiaExperience(IterableWrapper, Experience):
@@ -57,9 +50,7 @@ class SequoiaExperience(IterableWrapper, Experience):
             all_observations: List[Observations] = []
             all_rewards: List[Rewards] = []
 
-            for batch in tqdm.tqdm(
-                self, desc="Converting environment into TensorDataset"
-            ):
+            for batch in tqdm.tqdm(self, desc="Converting environment into TensorDataset"):
                 observations: Observations
                 rewards: Optional[Rewards]
                 if isinstance(batch, Observations):
@@ -84,9 +75,7 @@ class SequoiaExperience(IterableWrapper, Experience):
                 all_observations.append(observations)
                 all_rewards.append(rewards)
             # TODO: This will be absolutely unfeasable for larger dataset like ImageNet.
-            stacked_observations: Observations = Observations.concatenate(
-                all_observations
-            )
+            stacked_observations: Observations = Observations.concatenate(all_observations)
             x = stacked_observations.x
             task_labels = stacked_observations.task_labels
             assert all(

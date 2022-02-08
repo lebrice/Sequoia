@@ -6,28 +6,22 @@ See `avalanche.training.plugins.synaptic_intelligence.SynapticIntelligencePlugin
 from dataclasses import dataclass
 from typing import ClassVar, Optional, Set, Type
 
+import numpy as np
 import torch
-from avalanche.training.plugins.synaptic_intelligence import (
-    ParamDict,
-    EwcDataType,
-    SynDataType,
-)
+from avalanche.training.plugins.synaptic_intelligence import EwcDataType, ParamDict
 from avalanche.training.plugins.synaptic_intelligence import (
     SynapticIntelligencePlugin as SynapticIntelligencePlugin_,
 )
+from avalanche.training.plugins.synaptic_intelligence import SynDataType
 from avalanche.training.strategies import BaseStrategy, SynapticIntelligence
 from simple_parsing import ArgumentParser
 from simple_parsing.helpers.hparams import uniform
-from torch.nn import Module
 from torch import Tensor
-import numpy as np
+from torch.nn import Module
 
 from sequoia.methods import register_method
-from sequoia.settings.sl import (
-    ClassIncrementalSetting,
-    SLSetting,
-    TaskIncrementalSLSetting,
-)
+from sequoia.settings.sl import SLSetting, TaskIncrementalSLSetting
+
 from .base import AvalancheMethod
 
 
@@ -36,12 +30,8 @@ class SynapticIntelligencePlugin(SynapticIntelligencePlugin_):
     # Makes it almost impossible to extend this SynapticIntelligencePlugin!
     @staticmethod
     @torch.no_grad()
-    def extract_weights(
-        model: Module, target: ParamDict, excluded_parameters: Set[str]
-    ):
-        params = SynapticIntelligencePlugin_.allowed_parameters(
-            model, excluded_parameters
-        )
+    def extract_weights(model: Module, target: ParamDict, excluded_parameters: Set[str]):
+        params = SynapticIntelligencePlugin_.allowed_parameters(model, excluded_parameters)
         # Getting this error:
         # RuntimeError: The expanded size of the tensor (128) must match the existing
         # size (256) at non-singleton dimension 0.  Target sizes: [128].
@@ -60,9 +50,7 @@ class SynapticIntelligencePlugin(SynapticIntelligencePlugin_):
     @staticmethod
     @torch.no_grad()
     def extract_grad(model, target: ParamDict, excluded_parameters: Set[str]):
-        params = SynapticIntelligencePlugin_.allowed_parameters(
-            model, excluded_parameters
-        )
+        params = SynapticIntelligencePlugin_.allowed_parameters(model, excluded_parameters)
 
         # Store the gradients into target
         for name, param in params:
@@ -74,9 +62,7 @@ class SynapticIntelligencePlugin(SynapticIntelligencePlugin_):
     def compute_ewc_loss(
         model, ewc_data: EwcDataType, excluded_parameters: Set[str], device, lambd=0.0
     ):
-        params = SynapticIntelligencePlugin_.allowed_parameters(
-            model, excluded_parameters
-        )
+        params = SynapticIntelligencePlugin_.allowed_parameters(model, excluded_parameters)
 
         loss = None
         for name, param in params:
@@ -118,9 +104,7 @@ class SynapticIntelligencePlugin(SynapticIntelligencePlugin_):
         SynapticIntelligencePlugin_.extract_weights(
             model, syn_data["new_theta"], excluded_parameters
         )
-        SynapticIntelligencePlugin_.extract_grad(
-            model, syn_data["grad"], excluded_parameters
-        )
+        SynapticIntelligencePlugin_.extract_grad(model, syn_data["grad"], excluded_parameters)
 
         for param_name in syn_data["trajectory"]:
             # BUG: Getting RuntimeError: The size of tensor a (128) must match the size
@@ -133,9 +117,7 @@ class SynapticIntelligencePlugin(SynapticIntelligencePlugin_):
             grad: Tensor = syn_data["grad"][param_name]
             new_theta: Tensor = syn_data["new_theta"][param_name]
             old_theta: Tensor = syn_data["old_theta"][param_name]
-            if not (
-                destination.shape == grad.shape == new_theta.shape == old_theta.shape
-            ):
+            if not (destination.shape == grad.shape == new_theta.shape == old_theta.shape):
                 destination_cols = destination.shape[-1]
                 grad_cols = grad.shape[-1]
                 new_theta_cols = new_theta.shape[-1]
@@ -143,9 +125,7 @@ class SynapticIntelligencePlugin(SynapticIntelligencePlugin_):
                 assert grad_cols < new_theta_cols and new_theta_cols == old_theta_cols
                 # FIXME: @lebrice Chop the last two? or extend the grad? Extending the
                 # grad with zeros for now (no idea what that implies though!)
-                grad_extension = grad.new_zeros(
-                    size=[*grad.shape[:-1], new_theta_cols - grad_cols]
-                )
+                grad_extension = grad.new_zeros(size=[*grad.shape[:-1], new_theta_cols - grad_cols])
                 grad = torch.cat([grad, grad_extension], -1)
 
                 destination_extension = destination.new_zeros(
@@ -168,9 +148,7 @@ class SynapticIntelligencePlugin(SynapticIntelligencePlugin_):
         excluded_parameters: Set[str],
         c=0.0015,
     ):
-        SynapticIntelligencePlugin.extract_weights(
-            net, syn_data["new_theta"], excluded_parameters
-        )
+        SynapticIntelligencePlugin.extract_weights(net, syn_data["new_theta"], excluded_parameters)
         eps = 0.0000001  # 0.001 in few task - 0.1 used in a more complex setup
 
         for param_name in syn_data["cum_trajectory"]:
@@ -186,21 +164,13 @@ class SynapticIntelligencePlugin(SynapticIntelligencePlugin_):
             ewc_data_0 = ewc_data[0][param_name]
 
             if not (
-                cum_trajectory.shape
-                == trajectory.shape
-                == new_theta.shape
-                == ewc_data_0.shape
+                cum_trajectory.shape == trajectory.shape == new_theta.shape == ewc_data_0.shape
             ):
                 cum_trajectory_cols = cum_trajectory.shape[-1]
                 trajectory_cols = trajectory.shape[-1]
                 new_theta_cols = new_theta.shape[-1]
                 ewc_data_0_cols = ewc_data_0.shape[-1]
-                assert (
-                    cum_trajectory_cols
-                    < trajectory_cols
-                    == new_theta_cols
-                    == ewc_data_0_cols
-                )
+                assert cum_trajectory_cols < trajectory_cols == new_theta_cols == ewc_data_0_cols
 
                 # FIXME: @lebrice Extending the cum_trajectory with zeros for now (no
                 # idea what that implies though!)
@@ -210,9 +180,7 @@ class SynapticIntelligencePlugin(SynapticIntelligencePlugin_):
                         trajectory_cols - cum_trajectory_cols,
                     ]
                 )
-                cum_trajectory = torch.cat(
-                    [cum_trajectory, cum_trajectory_extension], -1
-                )
+                cum_trajectory = torch.cat([cum_trajectory, cum_trajectory_extension], -1)
 
             cum_trajectory += c * trajectory / (np.square(new_theta - ewc_data_0) + eps)
             # Reset the cum_trajectory variable in the dict, just in case we replaced
@@ -236,9 +204,7 @@ class SynapticIntelligencePlugin(SynapticIntelligencePlugin_):
 # Makes it almost impossible to extend this SynapticIntelligencePlugin!
 SynapticIntelligencePlugin_.extract_weights = SynapticIntelligencePlugin.extract_weights
 SynapticIntelligencePlugin_.extract_grad = SynapticIntelligencePlugin.extract_grad
-SynapticIntelligencePlugin_.compute_ewc_loss = (
-    SynapticIntelligencePlugin.compute_ewc_loss
-)
+SynapticIntelligencePlugin_.compute_ewc_loss = SynapticIntelligencePlugin.compute_ewc_loss
 SynapticIntelligencePlugin_.post_update = SynapticIntelligencePlugin.post_update
 SynapticIntelligencePlugin_.update_ewc_data = SynapticIntelligencePlugin.update_ewc_data
 
@@ -246,7 +212,7 @@ SynapticIntelligencePlugin_.update_ewc_data = SynapticIntelligencePlugin.update_
 @register_method
 @dataclass
 class SynapticIntelligenceMethod(AvalancheMethod[SynapticIntelligence]):
-    """ The Synaptic Intelligence strategy from Avalanche.
+    """The Synaptic Intelligence strategy from Avalanche.
 
     This is the Synaptic Intelligence PyTorch implementation of the
     algorithm described in the paper

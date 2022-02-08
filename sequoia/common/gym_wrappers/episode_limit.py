@@ -1,24 +1,23 @@
 # IDEA: Limit the total number of episodes, even in vectorized
 # environments!
 import warnings
-from typing import List, Union, Sequence
-from gym.utils import colorize
+from typing import Sequence, Union
 
 import gym
 import numpy as np
 from gym.error import ClosedEnvironmentError
-from gym.vector import VectorEnv
+from gym.utils import colorize
 
 from sequoia.utils import get_logger
 
-from .utils import IterableWrapper, MayCloseEarly
+from .utils import IterableWrapper
 
 logger = get_logger(__file__)
 
 
 class EpisodeCounter(IterableWrapper):
-    """ Closes the environment when a given number of episodes is performed.
-    
+    """Closes the environment when a given number of episodes is performed.
+
     NOTE: This also applies to vectorized environments, i.e. the episode counter
     is incremented for when every individual environment reaches the end of an
     episode.
@@ -75,8 +74,8 @@ class EpisodeCounter(IterableWrapper):
 
 
 class EpisodeLimit(EpisodeCounter):
-    """ Closes the environment when a given number of episodes is performed.
-    
+    """Closes the environment when a given number of episodes is performed.
+
     NOTE: This also applies to vectorized environments, i.e. the episode counter
     is incremented for when every individual environment reaches the end of an
     episode.
@@ -91,8 +90,8 @@ class EpisodeLimit(EpisodeCounter):
         return self._max_episodes
 
     def closed_error_message(self) -> str:
-        """ Return the error message to use when attempting to use the closed env.
-        
+        """Return the error message to use when attempting to use the closed env.
+
         This can be useful for wrappers that close when a given condition is reached,
         e.g. a number of episodes has been performed, which could return a more relevant
         message here.
@@ -105,7 +104,7 @@ class EpisodeLimit(EpisodeCounter):
         # limit.
         obs = super().reset()
         assert not self.is_closed()
-        
+
         if self.is_vectorized:
             n_unfinished_envs: int = (~self._done).sum()
             if self._episode_counter != 0 and n_unfinished_envs:
@@ -141,17 +140,12 @@ class EpisodeLimit(EpisodeCounter):
             # BUG: This can be reached while in the last 'send' (which uses self.send)
             # of the previous epoch while iterating
             if any(done) and self._episode_counter >= self.max_episodes:
-                logger.info(
-                    f"Closing the envs since we reached the max number of episodes."
-                )
+                logger.info(f"Closing the envs since we reached the max number of episodes.")
                 self.close()
                 done[:] = True
         else:
             if done and self._episode_counter == self._max_episodes:
-                logger.info(
-                    f"Closing the env since we reached the max number of episodes."
-                )
+                logger.info(f"Closing the env since we reached the max number of episodes.")
                 self.close()
 
         return obs, reward, done, info
-

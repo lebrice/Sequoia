@@ -1,12 +1,11 @@
 """ TODO: Tests for the 'modified gravity' mujoco envs. """
-from typing import ClassVar, Dict, Generic, Type, TypeVar
+from typing import ClassVar, Type, TypeVar
 
-import pytest
 from gym.wrappers import TimeLimit
+
 from sequoia.conftest import mujoco_required
 
 pytestmark = mujoco_required
-from gym.envs.mujoco import MujocoEnv
 
 from .modified_gravity import ModifiedGravityEnv
 

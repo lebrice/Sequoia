@@ -1,26 +1,17 @@
 import bisect
 import dataclasses
 from functools import singledispatch
-from typing import (
-    Any,
-    Callable,
-    Dict,
-    List,
-    Optional,
-    Sequence,
-    Tuple,
-    Type,
-    TypeVar,
-    Union,
-)
+from typing import Any, Callable, Dict, List, Optional, Sequence, Tuple, Type, TypeVar, Union
 
 import gym
 import numpy as np
 from gym import spaces
 from gym.envs.classic_control import CartPoleEnv
 from torch import Tensor
+
 from sequoia.common.spaces.named_tuple import NamedTupleSpace
 from sequoia.utils.logging_utils import get_logger
+
 from .utils import MayCloseEarly
 
 task_param_names: Dict[Union[Type[gym.Env], str], List[str]] = {
@@ -93,10 +84,14 @@ def _add_task_labels_to_single_obs(observation: X, task_labels: T) -> Tuple[X, T
     }
     # return ObservationsAndTaskLabels(observation, task_labels)
 
+
 from sequoia.common.batch import Batch
+
+
 @add_task_labels.register(Batch)
 def _add_task_labels_to_batch(observation: Batch, task_labels: T) -> Batch:
     return dataclasses.replace(observation, task_labels=task_labels)
+
 
 from sequoia.common.spaces import TypedDictSpace
 
@@ -130,9 +125,7 @@ def _add_task_labels_to_tuple(observation: Tuple, task_labels: T) -> Tuple:
 
 
 @add_task_labels.register(spaces.Dict)
-def _add_task_labels_to_dict_space(
-    observation: spaces.Dict, task_labels: T
-) -> spaces.Dict:
+def _add_task_labels_to_dict_space(observation: spaces.Dict, task_labels: T) -> spaces.Dict:
     assert "task_labels" not in observation.spaces
     d_spaces = observation.spaces.copy()
     d_spaces["task_labels"] = task_labels
@@ -153,9 +146,7 @@ def _add_task_labels_to_typed_dict_space(
 
 
 @add_task_labels.register(dict)
-def _add_task_labels_to_dict(
-    observation: Dict[str, V], task_labels: T
-) -> Dict[str, Union[V, T]]:
+def _add_task_labels_to_dict(observation: Dict[str, V], task_labels: T) -> Dict[str, Union[V, T]]:
     new: Dict[str, Union[V, T]] = {key: value for key, value in observation.items()}
     # TODO: Raise a warning instead?
     # assert "task_labels" not in new
@@ -203,9 +194,7 @@ class MultiTaskEnvironment(MayCloseEarly):
     def __init__(
         self,
         env: gym.Env,
-        task_schedule: Dict[
-            int, Union[Dict[str, float], Callable[[gym.Env], Any]]
-        ] = None,
+        task_schedule: Dict[int, Union[Dict[str, float], Callable[[gym.Env], Any]]] = None,
         task_params: List[str] = None,
         noise_std: float = 0.2,
         add_task_dict_to_info: bool = False,
@@ -216,7 +205,7 @@ class MultiTaskEnvironment(MayCloseEarly):
         max_steps: int = None,
         seed: int = None,
     ):
-        """ Wraps an environment, allowing it to be 'multi-task'.
+        """Wraps an environment, allowing it to be 'multi-task'.
 
         NOTE: Assumes that all the attributes in 'task_param_names' are floats
         for now.
@@ -250,7 +239,9 @@ class MultiTaskEnvironment(MayCloseEarly):
                         if task_params is None:
                             task_params = list(value.keys())
                         elif not task_params == list(value.keys()):
-                            raise NotImplementedError("All tasks need to have the same keys for now.")
+                            raise NotImplementedError(
+                                "All tasks need to have the same keys for now."
+                            )
             else:
                 logger.warning(
                     UserWarning(
@@ -290,7 +281,8 @@ class MultiTaskEnvironment(MayCloseEarly):
 
         if self.add_task_id_to_obs:
             self.observation_space = add_task_labels(
-                self.env.observation_space, spaces.Discrete(n=nb_tasks),
+                self.env.observation_space,
+                spaces.Discrete(n=nb_tasks),
             )
             # self.observation_space = spaces.Tuple([
             #     self.env.observation_space,
@@ -305,8 +297,7 @@ class MultiTaskEnvironment(MayCloseEarly):
 
     @property
     def current_task_id(self) -> int:
-        """ Returns the 'index' of the current task within the task schedule.
-        """
+        """Returns the 'index' of the current task within the task schedule."""
         if self.new_random_task_on_reset:
             # The task id is the index of the key that corresponds to the current task.
             return self._current_task_id
@@ -364,7 +355,7 @@ class MultiTaskEnvironment(MayCloseEarly):
     #     return super().close(**kwargs)
 
     def reset(self, new_random_task: bool = None, **kwargs):
-        """ Resets the wrapped environment.
+        """Resets the wrapped environment.
 
         If `new_random_task` is True, this also sets a new random task as the
         current task.
@@ -532,9 +523,7 @@ class MultiTaskEnvironment(MayCloseEarly):
         if isinstance(values, dict):
             current_task.update(values)
         elif values is not None:
-            raise RuntimeError(
-                f"values can only be a dict or None (received {values})."
-            )
+            raise RuntimeError(f"values can only be a dict or None (received {values}).")
         if kwargs:
             current_task.update(kwargs)
         self.current_task = current_task

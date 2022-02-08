@@ -8,4 +8,3 @@ from .ppo import PPOMethod, PPOModel
 class TestPPO(DiscreteActionSpaceMethodTests):
     Method: ClassVar[Type[StableBaselines3Method]] = PPOMethod
     Model: ClassVar[Type[BaseAlgorithm]] = PPOModel
-

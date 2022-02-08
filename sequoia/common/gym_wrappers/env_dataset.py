@@ -1,37 +1,18 @@
 """ Creates an IterableDataset from a Gym Environment.
 """
-from collections import abc as collections_abc
-from typing import (
-    Any,
-    Callable,
-    Dict,
-    Generator,
-    Iterator,
-    Generic,
-    Iterable,
-    List,
-    Optional,
-    Sequence,
-    Tuple,
-    Type,
-    TypeVar,
-    Union,
-)
 import warnings
+from typing import Dict, Generic, Iterable, Iterator, Optional, Sequence, Tuple, TypeVar, Union
+
 import gym
-import numpy as np
+from gym.vector import VectorEnv
 from torch import Tensor
 from torch.utils.data import IterableDataset
 
 from sequoia.utils.logging_utils import get_logger
-from gym.vector import VectorEnv
-from .utils import (
-    ActionType,
-    ObservationType,
-    RewardType,
-    StepResult,
-    MayCloseEarly as CloseableWrapper,
-)
+
+from .utils import ActionType
+from .utils import MayCloseEarly as CloseableWrapper
+from .utils import ObservationType, RewardType, StepResult
 
 # from sequoia.settings.base.objects import Observations, Rewards, Actions
 logger = get_logger(__file__)
@@ -46,7 +27,7 @@ class EnvDataset(
     Generic[ObservationType, ActionType, RewardType, Item],
     Iterable[Item],
 ):
-    """ Wrapper that exposes a Gym environment as an IterableDataset.
+    """Wrapper that exposes a Gym environment as an IterableDataset.
 
     This makes it possible to iterate over a gym env with an Active DataLoader.
 
@@ -64,13 +45,14 @@ class EnvDataset(
         # TODO: Remove these options
         if max_steps:
             from .action_limit import ActionLimit
+
             env = ActionLimit(env, max_steps=max_steps)
         self._max_steps = max_steps
         if max_episodes:
             from .episode_limit import EpisodeLimit
+
             env = EpisodeLimit(env, max_episodes=max_episodes)
         self._max_episodes = max_episodes
-
 
         super().__init__(env=env)
         if isinstance(env.unwrapped, VectorEnv):
@@ -138,7 +120,9 @@ class EnvDataset(
                     f"Env has already reached step limit ({self._max_steps}) and is closed."
                 )
             else:
-                raise gym.error.ClosedEnvironmentError(f"Can't call step on closed env. ({self.n_steps_})")
+                raise gym.error.ClosedEnvironmentError(
+                    f"Can't call step on closed env. ({self.n_steps_})"
+                )
         # Here we add calls to the (potentially overwritten) 'observation',
         # 'action' and 'reward' methods.
         action = self.action(action)
@@ -157,9 +141,7 @@ class EnvDataset(
 
     def __next__(
         self,
-    ) -> Tuple[
-        ObservationType, Union[bool, Sequence[bool]], Union[Dict, Sequence[Dict]]
-    ]:
+    ) -> Tuple[ObservationType, Union[bool, Sequence[bool]], Union[Dict, Sequence[Dict]]]:
         """Produces the next observations, or raises StopIteration.
 
         Returns
@@ -197,23 +179,17 @@ class EnvDataset(
             raise StopIteration
 
         if not self.reset_:
-            raise gym.error.ResetNeeded(
-                "Need to reset the env before you can call __next__"
-            )
+            raise gym.error.ResetNeeded("Need to reset the env before you can call __next__")
 
         if self.action_ is None:
-            raise RuntimeError(
-                "You have to send an action using send() between every observation."
-            )
+            raise RuntimeError("You have to send an action using send() between every observation.")
         if hasattr(self.action_, "detach"):
             self.action_ = self.action_.detach()
-        self.observation_, self.reward_, self.done_, self.info_ = self.step(
-            self.action_
-        )
+        self.observation_, self.reward_, self.done_, self.info_ = self.step(self.action_)
         return self.observation_
 
     def send(self, action: ActionType) -> RewardType:
-        """ Sends an action to the environment, returning a reward.
+        """Sends an action to the environment, returning a reward.
         This can raise the same errors as calling __next__, namely,
         StopIteration, ResetNeeded,  raise an error when if not called without
         """
@@ -257,9 +233,7 @@ class EnvDataset(
                     f"Env has already reached step limit ({self._max_steps}) and is closed."
                 )
             else:
-                raise gym.error.ClosedEnvironmentError(
-                    f"Env is closed, can't iterate over it."
-                )
+                raise gym.error.ClosedEnvironmentError(f"Env is closed, can't iterate over it.")
 
         # First step reset automatically before iterating, if needed.
         if not self.reset_:
@@ -392,4 +366,3 @@ class EnvDataset(
         from sequoia.utils.generic_functions import concatenate
 
         return concatenate(self, other)
-

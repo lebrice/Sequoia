@@ -1,37 +1,32 @@
 """ Demo: Creates a simple new method and applies it to a single CL setting.
 """
-from argparse import Namespace
 import sys
-from dataclasses import dataclass
-from typing import Dict, List, Tuple, Type, Optional
-
+from argparse import Namespace
 from collections import defaultdict
+from dataclasses import dataclass
 from pathlib import Path
+from typing import Dict, List, Optional, Tuple, Type
 
 import gym
 import pandas as pd
-import tqdm
 import torch
-from numpy import inf
+import tqdm
 from gym import spaces
-from torch import Tensor, nn
+from numpy import inf
 from simple_parsing import ArgumentParser
+from torch import Tensor, nn
 
 from sequoia import Method, Setting
 from sequoia.common import Config
 from sequoia.settings import Environment
 from sequoia.settings.sl import DomainIncrementalSLSetting
-from sequoia.settings.sl.incremental.objects import (
-    Actions,
-    Observations,
-    Rewards,
-)
-from sequoia.settings.sl.incremental.results import Results
 from sequoia.settings.sl.environment import PassiveEnvironment
+from sequoia.settings.sl.incremental.objects import Actions, Observations, Rewards
+from sequoia.settings.sl.incremental.results import IncrementalSLResults as Results
 
 
 class MyModel(nn.Module):
-    """ Simple classification model without any CL-related mechanism.
+    """Simple classification model without any CL-related mechanism.
 
     To keep things simple, this demo model is designed for supervised
     (classification) settings where observations have shape [3, 28, 28] (ie the
@@ -86,17 +81,17 @@ class MyModel(nn.Module):
         self, batch: Tuple[Observations, Optional[Rewards]], environment: Environment
     ) -> Tuple[Tensor, Dict]:
         """Shared step used for both training and validation.
-                
+
         Parameters
         ----------
         batch : Tuple[Observations, Optional[Rewards]]
             Batch containing Observations, and optional Rewards. When the Rewards are
             None, it means that we'll need to provide the Environment with actions
             before we can get the Rewards (e.g. image labels) back.
-            
+
             This happens for example when being applied in a Setting which cares about
             sample efficiency or training performance, for example.
-            
+
         environment : Environment
             The environment we're currently interacting with. Used to provide the
             rewards when they aren't already part of the batch (as mentioned above).
@@ -132,14 +127,14 @@ class MyModel(nn.Module):
 
 
 class DemoMethod(Method, target_setting=DomainIncrementalSLSetting):
-    """ Minimal example of a Method targetting the Class-Incremental CL setting.
-    
-    For a quick intro to dataclasses, see examples/dataclasses_example.py    
+    """Minimal example of a Method targetting the Class-Incremental CL setting.
+
+    For a quick intro to dataclasses, see examples/dataclasses_example.py
     """
 
     @dataclass
     class HParams:
-        """ Hyper-parameters of the demo model. """
+        """Hyper-parameters of the demo model."""
 
         # Learning rate of the optimizer.
         learning_rate: float = 0.001
@@ -154,7 +149,7 @@ class DemoMethod(Method, target_setting=DomainIncrementalSLSetting):
         self.optimizer: torch.optim.Optimizer
 
     def configure(self, setting: DomainIncrementalSLSetting):
-        """ Called before the method is applied on a setting (before training). 
+        """Called before the method is applied on a setting (before training).
 
         You can use this to instantiate your model, for instance, since this is
         where you get access to the observation & action spaces.
@@ -165,13 +160,14 @@ class DemoMethod(Method, target_setting=DomainIncrementalSLSetting):
             reward_space=setting.reward_space,
         )
         self.optimizer = torch.optim.Adam(
-            self.model.parameters(), lr=self.hparams.learning_rate,
+            self.model.parameters(),
+            lr=self.hparams.learning_rate,
         )
 
     def fit(self, train_env: PassiveEnvironment, valid_env: PassiveEnvironment):
-        """ Example train loop.
+        """Example train loop.
         You can do whatever you want with train_env and valid_env here.
-        
+
         NOTE: In the Settings where task boundaries are known (in this case all
         the supervised CL settings), this will be called once per task.
         """
@@ -186,9 +182,7 @@ class DemoMethod(Method, target_setting=DomainIncrementalSLSetting):
             with tqdm.tqdm(train_env) as train_pbar:
                 train_pbar.set_description(f"Training Epoch {epoch}")
                 for i, batch in enumerate(train_pbar):
-                    loss, metrics_dict = self.model.shared_step(
-                        batch, environment=train_env
-                    )
+                    loss, metrics_dict = self.model.shared_step(batch, environment=train_env)
                     self.optimizer.zero_grad()
                     loss.backward()
                     self.optimizer.step()
@@ -218,10 +212,8 @@ class DemoMethod(Method, target_setting=DomainIncrementalSLSetting):
                 print(f"Early stopping at epoch {i}.")
                 break
 
-    def get_actions(
-        self, observations: Observations, action_space: gym.Space
-    ) -> Actions:
-        """ Get a batch of predictions (aka actions) for these observations. """
+    def get_actions(self, observations: Observations, action_space: gym.Space) -> Actions:
+        """Get a batch of predictions (aka actions) for these observations."""
         with torch.no_grad():
             logits = self.model(observations)
         # Get the predicted classes
@@ -241,7 +233,7 @@ class DemoMethod(Method, target_setting=DomainIncrementalSLSetting):
 
 
 def demo_simple():
-    """ Simple demo: Creating and applying a Method onto a Setting. """
+    """Simple demo: Creating and applying a Method onto a Setting."""
     from sequoia.settings.sl import DomainIncrementalSLSetting
 
     ## 1. Creating the setting:
@@ -260,7 +252,7 @@ def demo_simple():
 
 
 def demo_command_line():
-    """ Run this quick demo from the command-line. """
+    """Run this quick demo from the command-line."""
     parser = ArgumentParser(description=__doc__)
     # Add command-line arguments for the Method and the Setting.
     DemoMethod.add_argparse_args(parser)

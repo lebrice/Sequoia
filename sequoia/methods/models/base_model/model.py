@@ -3,20 +3,9 @@
 This model is basically just an encoder and an output head. Both of these can be
 switched out/customized as needed.
 """
-from dataclasses import dataclass
-from typing import (
-    Any,
-    ClassVar,
-    Dict,
-    Generic,
-    List,
-    Optional,
-    Tuple,
-    Type,
-    TypeVar,
-    Union,
-)
 import dataclasses
+from dataclasses import dataclass
+from typing import Any, ClassVar, Dict, Generic, List, Optional, Tuple, Type, TypeVar, Union
 
 import gym
 import numpy as np
@@ -25,27 +14,25 @@ import torchvision.models as tv_models
 from gym import Space, spaces
 from gym.spaces.utils import flatdim
 from pytorch_lightning import LightningModule
-from pytorch_lightning.core.lightning import ModelSummary, log
+from simple_parsing import choice, mutable_field
+from simple_parsing.helpers.hparams import HyperParameters
+from simple_parsing.helpers.serialization import register_decoding_fn
+from torch import Tensor, nn, optim
+from torch.optim.optimizer import Optimizer  # type: ignore
+
 from sequoia.common.config import Config
 from sequoia.common.gym_wrappers.convert_tensors import add_tensor_support
-from sequoia.common.hparams import HyperParameters, categorical, log_uniform, uniform
+from sequoia.common.hparams import HyperParameters, categorical, log_uniform
 from sequoia.common.loss import Loss
 from sequoia.common.spaces import Image
-from sequoia.common.transforms import SplitBatch
 from sequoia.methods.models.output_heads import OutputHead
 from sequoia.settings.assumptions.incremental import IncrementalAssumption
 from sequoia.settings.base import Environment
 from sequoia.settings.base.setting import Actions, Observations, Rewards
 from sequoia.settings.rl import ContinualRLSetting, RLSetting
 from sequoia.settings.sl import SLSetting
-from sequoia.utils import Parseable, Serializable
 from sequoia.utils.logging_utils import get_logger
 from sequoia.utils.pretrained_utils import get_pretrained_encoder
-from simple_parsing import choice, mutable_field
-from simple_parsing.helpers.hparams import HyperParameters
-from simple_parsing.helpers.serialization import register_decoding_fn
-from torch import Tensor, nn, optim
-from torch.optim.optimizer import Optimizer  # type: ignore
 
 from ..fcnet import FCNet
 from ..forward_pass import ForwardPass
@@ -58,7 +45,6 @@ from ..output_heads import (
 )
 from ..output_heads.rl.episodic_a2c import EpisodicA2C
 from ..simple_convnet import SimpleConvNet
-
 
 logger = get_logger(__file__)
 SettingType = TypeVar("SettingType", bound=IncrementalAssumption)
@@ -83,8 +69,8 @@ available_encoders: Dict[str, Type[nn.Module]] = {
 
 
 class Model(LightningModule, Generic[SettingType]):
-    """ Basic Model to be used by a Method.
-    
+    """Basic Model to be used by a Method.
+
     Based on the `LightningModule` (nn.Module extended by pytorch-lightning).
     This Model can be trained on either Supervised or Reinforcement Learning environments.
 
@@ -98,25 +84,19 @@ class Model(LightningModule, Generic[SettingType]):
 
     @dataclass
     class HParams(HyperParameters):
-        """ HParams of the Model. """
+        """HParams of the Model."""
 
         # Class variable versions of the above dicts, for easier subclassing.
         # NOTE: These don't get parsed from the command-line.
-        available_optimizers: ClassVar[
-            Dict[str, Type[Optimizer]]
-        ] = available_optimizers.copy()
-        available_encoders: ClassVar[
-            Dict[str, Type[nn.Module]]
-        ] = available_encoders.copy()
+        available_optimizers: ClassVar[Dict[str, Type[Optimizer]]] = available_optimizers.copy()
+        available_encoders: ClassVar[Dict[str, Type[nn.Module]]] = available_encoders.copy()
 
         # Learning rate of the optimizer.
         learning_rate: float = log_uniform(1e-6, 1e-2, default=1e-3)
         # L2 regularization term for the model weights.
         weight_decay: float = log_uniform(1e-12, 1e-3, default=1e-6)
         # Which optimizer to use.
-        optimizer: Type[Optimizer] = categorical(
-            available_optimizers, default=optim.Adam
-        )
+        optimizer: Type[Optimizer] = categorical(available_optimizers, default=optim.Adam)
         # Use an encoder architecture from the torchvision.models package.
         encoder: Type[nn.Module] = categorical(
             available_encoders,
@@ -221,9 +201,7 @@ class Model(LightningModule, Generic[SettingType]):
             # TODO: Check that the outputs of the encoders are actually
             # flattened. I'm not sure they all are, which case the samples
             # wouldn't match with this space.
-            self.representation_space = spaces.Box(
-                -np.inf, np.inf, (self.hidden_size,), np.float32
-            )
+            self.representation_space = spaces.Box(-np.inf, np.inf, (self.hidden_size,), np.float32)
 
         logger.info(f"Moving encoder to device {self.config.device}")
         self.encoder = self.encoder.to(self.config.device)
@@ -233,9 +211,7 @@ class Model(LightningModule, Generic[SettingType]):
         # Upgrade the type of hparams for the output head based on the setting, if
         # needed.
         if not isinstance(self.hp.output_head, self.OutputHead.HParams):
-            self.hp.output_head = self.hp.output_head.upgrade(
-                target_type=self.OutputHead.HParams
-            )
+            self.hp.output_head = self.hp.output_head.upgrade(target_type=self.OutputHead.HParams)
         # Then, create the 'default' output head.
         self.output_head: OutputHead = self.create_output_head(task_id=0)
 
@@ -244,7 +220,7 @@ class Model(LightningModule, Generic[SettingType]):
 
         Returns:
             Tuple[nn.Module, int]: the encoder and the hidden size.
-            
+
         TODO: Could instead return its output space, in case we didn't necessarily want
         to flatten the representations (e.g. for image segmentation tasks).
         """
@@ -263,7 +239,7 @@ class Model(LightningModule, Generic[SettingType]):
         return encoder, hidden_size
 
     def forward(self, observations: IncrementalAssumption.Observations) -> ForwardPass:
-        """ Forward pass of the Model.
+        """Forward pass of the Model.
 
         Returns a ForwardPass object (acts like a dict of Tensors.)
         """
@@ -281,9 +257,7 @@ class Model(LightningModule, Generic[SettingType]):
         if self.hp.detach_output_head:
             representations = representations.detach()
 
-        actions = self.output_head(
-            observations=observations, representations=representations
-        )
+        actions = self.output_head(observations=observations, representations=representations)
         # NOTE: Need to put a `rewards` field in this forward_pass, so we can pass it
         # to the training_step_end method, which will calculate and aggregate the loss
         forward_pass = ForwardPass(
@@ -310,9 +284,7 @@ class Model(LightningModule, Generic[SettingType]):
         x = torch.as_tensor(observations.x, device=self.device, dtype=self.dtype)
         assert x.device == self.device
         encoder_parameters = list(self.encoder.parameters())
-        encoder_device = (
-            encoder_parameters[0].device if encoder_parameters else self.device
-        )
+        encoder_device = encoder_parameters[0].device if encoder_parameters else self.device
         # BUG: WHen using the EWCTask, there seems to be some issues related to which
         # device the model is stored on.
 
@@ -386,8 +358,7 @@ class Model(LightningModule, Generic[SettingType]):
         return output_head
 
     def output_head_type(self, setting: SettingType) -> Type[OutputHead]:
-        """ Return the type of output head we should use in a given setting.
-        """
+        """Return the type of output head we should use in a given setting."""
         if isinstance(setting, RLSetting):
             if not isinstance(setting.action_space, spaces.Discrete):
                 raise NotImplementedError("Only support discrete actions for now.")
@@ -468,10 +439,10 @@ class Model(LightningModule, Generic[SettingType]):
         dataloader_idx: int = None,
         optimizer_idx: int = None,
     ) -> ForwardPass:
-        """ Main logic of the "forward pass".
+        """Main logic of the "forward pass".
 
         This is used as part of `training_step`, `validation_step` and `test_step`.
-        See the PL docs for `training_step` for more info. 
+        See the PL docs for `training_step` for more info.
 
         NOTE: The prediction / environment interaction / loss calculation has been
         moved into the `shared_step_end` method for DP to also work.
@@ -510,9 +481,7 @@ class Model(LightningModule, Generic[SettingType]):
         # would become invalidated if we performed the optimizer step.
         if loss.requires_grad and not self.automatic_optimization:
             output_head_loss = loss_object.losses.get(self.output_head.name)
-            update_model = (
-                output_head_loss is not None and output_head_loss.requires_grad
-            )
+            update_model = output_head_loss is not None and output_head_loss.requires_grad
             optimizer = self.optimizers()
 
             self.manual_backward(loss, optimizer, retain_graph=not update_model)
@@ -527,16 +496,12 @@ class Model(LightningModule, Generic[SettingType]):
         # we added support for BBPT, i.e. recurrent policies or output heads, etc.
         return {"loss": loss, "hidden": loss_object.tensors.get("hidden")}
 
-    def validation_step_end(
-        self, step_outputs: Union[ForwardPass, List[ForwardPass]]
-    ) -> Loss:
+    def validation_step_end(self, step_outputs: Union[ForwardPass, List[ForwardPass]]) -> Loss:
         return self.shared_step_end(
             step_outputs=step_outputs, phase="val", environment=self.setting.val_env
         )
 
-    def test_step_end(
-        self, step_outputs: Union[ForwardPass, List[ForwardPass]]
-    ) -> Loss:
+    def test_step_end(self, step_outputs: Union[ForwardPass, List[ForwardPass]]) -> Loss:
         return self.shared_step_end(
             step_outputs=step_outputs, phase="test", environment=self.setting.test_env
         )
@@ -547,11 +512,11 @@ class Model(LightningModule, Generic[SettingType]):
         phase: str,
         environment: Environment,
     ) -> Loss:
-        """ Called with the outputs of each replica's `[train/validation/test]_step`:
+        """Called with the outputs of each replica's `[train/validation/test]_step`:
 
         - Sends the Actions from each worker to the environment to obtain rewards, if
           necessary;
-        - Calculates the loss, given the merged forward pass and the rewards/labels; 
+        - Calculates the loss, given the merged forward pass and the rewards/labels;
         - Aggregates the losses/metrics from each replica, logs the relevant values, and
           returns the aggregated losses and metrics (a single Loss object).
         """
@@ -581,7 +546,7 @@ class Model(LightningModule, Generic[SettingType]):
 
         loss: Loss = self.get_loss(forward_pass, rewards, loss_name=phase)
         loss_tensor: Tensor = loss.loss
-        if loss_tensor == 0.:
+        if loss_tensor == 0.0:
             return loss
         loss_pbar_dict = loss.to_pbar_message()
         for key, value in loss_pbar_dict.items():
@@ -596,7 +561,7 @@ class Model(LightningModule, Generic[SettingType]):
         return loss
 
     def split_batch(self, batch: Any) -> Tuple[Observations, Optional[Rewards]]:
-        """ Splits the batch into the observations and the rewards.
+        """Splits the batch into the observations and the rewards.
 
         Uses the types defined on the setting that this model is being applied
         on (which were copied to `self.Observations` and `self.Actions`) to
@@ -667,9 +632,7 @@ class Model(LightningModule, Generic[SettingType]):
             # For now though, we only have one "prediction" in the actions:
             actions = forward_pass.actions
             # So far we only use 'y' from the rewards in the output head.
-            supervised_loss = self.output_head_loss(
-                forward_pass, actions=actions, rewards=rewards
-            )
+            supervised_loss = self.output_head_loss(forward_pass, actions=actions, rewards=rewards)
             total_loss += supervised_loss
 
         return total_loss
@@ -677,11 +640,13 @@ class Model(LightningModule, Generic[SettingType]):
     def output_head_loss(
         self, forward_pass: ForwardPass, actions: Actions, rewards: Rewards
     ) -> Loss:
-        """ Gets the Loss of the output head. """
+        """Gets the Loss of the output head."""
         # TODO: The rewards can still contain just numpy arrays, keeping it so for now.
         assert actions.device == self.device  # == rewards.device (would be None)
         return self.output_head.get_loss(
-            forward_pass, actions=actions, rewards=rewards,
+            forward_pass,
+            actions=actions,
+            rewards=rewards,
         )
 
     def preprocess_observations(self, observations: Observations) -> Observations:
@@ -756,7 +721,7 @@ class Model(LightningModule, Generic[SettingType]):
     #     return model_summary
 
     def _are_batched(self, observations: IncrementalAssumption.Observations) -> bool:
-        """ Returns wether these observations are batched. """
+        """Returns wether these observations are batched."""
         assert isinstance(self.observation_space, spaces.Dict)
 
         # if observations.task_labels is not None:

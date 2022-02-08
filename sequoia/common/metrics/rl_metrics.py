@@ -1,18 +1,13 @@
-from dataclasses import dataclass, field, fields
-from typing import List, Optional, Union, Any, ClassVar, Dict
-
-from simple_parsing import list_field
-import numpy as np
-
-from sequoia.utils.generic_functions import detach
+from dataclasses import dataclass, field
+from typing import Any, Dict, Union
 
 from .metrics import Metrics
 
 
 @dataclass
 class EpisodeMetrics(Metrics):
-    """ Metrics for Episodes in RL.
-    
+    """Metrics for Episodes in RL.
+
     n_samples is the number of stored episodes.
     """
 
@@ -138,7 +133,7 @@ class EpisodeMetrics(Metrics):
 
 @dataclass
 class GradientUsageMetric(Metrics):
-    """ Small Metrics to report the fraction of gradients that were used vs
+    """Small Metrics to report the fraction of gradients that were used vs
     'wasted', when using batch_size > 1.
     """
 
@@ -151,9 +146,7 @@ class GradientUsageMetric(Metrics):
         if self.n_samples:
             self.used_gradients_fraction = self.used_gradients / self.n_samples
 
-    def __add__(
-        self, other: Union["GradientUsageMetric", Any]
-    ) -> "GradientUsageMetric":
+    def __add__(self, other: Union["GradientUsageMetric", Any]) -> "GradientUsageMetric":
         if not isinstance(other, GradientUsageMetric):
             return NotImplemented
         return GradientUsageMetric(

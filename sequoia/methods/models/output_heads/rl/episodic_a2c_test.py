@@ -9,18 +9,15 @@ from gym import spaces
 from gym.spaces.utils import flatdim
 from gym.vector import SyncVectorEnv
 from gym.vector.utils import batch_space
-from sequoia.common.gym_wrappers import (
-    AddDoneToObservation,
-    ConvertToFromTensors,
-    EnvDataset,
-)
+from torch import Tensor, nn
+
+from sequoia.common.gym_wrappers import AddDoneToObservation, ConvertToFromTensors, EnvDataset
 from sequoia.common.loss import Loss
 from sequoia.conftest import DummyEnvironment
 from sequoia.methods.models.forward_pass import ForwardPass
 from sequoia.settings.rl.continual import ContinualRLSetting
-from torch import Tensor, nn
 
-from .episodic_a2c import A2CHeadOutput, EpisodicA2C
+from .episodic_a2c import EpisodicA2C
 from .policy_head import PolicyHead
 
 
@@ -65,12 +62,10 @@ class FakeEnvironment(SyncVectorEnv):
         return obs, reward, done, info
 
 
-@pytest.mark.xfail(
-    reason="TODO: Adapt this test for EpisodicA2C (copied form policy_head_test.py)"
-)
+@pytest.mark.xfail(reason="TODO: Adapt this test for EpisodicA2C (copied form policy_head_test.py)")
 @pytest.mark.parametrize("batch_size", [1, 2, 5])
 def test_with_controllable_episode_lengths(batch_size: int, monkeypatch):
-    """ TODO: Test out the EpisodicA2C output head in a very controlled environment,
+    """TODO: Test out the EpisodicA2C output head in a very controlled environment,
     where we know exactly the lengths of each episode.
     """
     env = FakeEnvironment(
@@ -114,20 +109,27 @@ def test_with_controllable_episode_lengths(batch_size: int, monkeypatch):
         assert np.array_equal(obs_done, step_done)
 
         representations = encoder(x)
-        observations = ContinualRLSetting.Observations(x=x, done=obs_done,)
+        observations = ContinualRLSetting.Observations(
+            x=x,
+            done=obs_done,
+        )
 
         actions_obj = output_head(observations, representations)
         actions = actions_obj.y_pred
 
         # TODO: kinda useless to wrap a single tensor in an object..
         forward_pass = ForwardPass(
-            observations=observations, representations=representations, actions=actions,
+            observations=observations,
+            representations=representations,
+            actions=actions,
         )
         obs, rewards, step_done, info = env.step(actions)
 
         rewards_obj = ContinualRLSetting.Rewards(y=rewards)
         loss = output_head.get_loss(
-            forward_pass=forward_pass, actions=actions_obj, rewards=rewards_obj,
+            forward_pass=forward_pass,
+            actions=actions_obj,
+            rewards=rewards_obj,
         )
         print(f"Step {step}")
         print(f"num episodes since update: {output_head.num_episodes_since_update}")
@@ -148,9 +150,7 @@ def test_with_controllable_episode_lengths(batch_size: int, monkeypatch):
             # This means that the gradient usage on the next time any env reaches
             # an end-of-episode will be one less than the total number of items.
             assert loss.loss == 10.0 * (batch_size - 1)
-            assert loss.metrics["gradient_usage"].used_gradients == 10.0 * (
-                batch_size - 1
-            )
+            assert loss.metrics["gradient_usage"].used_gradients == 10.0 * (batch_size - 1)
             assert loss.metrics["gradient_usage"].wasted_gradients == 0.0
         elif step == 15:
             # Env 0 second episode from steps 5 -> 15
@@ -165,9 +165,7 @@ def test_with_controllable_episode_lengths(batch_size: int, monkeypatch):
             # an end-of-episode will be one less than the total number of items.
             assert loss.loss == 10.0 * (batch_size - 1)
             assert loss.metrics["gradient_usage"].used_gradients == 9 * (batch_size - 1)
-            assert loss.metrics["gradient_usage"].wasted_gradients == 1 * (
-                batch_size - 1
-            )
+            assert loss.metrics["gradient_usage"].wasted_gradients == 1 * (batch_size - 1)
 
         elif step == 25:
             # Env 0 third episode from steps 5 -> 15
@@ -179,9 +177,7 @@ def test_with_controllable_episode_lengths(batch_size: int, monkeypatch):
             # Same pattern as step 20 above
             assert loss.loss == 10.0 * (batch_size - 1), step
             assert loss.metrics["gradient_usage"].used_gradients == 9 * (batch_size - 1)
-            assert loss.metrics["gradient_usage"].wasted_gradients == 1 * (
-                batch_size - 1
-            )
+            assert loss.metrics["gradient_usage"].wasted_gradients == 1 * (batch_size - 1)
 
         elif step > 0 and step % 5 == 0:
             # Same pattern as step 25 above
@@ -193,9 +189,16 @@ def test_with_controllable_episode_lengths(batch_size: int, monkeypatch):
             assert loss.loss == 0.0, step
 
 
-@pytest.mark.parametrize("batch_size", [1, 2, 5,])
+@pytest.mark.parametrize(
+    "batch_size",
+    [
+        1,
+        2,
+        5,
+    ],
+)
 def test_loss_is_nonzero_at_episode_end(batch_size: int):
-    """ Test that when stepping through the env, when the episode ends, a
+    """Test that when stepping through the env, when the episode ends, a
     non-zero loss is returned by the output head.
     """
     with gym.make("CartPole-v0") as temp_env:
@@ -274,13 +277,10 @@ def test_loss_is_nonzero_at_episode_end(batch_size: int):
     assert non_zero_losses > 0
 
 
-
-@pytest.mark.xfail(
-    reason="TODO: Adapt this test for EpisodicA2C (copied form policy_head_test.py)"
-)
+@pytest.mark.xfail(reason="TODO: Adapt this test for EpisodicA2C (copied form policy_head_test.py)")
 @pytest.mark.parametrize("batch_size", [1, 2, 5])
 def test_loss_is_nonzero_at_episode_end_iterate(batch_size: int):
-    """ Test that when *iterating* through the env (active-dataloader style),
+    """Test that when *iterating* through the env (active-dataloader style),
     when the episode ends, a non-zero loss is returned by the output head.
     """
     with gym.make("CartPole-v0") as temp_env:
@@ -351,9 +351,7 @@ def test_loss_is_nonzero_at_episode_end_iterate(batch_size: int):
     assert non_zero_losses > 0
 
 
-@pytest.mark.xfail(
-    reason="TODO: Adapt this test for EpisodicA2C (copied form policy_head_test.py)"
-)
+@pytest.mark.xfail(reason="TODO: Adapt this test for EpisodicA2C (copied form policy_head_test.py)")
 @pytest.mark.xfail(reason="TODO: Fix this test")
 def test_buffers_are_stacked_correctly(monkeypatch):
     """TODO: Test that when "de-synced" episodes, when fed to the output head,
@@ -405,10 +403,7 @@ def test_buffers_are_stacked_correctly(monkeypatch):
 
         n_observations = len(inputs)
 
-        assert (
-            inputs.flatten().tolist()
-            == (env_index + np.arange(n_observations)).tolist()
-        )
+        assert inputs.flatten().tolist() == (env_index + np.arange(n_observations)).tolist()
         if done:
             # Unfortunately, we don't get the final state, because of how
             # VectorEnv works atm.
@@ -436,7 +431,9 @@ def test_buffers_are_stacked_correctly(monkeypatch):
         # BaseModel:
 
         forward_pass = ForwardPass(
-            observations=observations, representations=representations, actions=actions,
+            observations=observations,
+            representations=representations,
+            actions=actions,
         )
 
         action_np = actions.actions_np
@@ -462,10 +459,7 @@ def test_buffers_are_stacked_correctly(monkeypatch):
 
             if step >= batch_size:
                 if step + env_index == targets[env_index]:
-                    assert (
-                        len(representations_buffer) == 1
-                        and output_head.done[env_index] == False
-                    )
+                    assert len(representations_buffer) == 1 and output_head.done[env_index] == False
                 # if env_index == step - batch_size:
                 continue
             assert len(representations_buffer) == step + 1

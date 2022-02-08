@@ -1,19 +1,18 @@
 from dataclasses import dataclass
-from typing import Dict, List, Union, Type, ClassVar, Optional
+from typing import ClassVar, Dict, List, Optional, Type, Union
 
 import gym
 import torch
 from gym import spaces
-from torch import Tensor, nn, LongTensor
-from simple_parsing import list_field
+from torch import LongTensor, Tensor, nn
 
-from sequoia.common.hparams import uniform, categorical
-from sequoia.common import Batch, ClassificationMetrics, Loss
-from sequoia.settings import Observations, Actions, Rewards
+from sequoia.common import ClassificationMetrics, Loss
+from sequoia.common.hparams import categorical, uniform
+from sequoia.settings import Actions, Observations, Rewards
 
-from .output_head import OutputHead
-from ..forward_pass import ForwardPass
 from ..fcnet import FCNet
+from ..forward_pass import ForwardPass
+from .output_head import OutputHead
 
 # TODO: This is based on 'Actions' which is currently basically the same for all settings
 # However, there should probably have a different `Action` class on a
@@ -25,40 +24,40 @@ from ..fcnet import FCNet
 
 @dataclass(frozen=True)
 class ClassificationOutput(Actions):
-    """ Typed dict-like class that represents the 'forward pass'/output of a
+    """Typed dict-like class that represents the 'forward pass'/output of a
     classification head, which correspond to the 'actions' to be sent to the
     environment, in the general formulation.
     """
+
     y_pred: Union[LongTensor, Tensor]
     logits: Tensor
 
     @property
     def action(self) -> LongTensor:
         return self.y_pred
-    
+
     @property
     def y_pred_log_prob(self) -> Tensor:
-        """ returns the log probabilities for the chosen actions/predictions. """
+        """returns the log probabilities for the chosen actions/predictions."""
         return self.logits[:, self.y_pred]
 
     @property
     def y_pred_prob(self) -> Tensor:
-        """ returns the log probabilities for the chosen actions/predictions. """
+        """returns the log probabilities for the chosen actions/predictions."""
         return self.probabilities[self.y_pred]
 
     @property
     def probabilities(self) -> Tensor:
-        """ Returns the normalized probabilies for each class, i.e. the
+        """Returns the normalized probabilies for each class, i.e. the
         softmax-ed version of `self.logits`.
         """
         return self.logits.softmax(-1)
 
 
 class ClassificationHead(OutputHead):
-
     @dataclass
     class HParams(FCNet.HParams, OutputHead.HParams):
-        """ Hyper-parameters of the OutputHead used for classification. """
+        """Hyper-parameters of the OutputHead used for classification."""
 
         # NOTE: These hparams were basically copied over from FCNet.HParams, just so its a
         # bit more visible.
@@ -74,7 +73,7 @@ class ClassificationHead(OutputHead):
         hidden_layers: int = uniform(0, 3, default=0)
         # Number of neurons in each hidden layer of the output head.
         # If a single value is given, than each of the `hidden_layers` layers
-        # will have that number of neurons. 
+        # will have that number of neurons.
         # If `n > 1` values are given, then `hidden_layers` must either be 0 or
         # `n`, otherwise a RuntimeError will be raised.
         hidden_neurons: Union[int, List[int]] = uniform(16, 512, default=64)
@@ -84,12 +83,14 @@ class ClassificationHead(OutputHead):
         # TODO: Not sure if this is how it's typically used. Need to check.
         dropout_prob: Optional[float] = uniform(0, 0.8, default=0.2)
 
-    def __init__(self,
-                 input_space: gym.Space,
-                 action_space: gym.Space,
-                 reward_space: gym.Space = None,
-                 hparams: "ClassificationHead.HParams" = None,
-                 name: str = "classification"):
+    def __init__(
+        self,
+        input_space: gym.Space,
+        action_space: gym.Space,
+        reward_space: gym.Space = None,
+        hparams: "ClassificationHead.HParams" = None,
+        name: str = "classification",
+    ):
         super().__init__(
             input_space=input_space,
             action_space=action_space,
@@ -125,11 +126,13 @@ class ClassificationHead(OutputHead):
             y_pred=y_pred,
         )
 
-    def get_loss(self, forward_pass: ForwardPass, actions: ClassificationOutput, rewards: Rewards) -> Loss:
+    def get_loss(
+        self, forward_pass: ForwardPass, actions: ClassificationOutput, rewards: Rewards
+    ) -> Loss:
         logits: Tensor = actions.logits
         y_pred: Tensor = actions.y_pred
         rewards = rewards.to(logits.device)
-        
+
         y: Tensor = rewards.y
 
         n_classes = logits.shape[-1]
@@ -140,10 +143,10 @@ class ClassificationHead(OutputHead):
         assert y.max() < n_classes, y
 
         loss = self.loss_fn(logits, y)
-        
+
         assert loss.shape == ()
         metrics = ClassificationMetrics(y_pred=logits, y=y)
-        
+
         assert self.name, "Output Heads should have a name!"
         loss_object = Loss(
             name=self.name,

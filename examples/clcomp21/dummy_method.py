@@ -1,23 +1,23 @@
-import gym
 from typing import Optional
-from torch import Tensor
+
+import gym
 import numpy as np
 import tqdm
+from torch import Tensor
 
-from sequoia.settings import Setting, Environment, Observations, Actions
 from sequoia.methods import Method
+from sequoia.settings import Actions, Environment, Observations, Setting
 from sequoia.settings.sl import SLSetting
 
 
 class DummyMethod(Method, target_setting=Setting):
-    """ Dummy method that returns random actions for each observation.
-    """
+    """Dummy method that returns random actions for each observation."""
 
     def __init__(self):
         self.max_train_episodes: Optional[int] = None
 
     def configure(self, setting: Setting):
-        """ Called before the method is applied on a setting (before training).
+        """Called before the method is applied on a setting (before training).
 
         You can use this to instantiate your model, for instance, since this is
         where you get access to the observation & action spaces.
@@ -28,7 +28,7 @@ class DummyMethod(Method, target_setting=Setting):
         pass
 
     def fit(self, train_env: Environment, valid_env: Environment):
-        """ Example train loop.
+        """Example train loop.
         You can do whatever you want with train_env and valid_env here.
 
         NOTE: In the Settings where task boundaries are known (in this case all
@@ -58,10 +58,12 @@ class DummyMethod(Method, target_setting=Setting):
                     if rewards is None:
                         rewards = train_env.send(y_pred)
 
-                    train_pbar.set_postfix({
-                        "Episode": episodes,
-                        "Step": i,
-                    })
+                    train_pbar.set_postfix(
+                        {
+                            "Episode": episodes,
+                            "Step": i,
+                        }
+                    )
                     # train as you usually would.
 
                 episodes += 1
@@ -69,10 +71,8 @@ class DummyMethod(Method, target_setting=Setting):
                     train_env.close()
                     break
 
-    def get_actions(
-        self, observations: Observations, action_space: gym.Space
-    ) -> Actions:
-        """ Get a batch of predictions (aka actions) for these observations. """
+    def get_actions(self, observations: Observations, action_space: gym.Space) -> Actions:
+        """Get a batch of predictions (aka actions) for these observations."""
         y_pred = action_space.sample()
         return self.target_setting.Actions(y_pred)
 
@@ -82,7 +82,6 @@ if __name__ == "__main__":
     from sequoia.settings import ClassIncrementalSetting
 
     # Create the Method:
-
     # - Manually:
     method = DummyMethod()
 

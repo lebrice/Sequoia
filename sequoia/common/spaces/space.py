@@ -1,8 +1,10 @@
 """ Small typing improvements to the `gym.spaces.Space` class. """
+from typing import Any, Generic, TypeVar, Union
+
 from gym.spaces import Space as _Space
-from typing import TypeVar, Generic, Union, Any
 
 T = TypeVar("T")
+
 
 class Space(_Space, Generic[T]):
     def sample(self) -> T:

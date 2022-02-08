@@ -1,10 +1,11 @@
 """TODO: Make a wrapper that calls a given function/callback when a given step is reached.
 """
 from abc import ABC, abstractmethod
-from collections import defaultdict
-from typing import Callable, Dict, List, Tuple, Union
-from .utils import IterableWrapper
+from typing import Callable, List, Tuple, Union
+
 import gym
+
+from .utils import IterableWrapper
 
 
 class Callback(Callable[[int, gym.Env], None], ABC):
@@ -23,15 +24,13 @@ class StepCallback(Callback, ABC):
             return self.func(step, env, step_results)
         raise NotImplementedError("Create your own callback or pass a func to use.")
 
+
 class PeriodicCallback(Callback):
-    def __init__(self,
-                 period: int,
-                 offset: int = 0,
-                 func: Callable[[int, gym.Env], None] = None):
+    def __init__(self, period: int, offset: int = 0, func: Callable[[int, gym.Env], None] = None):
         self.period = period
         self.offset = offset
         self.func = func
-    
+
     def __call__(self, step: int, env: gym.Env, step_results: Tuple) -> None:
         if self.func:
             return self.func(step, env, step_results)
@@ -39,12 +38,13 @@ class PeriodicCallback(Callback):
 
 
 class StepCallbackWrapper(IterableWrapper):
-    """ Wrapper that will execute some callbacks when certain steps are reached.
-    """
-    def __init__(self,
-                 env: gym.Env,
-                 callbacks: List[Callback] = None,
-                 ):
+    """Wrapper that will execute some callbacks when certain steps are reached."""
+
+    def __init__(
+        self,
+        env: gym.Env,
+        callbacks: List[Callback] = None,
+    ):
         super().__init__(env)
         self._steps = 0
         self.callbacks = callbacks or []
@@ -74,8 +74,10 @@ class StepCallbackWrapper(IterableWrapper):
                 if callback.step == self._steps:
                     callback(self._steps, self, step_results)
             elif isinstance(callback, PeriodicCallback):
-                if (self._steps >= callback.offset and
-                       (self._steps - callback.offset) % callback.period == 0):
+                if (
+                    self._steps >= callback.offset
+                    and (self._steps - callback.offset) % callback.period == 0
+                ):
                     callback(self._steps, self, step_results)
             else:
                 # if it's a callable, just call it all the time, assuming that

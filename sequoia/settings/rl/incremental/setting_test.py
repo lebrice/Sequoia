@@ -1,7 +1,7 @@
 import dataclasses
 import enum
-import inspect
 import functools
+import inspect
 import math
 import random
 from typing import Any, ClassVar, Dict, NamedTuple, Optional, Type
@@ -11,6 +11,7 @@ import numpy as np
 import pytest
 from gym import spaces
 from gym.envs.classic_control import CartPoleEnv
+
 from sequoia.common.config import Config
 from sequoia.common.gym_wrappers import RenderEnvWrapper
 from sequoia.common.spaces import Image, Sparse
@@ -22,7 +23,6 @@ from sequoia.conftest import (
     slow,
     xfail_param,
 )
-from sequoia.settings.base import Setting
 from sequoia.methods.random_baseline import RandomBaselineMethod
 from sequoia.settings.assumptions.incremental_test import OtherDummyMethod
 from sequoia.settings.rl import TaskIncrementalRLSetting
@@ -854,7 +854,7 @@ episodes = lambda v: Period(value=v, type=PeriodTypeEnum.EPISODES)
 
 train_task_schedule = {
     steps(10): "CartPole-v0",
-    episodes(1000): "Breakout-v0",
+    episodes(1000): "ALE/Breakout-v5",
 }
 
 

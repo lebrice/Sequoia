@@ -2,54 +2,55 @@
 import dataclasses
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
-from typing import Any, ClassVar, Dict, List, Type, Callable, Sequence
+from typing import ClassVar, List, Sequence, Type
+
 import gym
 import numpy as np
 from gym import spaces
 from gym.spaces.utils import flatdim
-from simple_parsing import list_field, choice, mutable_field
 from torch import Tensor, nn
 from torch.nn import Flatten  # type: ignore
 from torch.optim.optimizer import Optimizer
 
 from sequoia.common.hparams import HyperParameters
 from sequoia.common.loss import Loss
-from sequoia.common.metrics import ClassificationMetrics, get_metrics
-from sequoia.settings import Actions, Observations, Rewards, Setting
+from sequoia.settings import Actions, Rewards, Setting
 from sequoia.utils import Parseable, get_logger
-from sequoia.utils.serialization import Serializable
-from sequoia.utils.utils import camel_case, remove_suffix
 
 from ..forward_pass import ForwardPass
+
 logger = get_logger(__file__)
 
 
 class OutputHead(nn.Module, ABC):
     """Module for the output head of the model.
-    
+
     This output head is meant for classification, but you could inherit from it
-    and customize it for doing something different like RL or reconstruction, 
+    and customize it for doing something different like RL or reconstruction,
     for instance.
     """
+
     # TODO: Rename this to 'output' and create some ClassificationHead,
     # RegressionHead, ValueHead, etc. subclasses with the corresponding names.
     name: ClassVar[str] = "classification"
-    
+
     # Reference to the optimizer of the BaseModel.
     base_model_optimizer: ClassVar[Optimizer]
 
     @dataclass
     class HParams(HyperParameters, Parseable):
-        """ Hyperparameters of the output head. """
-        
-    def __init__(self,
-                 input_space: gym.Space,
-                 action_space: gym.Space,
-                 reward_space: gym.Space = None,
-                 hparams: "OutputHead.HParams" = None,
-                 name: str = ""):
+        """Hyperparameters of the output head."""
+
+    def __init__(
+        self,
+        input_space: gym.Space,
+        action_space: gym.Space,
+        reward_space: gym.Space = None,
+        hparams: "OutputHead.HParams" = None,
+        name: str = "",
+    ):
         super().__init__()
-        
+
         self.input_space = input_space
         self.action_space = action_space
         self.reward_space = reward_space or spaces.Box(-np.inf, np.inf, ())
@@ -60,29 +61,29 @@ class OutputHead(nn.Module, ABC):
             self.hparams = self.upgrade_hparams()
         self.name = name or type(self).name
 
-    def make_dense_network(self,
-                           in_features: int,
-                           hidden_neurons: Sequence[int],
-                           out_features: int,
-                           activation: Type[nn.Module]=nn.ReLU):
+    def make_dense_network(
+        self,
+        in_features: int,
+        hidden_neurons: Sequence[int],
+        out_features: int,
+        activation: Type[nn.Module] = nn.ReLU,
+    ):
         hidden_layers: List[nn.Module] = []
         output_size = out_features
         for i, neurons in enumerate(hidden_neurons):
             out_features = neurons
             hidden_layers.append(nn.Linear(in_features, out_features))
             hidden_layers.append(activation())
-            in_features = out_features # next input size is output size of prev.
+            in_features = out_features  # next input size is output size of prev.
 
-        return nn.Sequential(
-            nn.Flatten(),
-            *hidden_layers,
-            nn.Linear(in_features, output_size)
-        )
+        return nn.Sequential(nn.Flatten(), *hidden_layers, nn.Linear(in_features, output_size))
 
     @abstractmethod
-    def forward(self, observations: Setting.Observations, representations: Tensor) -> Setting.Actions:
+    def forward(
+        self, observations: Setting.Observations, representations: Tensor
+    ) -> Setting.Actions:
         """Given the observations and their representations, produce "actions".
-        
+
         Parameters
         ----------
         observations : Observations
@@ -99,17 +100,17 @@ class OutputHead(nn.Module, ABC):
 
     @abstractmethod
     def get_loss(self, forward_pass: ForwardPass, actions: Actions, rewards: Rewards) -> Loss:
-        """ Given the forward pass,(a dict-like object that includes the
+        """Given the forward pass,(a dict-like object that includes the
         observations, representations and actions, the actions produced by this
         output head and the resulting rewards, returns a Loss to use.
         """
-    
+
     def clear_all_buffers(self) -> None:
-        """ Optional method that gets called when using multiple output heads, to
+        """Optional method that gets called when using multiple output heads, to
         prevent keeping stale gradients around after the model that produced them gets
         updated during training.
-        """    
-    
+        """
+
     def upgrade_hparams(self):
         """Upgrades the hparams at `self.hparams` to the right type for this
         output head (`type(self).HParams`), filling in any missing values by
@@ -129,16 +130,19 @@ class OutputHead(nn.Module, ABC):
         # TODO: If a value is not at its current default, keep it.
         default_hparams = self.HParams()
         missing_fields = [
-            f.name for f in dataclasses.fields(self.HParams)
+            f.name
+            for f in dataclasses.fields(self.HParams)
             if f.name not in current_hparams
             or current_hparams[f.name] == getattr(type(self.hparams)(), f.name, None)
             or current_hparams[f.name] == getattr(default_hparams, f.name)
         ]
-        logger.warning(RuntimeWarning(
-            f"Upgrading the hparams from type {type(self.hparams)} to "
-            f"type {self.HParams}. This will try to fetch the values for "
-            f"the missing fields {missing_fields} from the command-line. "
-        ))
+        logger.warning(
+            RuntimeWarning(
+                f"Upgrading the hparams from type {type(self.hparams)} to "
+                f"type {self.HParams}. This will try to fetch the values for "
+                f"the missing fields {missing_fields} from the command-line. "
+            )
+        )
         # Get the missing values
 
         if self.hparams._argv:
@@ -146,4 +150,4 @@ class OutputHead(nn.Module, ABC):
         hparams = self.HParams.from_args(argv=self.hparams._argv, strict=False)
         for missing_field in missing_fields:
             current_hparams[missing_field] = getattr(hparams, missing_field)
-        return self.HParams(**current_hparams)  
+        return self.HParams(**current_hparams)

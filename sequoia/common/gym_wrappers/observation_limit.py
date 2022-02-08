@@ -1,12 +1,8 @@
 """ IDEA: same as EpisodeLimit, for for the number of total observations.
 """
-import warnings
-from typing import List, Union
 
 import gym
-import numpy as np
 from gym.error import ClosedEnvironmentError
-from gym.vector import VectorEnv
 
 from sequoia.utils import get_logger
 
@@ -16,12 +12,13 @@ logger = get_logger(__file__)
 
 
 class ObservationLimit(IterableWrapper):
-    """ Closes the env when `max_steps` steps have been performed *in total*.
-    
+    """Closes the env when `max_steps` steps have been performed *in total*.
+
     For vectorized environments, each step consumes up to `num_envs` from this
     total budget, i.e. the step counter is incremented by the batch size at
     each step.
     """
+
     def __init__(self, env: gym.Env, max_steps: int):
         super().__init__(env=env)
         self._max_obs = max_steps
@@ -32,13 +29,15 @@ class ObservationLimit(IterableWrapper):
     def reset(self):
         if self._is_closed:
             if self._obs_counter >= self._max_obs:
-                raise ClosedEnvironmentError(f"Env reached max number of observations ({self._max_obs})")
+                raise ClosedEnvironmentError(
+                    f"Env reached max number of observations ({self._max_obs})"
+                )
             raise ClosedEnvironmentError("Can't step through closed env.")
 
         # Resetting actually gives you an observation, so we count it here.
         self._obs_counter += self.env.num_envs if self.is_vectorized else 1
         logger.debug(f"(observation {self._obs_counter}/{self._max_obs})")
-        
+
         obs = self.env.reset()
 
         if self._obs_counter >= self._max_obs:
@@ -49,11 +48,13 @@ class ObservationLimit(IterableWrapper):
     @property
     def is_closed(self) -> bool:
         return self._is_closed
-    
+
     def step(self, action):
         if self._is_closed:
             if self._obs_counter >= self._max_obs:
-                raise ClosedEnvironmentError(f"Env reached max number of observations ({self._max_obs})")
+                raise ClosedEnvironmentError(
+                    f"Env reached max number of observations ({self._max_obs})"
+                )
             raise ClosedEnvironmentError("Can't step through closed env.")
 
         obs, reward, done, info = self.env.step(action)
@@ -70,4 +71,3 @@ class ObservationLimit(IterableWrapper):
     def close(self):
         self.env.close()
         self._is_closed = True
-    

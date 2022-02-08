@@ -1,4 +1,5 @@
 import pytest
+
 from sequoia.client.setting_proxy import SettingProxy
 from sequoia.conftest import slow
 from sequoia.settings.rl import IncrementalRLSetting, RLSetting
@@ -9,8 +10,7 @@ from .sb3_example import CustomPPOMethod, CustomPPOModel
 
 @pytest.mark.timeout(120)
 def test_cartpole_state(cartpole_state_setting: SettingProxy[RLSetting]):
-    """ Applies this Method to a simple cartpole-state setting.
-    """
+    """Applies this Method to a simple cartpole-state setting."""
     method = CustomPPOMethod(hparams=CustomPPOModel.HParams(n_steps=64))
     results = cartpole_state_setting.apply(method)
     assert results.to_log_dict()
@@ -25,8 +25,7 @@ def test_cartpole_state(cartpole_state_setting: SettingProxy[RLSetting]):
 def test_incremental_cartpole_state(
     incremental_cartpole_state_setting: SettingProxy[IncrementalRLSetting],
 ):
-    """ Applies this Method to the class-incremental mnist Setting.
-    """
+    """Applies this Method to the class-incremental mnist Setting."""
     method = CustomPPOMethod()
     results = incremental_cartpole_state_setting.apply(method)
     assert results.to_log_dict()
@@ -39,8 +38,7 @@ def test_incremental_cartpole_state(
 
 @pytest.mark.timeout(300)
 def test_RL_track(rl_track_setting: SettingProxy[IncrementalRLSetting]):
-    """ Applies this Method to the Setting of the sl track of the competition.
-    """
+    """Applies this Method to the Setting of the sl track of the competition."""
     method = CustomPPOMethod()
     results = rl_track_setting.apply(method)
     assert results.to_log_dict()

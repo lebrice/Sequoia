@@ -10,6 +10,13 @@ from typing import ClassVar, Dict, Generic, List, Optional, Type, TypeVar, Union
 import gym
 import torch
 import tqdm
+from avalanche.benchmarks.scenarios import Experience
+from avalanche.evaluation.metrics import accuracy_metrics, forgetting_metrics, loss_metrics
+from avalanche.logging import InteractiveLogger
+from avalanche.logging.wandb_logger import WandBLogger as _WandBLogger
+from avalanche.models.utils import avalanche_forward
+from avalanche.training.plugins import EvaluationPlugin, StrategyPlugin
+from avalanche.training.strategies import BaseStrategy
 from gym import spaces
 from gym.spaces.utils import flatdim
 from gym.utils import colorize
@@ -20,30 +27,22 @@ from torch.nn import Module
 from torch.optim import SGD
 from torch.optim.optimizer import Optimizer
 
-from avalanche.benchmarks.scenarios import Experience
-from avalanche.evaluation.metrics import (
-    accuracy_metrics,
-    forgetting_metrics,
-    loss_metrics,
-)
-from avalanche.logging import InteractiveLogger
-from avalanche.logging.wandb_logger import WandBLogger as _WandBLogger
-from avalanche.models.utils import avalanche_forward
-from avalanche.training.plugins import EvaluationPlugin, StrategyPlugin
-from avalanche.training.strategies import BaseStrategy
-from avalanche.training.strategies.strategy_wrappers import default_logger
-
 from sequoia.common.spaces import Image
 from sequoia.methods import Method
-from sequoia.settings.sl import ClassIncrementalSetting, PassiveEnvironment, SLSetting
-from sequoia.settings.sl.continual import Actions, Observations, Rewards
-from sequoia.settings.sl.continual import ContinualSLTestEnvironment
-from sequoia.settings.sl import ContinualSLSetting
-from sequoia.utils import get_logger
+from sequoia.settings.sl import (
+    ClassIncrementalSetting,
+    ContinualSLSetting,
+    PassiveEnvironment,
+    SLSetting,
+)
+from sequoia.settings.sl.continual import Actions, ContinualSLTestEnvironment, Observations, Rewards
 from sequoia.settings.sl.continual.setting import smart_class_prediction
+from sequoia.utils import get_logger
 
 from .experience import SequoiaExperience
-from .patched_models import MTSimpleCNN, MTSimpleMLP, SimpleCNN, SimpleMLP
+from .patched_models import MTSimpleCNN, MTSimpleMLP
+from avalanche.models import SimpleCNN, SimpleMLP
+
 logger = get_logger(__file__)
 
 StrategyType = TypeVar("StrategyType", bound=BaseStrategy)
@@ -53,7 +52,7 @@ StrategyType = TypeVar("StrategyType", bound=BaseStrategy)
 
 
 class WandBLogger(_WandBLogger):
-        
+
     # def before_run(self):
     #     if self.wandb is None:
     #         self.import_wandb()
@@ -61,13 +60,12 @@ class WandBLogger(_WandBLogger):
     #         self.wandb.init(**self.init_kwargs)
     #     else:
     #         self.wandb.init()
-    
+
     def import_wandb(self):
         try:
             import wandb
         except ImportError:
-            raise ImportError(
-                'Please run "pip install wandb" to install wandb')
+            raise ImportError('Please run "pip install wandb" to install wandb')
         self.wandb = wandb
 
     def args_parse(self):
@@ -93,7 +91,7 @@ class AvalancheMethod(
     Generic[StrategyType],
     target_setting=ContinualSLSetting,
 ):
-    """ Base class for all the Methods adapted from Avalanche. """
+    """Base class for all the Methods adapted from Avalanche."""
 
     # Name for the 'family' of methods, use to differentiate methods with the same name.
     family: ClassVar[str] = "avalanche"
@@ -129,9 +127,7 @@ class AvalancheMethod(
     # The model.
     model: Union[Module, Type[Module]] = choice(available_models, default=SimpleCNN)
     # The optimizer to use.
-    optimizer: Union[Optimizer, Type[Optimizer]] = choice(
-        available_optimizers, default=optim.Adam
-    )
+    optimizer: Union[Optimizer, Type[Optimizer]] = choice(available_optimizers, default=optim.Adam)
     # The loss criterion to use.
     criterion: Union[Module, Type[Module]] = choice(
         available_criterions, default=nn.CrossEntropyLoss
@@ -175,7 +171,7 @@ class AvalancheMethod(
     def configure(self, setting: ClassIncrementalSetting) -> None:
         self.setting = setting
         self.model = self.create_model(setting).to(self.device)
-        
+
         # Select the loss function to use.
         if not isinstance(self.criterion, nn.Module):
             self.criterion = self.criterion()
@@ -186,7 +182,7 @@ class AvalancheMethod(
             loss_metrics(minibatch=False, epoch=True, experience=True, stream=True),
         ]
         loggers = [
-            # BUG: evaluation.py:94, _update_metrics: 
+            # BUG: evaluation.py:94, _update_metrics:
             # before_training() takes 2 positional arguments but 3 were given
             # default_logger,
             InteractiveLogger(),
@@ -209,8 +205,7 @@ class AvalancheMethod(
         self.cl_strategy: StrategyType = self.create_cl_strategy(setting)
 
         if setting.monitor_training_performance and (
-            type(self).environment_to_experience
-            is AvalancheMethod.environment_to_experience
+            type(self).environment_to_experience is AvalancheMethod.environment_to_experience
         ):
             warnings.warn(
                 UserWarning(
@@ -308,7 +303,7 @@ class AvalancheMethod(
         return self.model()
 
     def make_optimizer(self) -> Optimizer:
-        """ Creates the Optimizer. """
+        """Creates the Optimizer."""
         optimizer_class = self.optimizer
         if isinstance(self.optimizer, Optimizer):
             optimizer_class = type(self.optimizer)
@@ -321,9 +316,7 @@ class AvalancheMethod(
     def fit(self, train_env: PassiveEnvironment, valid_env: PassiveEnvironment):
         train_exp = self.environment_to_experience(train_env, setting=self.setting)
         valid_exp = self.environment_to_experience(valid_env, setting=self.setting)
-        self.cl_strategy.train(
-            train_exp, eval_streams=[valid_exp], num_workers=self.num_workers
-        )
+        self.cl_strategy.train(train_exp, eval_streams=[valid_exp], num_workers=self.num_workers)
 
     def get_actions(
         self,
@@ -339,7 +332,9 @@ class AvalancheMethod(
             if task_labels is not None:
                 # If task labels are available, figure out the possible classes for
                 # each task, and 'mask out' those so they aren't predicted.
-                y_pred = smart_class_prediction(logits, task_labels, setting=self.setting, train=False)
+                y_pred = smart_class_prediction(
+                    logits, task_labels, setting=self.setting, train=False
+                )
             else:
                 y_pred = logits.argmax(-1)
             return self.target_setting.Actions(y_pred=y_pred)
@@ -378,9 +373,7 @@ class AvalancheMethod(
                 raise NotImplementedError(f"todo: set hparam {k} to value {v}")
             setattr(self, k, v)
 
-    def environment_to_experience(
-        self, env: PassiveEnvironment, setting: SLSetting
-    ) -> Experience:
+    def environment_to_experience(self, env: PassiveEnvironment, setting: SLSetting) -> Experience:
         """
         "Converts" the PassiveEnvironments (dataloaders) from Sequoia
         into an Experience object usable by the Avalanche Strategies. By default, this
@@ -451,9 +444,7 @@ class AvalancheMethod(
         x = stacked_observations.x
         task_labels = stacked_observations.task_labels
         y = stacked_rewards.y
-        return SequoiaExperience(
-            env=env, setting=setting, x=x, y=y, task_labels=task_labels
-        )
+        return SequoiaExperience(env=env, setting=setting, x=x, y=y, task_labels=task_labels)
 
 
 def test_epoch(strategy, test_env: ContinualSLTestEnvironment, **kwargs):
@@ -475,9 +466,7 @@ def test_epoch(strategy, test_env: ContinualSLTestEnvironment, **kwargs):
     # strategy.after_eval_exp(**kwargs)
 
 
-def test_epoch_gym_env(
-    strategy: BaseStrategy, test_env: ContinualSLTestEnvironment, **kwargs
-):
+def test_epoch_gym_env(strategy: BaseStrategy, test_env: ContinualSLTestEnvironment, **kwargs):
     strategy.mb_it = 0
     episode = 0
     strategy.experience = test_env
@@ -516,9 +505,7 @@ def test_epoch_gym_env(
                 if not isinstance(done, bool):
                     assert False, done
 
-                strategy.mb_y = (
-                    rewards.y.to(strategy.device) if rewards is not None else None
-                )
+                strategy.mb_y = rewards.y.to(strategy.device) if rewards is not None else None
                 # strategy.after_eval_forward(**kwargs)
                 strategy.mb_it += 1
 

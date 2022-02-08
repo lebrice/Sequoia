@@ -4,26 +4,21 @@ See `avalanche.training.plugins.lwf.LwFPlugin` or
 `avalanche.training.strategies.strategy_wrappers.LwF` for more info.
 """
 from dataclasses import dataclass
-from typing import ClassVar, List, Optional, Sequence, Type, Union
+from typing import ClassVar, Optional, Sequence, Type, Union
 
-import torch
-from simple_parsing.helpers.hparams import uniform
-from torch import Tensor
-from torch.optim.optimizer import Optimizer
 from avalanche.training.plugins.lwf import LwFPlugin as LwFPlugin_
 from avalanche.training.strategies import LwF
+from simple_parsing.helpers.hparams import uniform
+from torch import Tensor
 
 from sequoia.methods import register_method
-from sequoia.settings.sl import (
-    ClassIncrementalSetting,
-    SLSetting,
-    TaskIncrementalSLSetting,
-)
+from sequoia.settings.sl import SLSetting, TaskIncrementalSLSetting
+
 from .base import AvalancheMethod
 
 
 class LwFPlugin(LwFPlugin_):
-    """ Patching a little error that happens in the 'LwFPlugin' which happens when a
+    """Patching a little error that happens in the 'LwFPlugin' which happens when a
     Multi-Task model is used, and when we grow the output space after each task.
     """
 
@@ -48,7 +43,7 @@ class LwFPlugin(LwFPlugin_):
 @register_method
 @dataclass
 class LwFMethod(AvalancheMethod[LwF]):
-    """ Learning without Forgetting strategy from Avalanche.
+    """Learning without Forgetting strategy from Avalanche.
     See LwF plugin for details.
     This strategy does not use task identities.
 
@@ -64,9 +59,7 @@ class LwFMethod(AvalancheMethod[LwF]):
         1e-2, 1, default=1
     )  # TODO: Check if the range makes sense.
     # softmax temperature for distillation
-    temperature: float = uniform(
-        1, 10, default=2
-    )  # TODO: Check if the range makes sense.
+    temperature: float = uniform(1, 10, default=2)  # TODO: Check if the range makes sense.
 
     strategy_class: ClassVar[Type[LwF]] = LwF
 
@@ -83,9 +76,7 @@ class LwFMethod(AvalancheMethod[LwF]):
         assert isinstance(plugin_index, int)
 
         old_plugin: LwFPlugin_ = strategy.plugins[plugin_index]
-        new_plugin = LwFPlugin(
-            alpha=old_plugin.alpha, temperature=old_plugin.temperature
-        )
+        new_plugin = LwFPlugin(alpha=old_plugin.alpha, temperature=old_plugin.temperature)
         new_plugin.prev_model = old_plugin.prev_model
         strategy.plugins[plugin_index] = new_plugin
 
