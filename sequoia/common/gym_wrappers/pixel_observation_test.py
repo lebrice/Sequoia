@@ -1,7 +1,10 @@
 import gym
 import numpy as np
+import pytest
 
 from .pixel_observation import PixelObservationWrapper
+
+pyglet = pytest.importorskip("pyglet")
 
 
 def test_passing_string_to_constructor():

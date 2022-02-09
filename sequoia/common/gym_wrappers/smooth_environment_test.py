@@ -47,9 +47,9 @@ def test_task_schedule():
         assert np.isclose(env.length, expected_steps)
         assert np.isclose(env.gravity, expected_gravity)
 
-        env.render()
-        if done:
-            env.reset()
+        # env.render()
+        # if done:
+        #     env.reset()
 
         params[step] = env.current_task.copy()
 

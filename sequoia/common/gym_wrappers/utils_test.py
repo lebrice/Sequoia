@@ -5,14 +5,21 @@ from gym.wrappers.pixel_observation import PixelObservationWrapper
 
 from .pixel_observation import PixelObservationWrapper
 from .utils import has_wrapper
+from sequoia.conftest import param_requires_pyglet
 
 
 @pytest.mark.parametrize(
     "env,wrapper_type,result",
     [
-        (lambda: PixelObservationWrapper(gym.make("CartPole-v0")), ClipAction, False),
-        (lambda: PixelObservationWrapper(gym.make("CartPole-v0")), PixelObservationWrapper, True),
-        (lambda: PixelObservationWrapper(gym.make("CartPole-v0")), PixelObservationWrapper, True),
+        param_requires_pyglet(
+            lambda: PixelObservationWrapper(gym.make("CartPole-v0")), ClipAction, False
+        ),
+        param_requires_pyglet(
+            lambda: PixelObservationWrapper(gym.make("CartPole-v0")), PixelObservationWrapper, True
+        ),
+        param_requires_pyglet(
+            lambda: PixelObservationWrapper(gym.make("CartPole-v0")), PixelObservationWrapper, True
+        ),
         # param_requires_atari_py(AtariPreprocessing(gym.make("ALE/Breakout-v5")), ClipAction, True),
     ],
 )

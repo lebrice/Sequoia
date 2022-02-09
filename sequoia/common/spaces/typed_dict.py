@@ -51,10 +51,10 @@ class TypedDictSpace(spaces.Dict, Space[M]):
     >>> from gym.spaces import Box
     >>> s = TypedDictSpace(x=Box(0, 1, (4,), dtype=np.float64))
     >>> s
-    TypedDictSpace(x:Box([0. 0. 0. 0.], [1. 1. 1. 1.], (4,), float64))
+    TypedDictSpace(x:Box(0.0, 1.0, (4,), float64))
     >>> _ = s.seed(123)
     >>> s.sample()
-    {'x': array([0.66528138, 0.33239426, 0.30337907, 0.92981861])}
+    {'x': array([0.06132501, 0.48141959, 0.41703335, 0.34899889])}
 
     - Using it like a TypedDict: (This equivalent to the above)
 
@@ -62,20 +62,20 @@ class TypedDictSpace(spaces.Dict, Space[M]):
     ...     x: Box = Box(0, 1, (4,), dtype=np.float64)
     >>> s = VisionSpace()
     >>> s
-    VisionSpace(x:Box([0. 0. 0. 0.], [1. 1. 1. 1.], (4,), float64))
+    VisionSpace(x:Box(0.0, 1.0, (4,), float64))
     >>> _ = s.seed(123)
     >>> s.sample()
-    {'x': array([0.66528138, 0.33239426, 0.30337907, 0.92981861])}
+    {'x': array([0.06132501, 0.48141959, 0.41703335, 0.34899889])}
 
     - You can also overwrite the values from the type annotations by passing them to the
       constructor:
 
     >>> s = VisionSpace(x=spaces.Box(0, 2, (3,), dtype=np.int64))
     >>> s
-    VisionSpace(x:Box([0 0 0], [2 2 2], (3,), int64))
+    VisionSpace(x:Box(0, 2, (3,), int64))
     >>> _ = s.seed(123)
     >>> s.sample()
-    {'x': array([1, 0, 0])}
+    {'x': array([0, 1, 1])}
 
     ### Using custom dtypes
 
@@ -88,12 +88,12 @@ class TypedDictSpace(spaces.Dict, Space[M]):
     regular dictionaries.
 
     >>> from collections import OrderedDict
-    >>> s = TypedDictSpace(x=spaces.Box(0, 1, (4,), dtype=int), dtype=OrderedDict)
+    >>> s = TypedDictSpace(x=spaces.Box(0, 1, (4,), dtype=float), dtype=OrderedDict)
     >>> s
-    TypedDictSpace(x:Box([0 0 0 0], [1 1 1 1], (4,), int64), dtype=<class 'collections.OrderedDict'>)
+    TypedDictSpace(x:Box(0.0, 1.0, (4,), float64), dtype=<class 'collections.OrderedDict'>)
     >>> _ = s.seed(123)
     >>> s.sample()
-    OrderedDict([('x', array([1, 0, 0, 1]))])
+    OrderedDict([('x', array([0.06132501, 0.48141959, 0.41703335, 0.34899889]))])
 
     ### Required items:
 
@@ -101,7 +101,7 @@ class TypedDictSpace(spaces.Dict, Space[M]):
     required argument:
 
     >>> class FooSpace(TypedDictSpace):
-    ...     a: spaces.Box = spaces.Box(0, 1, (4,), int)
+    ...     a: spaces.Box = spaces.Box(0, 1, (4,), float)
     ...     b: spaces.Discrete
     >>> s = FooSpace()  # doesn't work!
     Traceback (most recent call last):
@@ -109,7 +109,7 @@ class TypedDictSpace(spaces.Dict, Space[M]):
     TypeError: Space of type <class 'sequoia.common.spaces.typed_dict.FooSpace'> requires a 'b' item!
     >>> s = FooSpace(b=spaces.Discrete(5))
     >>> s
-    FooSpace(a:Box([0 0 0 0], [1 1 1 1], (4,), int64), b:Discrete(5))
+    FooSpace(a:Box(0.0, 1.0, (4,), float64), b:Discrete(5))
 
     NOTE: spaces can also inherit from each other!
 
@@ -121,15 +121,7 @@ class TypedDictSpace(spaces.Dict, Space[M]):
     ...     bounding_box=spaces.Box(0, 4, (4, 2), dtype=int),
     ... )
     >>> s
-    ImageSegmentationSpace(x:Box([[0. 0.]
-     [0. 0.]], [[1. 1.]
-     [1. 1.]], (2, 2), float64), bounding_box:Box([[0 0]
-     [0 0]
-     [0 0]
-     [0 0]], [[4 4]
-     [4 4]
-     [4 4]
-     [4 4]], (4, 2), int64))
+    ImageSegmentationSpace(x:Box(0.0, 1.0, (2, 2), float64), bounding_box:Box(0, 4, (4, 2), int64))
     """
 
     def __init__(self, spaces: Mapping[str, Space] = None, dtype: Type[M] = dict, **spaces_kwargs):
@@ -335,15 +327,22 @@ def _concatenate_typed_dicts(
         }
     )
 
+
 from sequoia.utils.generic_functions.to_from_tensor import from_tensor, to_tensor
+
 T = TypeVar("T")
+
 
 @from_tensor.register(TypedDictSpace)
 def _(space: TypedDictSpace, sample: Union[T, Mapping]) -> T:
     return space.dtype(
         **{key: from_tensor(sub_space, sample[key]) for key, sub_space in space.spaces.items()}
     )
+
+
 import torch
+
+
 @to_tensor.register(TypedDictSpace)
 def _(
     space: TypedDictSpace[T],

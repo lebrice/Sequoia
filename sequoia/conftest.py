@@ -345,3 +345,24 @@ def param_requires_mujoco(*args):
         *args,
         reason="mujoco-py is required for this parameter.",
     )
+
+
+PYGLET_INSTALLED = False
+try:
+    import pyglet
+
+    PYGLET_INSTALLED = True
+except ImportError:
+    pass
+
+requires_pyglet = pytest.mark.skipif(
+    not PYGLET_INSTALLED, reason="pyglet is required to render the class-control envs."
+)
+
+
+def param_requires_pyglet(*args):
+    return skipif_param(
+        not PYGLET_INSTALLED,
+        *args,
+        reason="pyglet is required to render the class-control envs.",
+    )

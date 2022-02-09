@@ -519,19 +519,17 @@ def env_fn_cartpole() -> gym.Env:
     return env
 
 
-@pytest.mark.parametrize("env", ["cartpole", param_requires_monsterkong("monsterkong")])
-def test_task_sequence_is_reproducible(env: str):
+@pytest.mark.parametrize("env_id", ["cartpole", param_requires_monsterkong("monsterkong")])
+def test_task_sequence_is_reproducible(env_id: str):
     """Test that the multi-task setup is seeded correctly, i.e. that the task sequence
     is reproducible given the same seed.
     """
-    if env == "cartpole":
+    if env_id == "cartpole":
         env_fn = env_fn_cartpole
-    elif env == "monsterkong":
+    elif env_id == "monsterkong":
         env_fn = env_fn_monsterkong
     else:
-        assert False, f"just testing on cartpole and monsterkong for now, but got env {env}"
-
-    batch_size = 1
+        assert False, f"just testing on cartpole and monsterkong for now, but got env {env_id}"
 
     first_results: List[Tuple[int, int]] = []
     n_runs = 5
@@ -541,7 +539,7 @@ def test_task_sequence_is_reproducible(env: str):
         print(f"starting run {run_number} / {n_runs}")
         # For each 'run', we record the task sequence and how long each task lasted for.
         # Then, we want to check that each run was indentical, for a given seed.
-        env = SyncVectorEnv([env_fn for _ in range(batch_size)])
+        env = env_fn()
         env.seed(123)
 
         task_ids: List[int] = []
@@ -549,13 +547,11 @@ def test_task_sequence_is_reproducible(env: str):
         for episode in range(n_episodes_per_run):
             print(f"Episode {episode} / {n_episodes_per_run}")
             obs = env.reset()
-            task_id: int = obs["task_labels"][0]
+            task_id: int = obs["task_labels"]
             task_length = 0
             done = False
             while not done:
-                obs, _, done_array, _ = env.step(env.action_space.sample())
-                assert len(done_array) == 1
-                done = done_array[0]
+                obs, _, done, _ = env.step(env.action_space.sample())
                 task_length += 1
             task_ids.append(task_id)
             task_lengths.append(task_length)

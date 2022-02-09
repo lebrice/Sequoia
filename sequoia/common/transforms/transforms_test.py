@@ -8,7 +8,7 @@ import torch
 from gym import spaces
 
 from sequoia.utils.serialization import Serializable
-
+from sequoia.conftest import requires_pyglet
 from . import Compose, Transforms
 
 
@@ -147,6 +147,7 @@ import gym
 from sequoia.common.gym_wrappers import PixelObservationWrapper, TransformObservation
 
 
+@requires_pyglet
 def test_channels_first_transform_on_gym_env():
     env = gym.make("CartPole-v0")
     env = PixelObservationWrapper(env)
