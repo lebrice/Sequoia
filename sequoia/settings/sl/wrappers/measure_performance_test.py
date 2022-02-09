@@ -65,6 +65,7 @@ def test_measure_performance_wrapper():
         reward = env.send(action)
         assert reward == i
     assert i == 99
+    from sequoia.settings.sl.continual.objects import Observations, Actions, Rewards
 
     env = TypedObjectsWrapper(
         env, observations_type=Observations, actions_type=Actions, rewards_type=Rewards

@@ -1,4 +1,5 @@
 from dataclasses import fields
+import dataclasses
 from functools import singledispatch
 from typing import Any, Dict, Sequence, Tuple, TypeVar, Union
 
@@ -78,9 +79,28 @@ class TypedObjectsWrapper(IterableWrapper, Environment[ObservationType, ActionTy
                 spaces=self.env.observation_space.spaces,
                 dtype=self.Observations,
             )
-        elif isinstance(self.env.observation_space, simple_spaces) and len(observation_fields) == 1:
+        elif isinstance(self.env.observation_space, simple_spaces):
             # we can get away with this since the class has only one field and the space is simple.
             field_name = observation_fields[0].name
+            if len(observation_fields) > 1:
+                # all the other fields need to have a default value, since the space doesn't have any.
+                # TODO: Create a `ConstantSpace`, `NoneSpace`. If a field has `None` default value,
+                # put a
+                required_fields = [
+                    f
+                    for f in observation_fields
+                    if f.default is dataclasses.MISSING
+                    and f.default_factory is dataclasses.MISSING
+                    and f.init
+                ]
+                required_field_names = [f.name for f in required_fields]
+                if any(f.name != field_name for f in required_fields):
+                    raise NotImplementedError(
+                        f"Can't infer the observaiton space is given class {self.Observations}, "
+                        f"since has required fields {required_field_names} "
+                        f"that aren't present in the observation space. "
+                    )
+
             self.observation_space = TypedDictSpace(
                 spaces={field_name: self.env.observation_space}, dtype=self.Observations
             )
@@ -88,7 +108,8 @@ class TypedObjectsWrapper(IterableWrapper, Environment[ObservationType, ActionTy
             raise NotImplementedError(
                 f"Need to pass the observation space to the TypedObjectsWrapper constructor when "
                 f"the wrapped env's observation space isn't already a Dict or TypedDictSpace and "
-                f"`Observations` has more than one field. (Observations: {self.Observations})"
+                f"`Observations` has more than one field. (Observations: {self.Observations}, "
+                f"observation_fields: {[f.name for f in observation_fields]})"
             )
 
         # Set/construct the action space.
