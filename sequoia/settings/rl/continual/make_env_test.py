@@ -9,7 +9,7 @@ import pytest
 import torch
 from gym.vector import AsyncVectorEnv, SyncVectorEnv
 
-from sequoia.conftest import slow_param
+from sequoia.conftest import requires_pyglet, slow_param
 
 from .make_env import make_batched_env
 
@@ -67,6 +67,7 @@ def get_unwrapped_id(env):
     return id(env.unwrapped)
 
 
+@requires_pyglet
 @pytest.mark.parametrize("env_name", ["CartPole-v0"])
 @pytest.mark.parametrize("batch_size", [1, 5, slow_param(10)])
 def test_make_env_with_wrapper(env_name: str, batch_size: int):
@@ -92,27 +93,29 @@ from gym.vector import AsyncVectorEnv
 from sequoia.common.gym_wrappers import MultiTaskEnvironment, PixelObservationWrapper
 
 
+@pytest.mark.xfail(reason="TODO: Check if gym supports remote getattr now.")
 @pytest.mark.parametrize("env_name", ["CartPole-v0"])
 @pytest.mark.parametrize("batch_size", [1, 5, slow_param(10)])
 def test_make_env_with_wrapper_and_kwargs(env_name: str, batch_size: int):
+    # NOTE: Since BatchVectorEnv and our subclasses of the vectorenvs in gym got removed, we lost
+    # the ability to use the remote getattr feature.
+    task_schedule = {0: dict(length=0.5), 50: dict(length=1.5)}
     env = make_batched_env(
         base_env=env_name,
         batch_size=batch_size,
         wrappers=[
             PixelObservationWrapper,
-            (MultiTaskEnvironment, dict(task_schedule={0: dict(length=2.0)})),
+            lambda env: MultiTaskEnvironment(env, task_schedule=task_schedule),
         ],
         # For now, setting the number of workers to the batch size, just so we
         # get an AsyncVectorEnv rather than the BatchedVectorEnv (so the remote_getattr works).
         num_workers=batch_size,
     )
-    AsyncVectorEnv.allow_remote_getattr = True
-
     start_state = env.reset()
     expected_state_shape = (batch_size, 400, 600, 3)
     assert start_state.shape == expected_state_shape
 
-    for i in range(10):
+    for i in range(100):
         action = env.action_space.sample()
         assert torch.as_tensor(action).shape == (batch_size,)
 

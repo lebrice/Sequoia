@@ -15,6 +15,7 @@ from typing import (
     TypeVar,
     Union,
 )
+import warnings
 
 import gym
 import numpy as np
@@ -128,21 +129,38 @@ def is_atari_env(env: Union[str, gym.Env]) -> bool:
         Wether the given env is an Atari env from Gym.
 
     Examples:
-
-
-    NOTE: Removing this doctest, since recent changes to gym have changed this a bit.
-    >>> # import gym
-    >>> # is_atari_env("CartPole-v0")
-    # False
-    >>> # is_atari_env("bob")
-    # False
+    >>> import gym
+    >>> is_atari_env("CartPole-v0")
+    False
+    >>> is_atari_env("bob")
+    False
     >>> # is_atari_env("ALE/Breakout-v5")
     # True
+    >>> # is_atari_env("Breakout-v0")
+    # True
+
+    NOTE: Removing this doctest, since recent changes to gym have changed this a bit.
     >>> #from gym.envs import atari
     >>> #is_atari_env(atari.AtariEnv) # requires atari_py to be installed
     # True
     """
-    raise NotImplementedError(f"TODO: Fix this to use the newest atari location in gym.")
+    from sequoia.settings.rl.envs import ATARI_PY_INSTALLED
+
+    if not isinstance(env, (str, gym.Env)):
+        raise RuntimeError(f"`env` needs to be either a str or gym env, not {env}")
+    if isinstance(env, str):
+        try:
+            spec = registry.spec(env)
+        except gym.error.NameNotFound:
+            return False
+        except gym.error.NamespaceNotFound:
+            return False
+        if spec.namespace is None:
+            return False
+        return spec.namespace is "ALE"
+    if not ATARI_PY_INSTALLED:
+        return False
+    raise NotImplementedError(f"TODO: Check if isinstance(env.unwrapped, AtariEnv)")
 
     if isinstance(env, partial):
         if env.func is gym.make and isinstance(env.args[0], str):
@@ -358,13 +376,12 @@ class IterableWrapper(MayCloseEarly, IterableDataset, Generic[EnvType], ABC):
     # def __len__(self):
     #     return self.env.__len__()
 
-    def length(self) -> Optional[int]:
+    def get_length(self) -> Optional[int]:
         """Attempts to return the "length" (in number of steps/batches) of this env.
 
         When not possible, returns None.
 
-        NOTE: This is a bit ugly, but the idea seems alright: Check for `__len__`,
-        otherwise
+        NOTE: This is a bit ugly, but the idea seems alright.
         """
         try:
             # Try to call self.__len__() without recursing into the wrapped env:
@@ -383,7 +400,7 @@ class IterableWrapper(MayCloseEarly, IterableDataset, Generic[EnvType], ABC):
             pass
         try:
             # If all else fails, delegate to the wrapped env's length() method, if any:
-            return self.env.length()
+            return self.env.get_length()
         except AttributeError:
             pass
         # In the worst case, return None, meaning that we don't have a length.

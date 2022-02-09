@@ -17,7 +17,16 @@ from gym.utils import colorize
 from gym.wrappers import TimeLimit
 from simple_parsing import choice, field, list_field
 from simple_parsing.helpers import dict_field
-from stable_baselines3.common.atari_wrappers import AtariWrapper
+
+try:
+    from stable_baselines3.common.atari_wrappers import AtariWrapper as SB3AtariWrapper
+except ImportError:
+
+    class SB3AtariWrapper:
+        pass
+
+
+from gym.wrappers.atari_preprocessing import AtariPreprocessing as GymAtariWrapper
 
 import wandb
 from sequoia.common import Config
@@ -285,35 +294,30 @@ class ContinualRLSetting(RLSetting, ContinualAssumption):
         # if self.test_steps is not None:
         #     warnings.warn(DeprecationWarning("'test_steps' is deprecated, use 'test_max_steps' instead."))
 
-        if self.dataset not in self.available_datasets.values():
+        if self.dataset and self.dataset not in self.available_datasets.values():
             try:
                 self.dataset = find_matching_dataset(self.available_datasets, self.dataset)
             except NotImplementedError as e:
-                # FIXME: Removing this warning in the case where a custom env is pased
-                # for each task. However, the train_envs field is only created in a
-                # subclass, so this check is ugly.
-                if not (hasattr(self, "train_envs") and self.dataset is self.train_envs[0]):
-                    warnings.warn(
-                        RuntimeWarning(
-                            f"Will attempt to use unsupported dataset {textwrap.shorten(str(self.dataset), 100)}!"
-                        )
-                    )
+                logger.info(f"Will try to use custom dataset {self.dataset}.")
             except Exception as e:
-                raise gym.error.UnregisteredEnv(
-                    f"({e}) The chosen dataset/environment ({self.dataset}) isn't in the dict of "
-                    f"available datasets/environments, and a task schedule was not passed, "
-                    f"so this Setting ({type(self).__name__}) doesn't know how to create "
-                    f"tasks for that env!\n"
-                    f"Supported envs:\n"
-                    + ("\n".join(f"- {k}: {v}" for k, v in self.available_datasets.items()))
-                )
-        logger.info(f"Chosen dataset: {textwrap.shorten(str(self.dataset), 50)}")
+                if getattr(self, "train_envs", []):
+                    logger.info(f"Using custom environments / datasets.")
+                else:
+                    raise gym.error.UnregisteredEnv(
+                        f"({e}) The chosen dataset/environment ({self.dataset}) isn't in the dict of "
+                        f"available datasets/environments, and a task schedule was not passed, "
+                        f"so this Setting ({type(self).__name__}) doesn't know how to create "
+                        f"tasks for that env!\n"
+                        f"Supported envs:\n"
+                        + ("\n".join(f"- {k}: {v}" for k, v in self.available_datasets.items()))
+                    )
 
         # The ids of the train/valid/test environments.
         self.train_dataset: Union[str, Callable[[], gym.Env]] = self.train_dataset or self.dataset
         self.val_dataset: Union[str, Callable[[], gym.Env]] = self.val_dataset or self.dataset
         self.test_dataset: Union[str, Callable[[], gym.Env]] = self.test_dataset or self.dataset
 
+        logger.info(f"Chosen dataset: {textwrap.shorten(str(self.train_dataset), 50)}")
         # # The environment 'ID' associated with each 'simple name'.
         # self.train_dataset_id: str = self._get_dataset_id(self.train_dataset)
         # self.val_dataset_id: str = self._get_dataset_id(self.val_dataset)
@@ -1172,7 +1176,7 @@ class ContinualRLSetting(RLSetting, ContinualAssumption):
         """
         # We add a restriction to prevent users from getting data from
         # previous or future tasks.
-        # TODO: This assumes that tasks all have the same length.
+        # NOTE: This assumes that tasks all have the same length.
         return self._make_wrappers(
             base_env=self.train_dataset,
             task_schedule=self.train_task_schedule,
@@ -1268,22 +1272,12 @@ class ContinualRLSetting(RLSetting, ContinualAssumption):
         # if self.force_pixel_observations:
         #     wrappers.append(PixelObservationWrapper)
 
-        if is_atari_env(base_env):
-            # TODO: Test & Debug this: Adding the Atari preprocessing wrapper.
+        # TODO: Temporary fix for the `is_atari_env` function, which is used to check if the env
+        # needs a `AtariPreprocessing` wrapper added.
+        if isinstance(base_env, (str, gym.Env)) and is_atari_env(base_env):
             # TODO: Figure out the differences (if there are any) between the
             # AtariWrapper from SB3 and the AtariPreprocessing wrapper from gym.
-            wrappers.append(AtariWrapper)
-            # wrappers.append(AtariPreprocessing)
-
-            # # TODO: Not sure if we should add the transforms to the env here!
-            # # BUG: In the case where `train_envs` is passed (to the IncrementalRL
-            # # setting), and contains functools.partial for some env, then we have a
-            # # problem because we can't tell if we need to add some wrapper like
-            # # PixelObservations!
-            # assert False, (
-            #     f"Can't tell if we should be adding a PixelObservationsWrapper if "
-            #     f"the env isn't somethign we know how to handle!: {self.dataset}"
-            # )
+            wrappers.append(GymAtariWrapper)
 
         if transforms:
             # Apply image transforms if the env will have image-like obs space
@@ -1293,10 +1287,6 @@ class ContinualRLSetting(RLSetting, ContinualAssumption):
             # Wrapper to apply the image transforms to the env.
             wrappers.append(partial(TransformObservation, f=transforms))
 
-        # TODO: BUG: Currently still need to add a CL wrapper (so that we can then
-        # create the task schedule) even when `task_schedule` here is empty! (This is
-        # because this is called in `__post_init__()`, where `train_task_schedule is
-        # still empty.`)
         if task_schedule is not None:
             # Add a wrapper which will add non-stationarity to the environment.
             # The "task" transitions will either be sharp or smooth.

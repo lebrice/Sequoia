@@ -38,7 +38,8 @@ from sequoia.common.config import Config, WandbConfig
 from sequoia.common.metrics import Metrics
 
 if typing.TYPE_CHECKING:
-    from sequoia.common.transforms import Compose, Transforms
+    from sequoia.common.transforms import Compose
+from sequoia.common.transforms.transform_enum import Transforms
 
 from sequoia.settings.base.bases import Method, SettingABC
 from sequoia.settings.base.environment import Environment
@@ -125,14 +126,14 @@ class Setting(
 
     # Transforms to be applied to the observatons of the train/valid/test
     # environments.
-    transforms: Optional[List["Transforms"]] = None
+    transforms: Optional[List[Transforms]] = None
 
     # Transforms to be applied to the training datasets.
-    train_transforms: Optional[List["Transforms"]] = None
+    train_transforms: Optional[List[Transforms]] = None
     # Transforms to be applied to the validation datasets.
-    val_transforms: Optional[List["Transforms"]] = None
+    val_transforms: Optional[List[Transforms]] = None
     # Transforms to be applied to the testing datasets.
-    test_transforms: Optional[List["Transforms"]] = None
+    test_transforms: Optional[List[Transforms]] = None
 
     # Fraction of training data to use to create the validation set.
     # (Only applicable in Passive settings.)

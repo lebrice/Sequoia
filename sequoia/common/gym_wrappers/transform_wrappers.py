@@ -1,6 +1,5 @@
-from __future__ import annotations
-
 from typing import Callable, Union
+import typing
 
 import gym
 from gym import Space, spaces
@@ -8,7 +7,10 @@ from gym.wrappers import TransformObservation as TransformObservation_
 from gym.wrappers import TransformReward as TransformReward_
 
 from sequoia.common.gym_wrappers.convert_tensors import add_tensor_support, has_tensor_support
-from sequoia.common.transforms import Compose, Transform
+from sequoia.common.transforms.compose import Compose
+
+if typing.TYPE_CHECKING:
+    from sequoia.common.transforms.transform import Transform
 from sequoia.utils.logging_utils import get_logger
 
 from .utils import IterableWrapper
@@ -21,7 +23,7 @@ class TransformObservation(TransformObservation_, IterableWrapper):
         if isinstance(f, list) and not callable(f):
             f = Compose(f)
         super().__init__(env, f=f)
-        self.f: Transform
+        self.f: "Transform"
         # try:
         self.observation_space = self(self.env.observation_space)
         if has_tensor_support(self.env.observation_space):

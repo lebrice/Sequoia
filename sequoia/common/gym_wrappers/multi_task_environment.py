@@ -226,6 +226,7 @@ class MultiTaskEnvironment(MayCloseEarly):
         super().__init__(env=env)
         self.env: gym.Env
         self.noise_std = noise_std
+
         if not task_params:
             unwrapped_type = type(env.unwrapped)
             if unwrapped_type in task_param_names:

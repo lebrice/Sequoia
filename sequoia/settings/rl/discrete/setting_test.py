@@ -5,7 +5,7 @@ import gym
 import pytest
 
 from sequoia.common.config import Config
-from sequoia.conftest import monsterkong_required
+from sequoia.conftest import monsterkong_required, param_requires_monsterkong
 from sequoia.methods import Method
 from sequoia.settings.assumptions.incremental_test import DummyMethod as _DummyMethod
 from sequoia.settings.rl.envs import MetaMonsterKongEnv
@@ -31,9 +31,9 @@ class TestDiscreteTaskAgnosticRLSetting(ContinualRLSettingTests):
     @pytest.mark.parametrize(
         "dataset, expected_resulting_name",
         [
-            ("monsterkong", "MetaMonsterKong-v0"),
-            ("monsterkong-v0", "MetaMonsterKong-v0"),
-            ("meta_monsterkong", "MetaMonsterKong-v0"),
+            param_requires_monsterkong("monsterkong", "MetaMonsterKong-v0"),
+            param_requires_monsterkong("monsterkong-v0", "MetaMonsterKong-v0"),
+            param_requires_monsterkong("meta_monsterkong", "MetaMonsterKong-v0"),
             ("cartpole", "CartPole-v1"),
         ],
     )
