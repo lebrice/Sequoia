@@ -61,6 +61,7 @@ class PixelObservationWrapper(PixelObservationWrapper_):
             # like that. Also, ideally, we would return a numpy array (without
             # depending on pytorch here)
             from sequoia.common.transforms.to_tensor import to_tensor
+
             return to_tensor(image)
             return np.array(image.copy())
         return image

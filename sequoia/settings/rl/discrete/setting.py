@@ -7,14 +7,13 @@ from simple_parsing.helpers import choice
 
 from sequoia.common.gym_wrappers.utils import is_monsterkong_env
 from sequoia.settings.assumptions.context_discreteness import DiscreteContextAssumption
+from sequoia.settings.rl.continual.tasks import TaskSchedule, registry
 from sequoia.utils.logging_utils import get_logger
 from sequoia.utils.utils import dict_union
 
 from ..continual.setting import ContinualRLSetting
 from ..continual.setting import supported_envs as _parent_supported_envs
 from .tasks import DiscreteTask, is_supported, make_discrete_task
-from sequoia.settings.rl.continual.tasks import TaskSchedule
-from sequoia.settings.rl.continual.tasks import registry
 from .test_environment import DiscreteTaskAgnosticRLTestEnvironment
 
 logger = get_logger(__file__)

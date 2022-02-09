@@ -46,14 +46,17 @@ from .environment import ContinualSLEnvironment, ContinualSLTestEnvironment
 from .envs import (
     CTRL_INSTALLED,
     CTRL_STREAMS,
+    base_action_spaces,
+    base_observation_spaces,
+    base_reward_spaces,
     get_action_space,
     get_observation_space,
     get_reward_space,
 )
+from .objects import Actions, ActionSpace, Observations, ObservationSpace, Rewards, RewardSpace
 from .results import ContinualSLResults
 from .wrappers import relabel
-from .envs import base_observation_spaces, base_action_spaces, base_reward_spaces
-from .objects import Observations, Actions, Rewards, ObservationSpace, ActionSpace, RewardSpace
+
 logger = get_logger(__file__)
 
 EnvironmentType = TypeVar("EnvironmentType", bound=ContinualSLEnvironment)

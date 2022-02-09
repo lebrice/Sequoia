@@ -1,7 +1,7 @@
+import typing
 from abc import abstractmethod
 from dataclasses import dataclass
 from typing import Callable, ClassVar, Dict, Optional, Tuple
-import typing
 
 import torch
 from pytorch_lightning import LightningModule
@@ -9,6 +9,7 @@ from torch import Tensor, nn
 
 from sequoia.common.hparams import HyperParameters, uniform
 from sequoia.common.loss import Loss
+
 if typing.TYPE_CHECKING:
     from sequoia.methods.models.base_model import Model
 

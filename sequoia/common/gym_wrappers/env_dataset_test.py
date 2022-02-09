@@ -10,8 +10,9 @@ from sequoia.common.transforms import Transforms
 from sequoia.conftest import DummyEnvironment, atari_py_required
 from sequoia.settings.rl.continual.make_env import make_batched_env
 
-from .transform_wrappers import TransformObservation
 from .env_dataset import EnvDataset
+from .transform_wrappers import TransformObservation
+
 
 class TestEnvDataset:
     # NOTE: We do this so that other tests for potential subclasses or wrappers around

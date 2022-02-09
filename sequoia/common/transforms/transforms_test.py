@@ -7,8 +7,9 @@ import pytest
 import torch
 from gym import spaces
 
-from sequoia.utils.serialization import Serializable
 from sequoia.conftest import requires_pyglet
+from sequoia.utils.serialization import Serializable
+
 from . import Compose, Transforms
 
 

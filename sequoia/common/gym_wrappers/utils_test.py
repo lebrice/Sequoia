@@ -3,9 +3,10 @@ import pytest
 from gym.wrappers import ClipAction
 from gym.wrappers.pixel_observation import PixelObservationWrapper
 
+from sequoia.conftest import param_requires_pyglet
+
 from .pixel_observation import PixelObservationWrapper
 from .utils import has_wrapper
-from sequoia.conftest import param_requires_pyglet
 
 
 @pytest.mark.parametrize(

@@ -31,10 +31,10 @@ from sequoia.settings.base.objects import Actions, Observations, Rewards
 from sequoia.settings.base.results import Results
 from sequoia.settings.base.setting import Setting, SettingType
 from sequoia.settings.rl.continual import ContinualRLSetting
-from sequoia.utils.utils import compute_identity
 from sequoia.utils.logging_utils import get_logger
-from sequoia.utils.serialization import Serializable
 from sequoia.utils.parseable import Parseable
+from sequoia.utils.serialization import Serializable
+from sequoia.utils.utils import compute_identity
 
 from .models import BaseModel
 from .trainer import Trainer, TrainerConfig

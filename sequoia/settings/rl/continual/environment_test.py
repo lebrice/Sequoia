@@ -10,8 +10,8 @@ from torch import Tensor
 
 from sequoia.common.gym_wrappers import EnvDataset, PixelObservationWrapper
 from sequoia.conftest import param_requires_atari_py
-from sequoia.utils.utils import take
 from sequoia.utils.logging_utils import get_logger
+from sequoia.utils.utils import take
 
 from .environment import GymDataLoader
 from .make_env import make_batched_env

@@ -21,8 +21,8 @@ from sequoia.common.gym_wrappers.utils import IterableWrapper
 from sequoia.common.metrics import Metrics, MetricsType
 from sequoia.settings.base import Actions, Method
 from sequoia.settings.base.results import Results
-from sequoia.utils.utils import add_prefix, flag
 from sequoia.utils.logging_utils import get_logger
+from sequoia.utils.utils import add_prefix, flag
 
 from .base import AssumptionBase
 from .iid_results import TaskResults

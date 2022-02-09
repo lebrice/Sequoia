@@ -17,17 +17,16 @@ from sequoia.common.gym_wrappers.convert_tensors import add_tensor_support
 from sequoia.common.gym_wrappers.utils import tile_images
 from sequoia.common.spaces import Image
 from sequoia.common.transforms import Transforms
-from sequoia.utils.logging_utils import get_logger
-
 from sequoia.settings.base.environment import Environment
 from sequoia.settings.base.objects import (
     Actions,
-    Observations,
-    Rewards,
     ActionType,
+    Observations,
     ObservationType,
+    Rewards,
     RewardType,
 )
+from sequoia.utils.logging_utils import get_logger
 
 logger = get_logger(__file__)
 

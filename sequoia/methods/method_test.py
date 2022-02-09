@@ -5,10 +5,10 @@ from typing import ClassVar, Dict, Type, TypeVar
 import pytest
 
 from sequoia.common.config import Config
+from sequoia.conftest import config, session_config
 from sequoia.settings import RLSetting, Setting, SLSetting
 from sequoia.settings.base import Method
 from sequoia.settings.sl.continual.setting import random_subset
-from sequoia.conftest import session_config, config
 
 
 def key_fn(setting_class: Type[Setting]):

@@ -5,7 +5,7 @@ from sequoia.settings.base import Setting
 from sequoia.settings.base.environment import ActionType, ObservationType, RewardType
 
 from .environment import RLEnvironment
-from .objects import ActionType, ObservationType, RewardType, Observations, Actions, Rewards
+from .objects import Actions, ActionType, Observations, ObservationType, Rewards, RewardType
 
 
 @dataclass

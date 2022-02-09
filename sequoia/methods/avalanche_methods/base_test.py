@@ -4,7 +4,6 @@ from typing import ClassVar, List, Optional, Type
 
 import pytest
 import tqdm
-
 from avalanche.models import SimpleCNN, SimpleMLP
 from avalanche.models.utils import avalanche_forward
 from avalanche.training.strategies import BaseStrategy

@@ -5,8 +5,8 @@ For now this only inherits the tests from the AvalancheMethod class.
 from typing import ClassVar, List, Type
 
 import pytest
-from torch.nn import Module
 from avalanche.models import SimpleCNN, SimpleMLP
+from torch.nn import Module
 
 from sequoia.common import Config
 from sequoia.conftest import xfail_param
@@ -16,6 +16,7 @@ from .base import AvalancheMethod
 from .base_test import _TestAvalancheMethod
 from .ewc import EWCMethod
 from .patched_models import MTSimpleCNN, MTSimpleMLP
+
 
 class TestEWCMethod(_TestAvalancheMethod):
     Method: ClassVar[Type[AvalancheMethod]] = EWCMethod

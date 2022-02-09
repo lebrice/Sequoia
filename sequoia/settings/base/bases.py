@@ -2,6 +2,7 @@
 """
 import json
 import traceback
+import typing
 from abc import ABC, abstractmethod
 from functools import partial
 from io import StringIO
@@ -21,7 +22,6 @@ from typing import (
     TypeVar,
     Union,
 )
-import typing
 
 import gym
 from gym.utils import colorize
@@ -29,8 +29,10 @@ from pytorch_lightning import LightningDataModule
 from wandb.wandb_run import Run
 
 import wandb
+
 if typing.TYPE_CHECKING:
     from sequoia.common.config.config import Config
+
 from sequoia.settings.base.environment import Environment
 from sequoia.settings.base.objects import Actions, Observations, Rewards
 from sequoia.settings.base.results import Results

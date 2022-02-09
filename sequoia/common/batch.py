@@ -30,6 +30,7 @@ import gym
 import numpy as np
 import torch
 from torch import Tensor
+
 from sequoia.utils.logging_utils import get_logger
 
 try:
@@ -581,7 +582,7 @@ class Batch(ABC, Mapping[str, T]):
         """
         # TODO: Do we 'wrap' the `None` values? or keep them as-is?
         from sequoia.utils.categorical import Categorical
-        
+
         @singledispatch
         def unsqueeze(v: Any) -> Any:
             if v is None:
@@ -683,12 +684,17 @@ class Batch(ABC, Mapping[str, T]):
 
 from sequoia.utils.generic_functions.replace import replace
 
+
 @replace.register(Batch)
 def _replace_batch_items(obj: Batch, **items) -> Batch:
     return dataclasses.replace(obj, **items)
 
-from sequoia.utils.generic_functions import get_slice, set_slice
+
 from typing import Sequence
+
+from sequoia.utils.generic_functions import get_slice, set_slice
+
+
 @get_slice.register(Batch)
 def _get_batch_slice(value: Batch, indices: Sequence[int]) -> Batch:
     return value.slice(indices)

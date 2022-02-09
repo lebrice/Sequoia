@@ -17,6 +17,7 @@ from torchvision.transforms import RandomGrayscale
 
 from sequoia.utils.logging_utils import get_logger
 from sequoia.utils.serialization import decode
+
 logger = get_logger(__file__)
 
 from .channels import (
@@ -29,6 +30,7 @@ from .channels import (
 from .resize import Resize
 from .to_tensor import ToTensor
 from .transform import Transform
+
 
 # TODO: Add names to the dimensions in the transforms!
 # from pl_bolts.models.self_supervised.simclr import (SimCLREvalDataTransform,

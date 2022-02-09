@@ -95,12 +95,14 @@ def register_method(
     # We're called as @register_method without parens.
     return wrap(method_class)
 
+
 from .base_method import BaseMethod, BaseModel
 from .ewc_method import EwcMethod
 from .experience_replay import ExperienceReplayMethod
 from .hat import HatMethod
 from .pnn import PnnMethod
 from .random_baseline import RandomBaselineMethod
+
 
 @lru_cache(1)
 def get_external_methods() -> Dict[str, Type[Method]]:

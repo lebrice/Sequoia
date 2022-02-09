@@ -46,7 +46,8 @@ def fast_scenario(use_task_labels=False, shuffle=True):
     train_X, test_X, train_y, test_y = train_test_split(
         X, y, train_size=0.6, shuffle=True, stratify=y
     )
-    from avalanche.benchmarks import nc_benchmark  # type: ignore  
+    from avalanche.benchmarks import nc_benchmark  # type: ignore
+
     train_dataset = TensorDataset(train_X, train_y)
     test_dataset = TensorDataset(test_X, test_y)
     my_nc_benchmark = nc_benchmark(

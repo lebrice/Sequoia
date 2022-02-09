@@ -54,8 +54,8 @@ from torch.nn import functional as F
 from sequoia.common.gym_wrappers.utils import tile_images
 from sequoia.common.metrics import ClassificationMetrics
 from sequoia.common.transforms import Transforms
-from sequoia.settings.assumptions.incremental import TaskSequenceResults
 from sequoia.settings.assumptions.iid_results import TaskResults
+from sequoia.settings.assumptions.incremental import TaskSequenceResults
 
 from .results import IncrementalSLResults
 

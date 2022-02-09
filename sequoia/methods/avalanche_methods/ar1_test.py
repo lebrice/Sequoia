@@ -5,9 +5,9 @@ For now this only inherits the tests from the AvalancheMethod class.
 from typing import ClassVar, Type
 
 import pytest
+from avalanche.models import SimpleCNN, SimpleMLP
 from torch.nn import Module
 
-from avalanche.models import SimpleCNN, SimpleMLP
 from sequoia.common.config import Config
 from sequoia.conftest import xfail_param
 from sequoia.settings.sl import TaskIncrementalSLSetting

@@ -14,6 +14,7 @@ from avalanche.benchmarks.scenarios import Experience
 from avalanche.evaluation.metrics import accuracy_metrics, forgetting_metrics, loss_metrics
 from avalanche.logging import InteractiveLogger
 from avalanche.logging.wandb_logger import WandBLogger as _WandBLogger
+from avalanche.models import SimpleCNN, SimpleMLP
 from avalanche.models.utils import avalanche_forward
 from avalanche.training.plugins import EvaluationPlugin, StrategyPlugin
 from avalanche.training.strategies import BaseStrategy
@@ -41,7 +42,6 @@ from sequoia.utils import get_logger
 
 from .experience import SequoiaExperience
 from .patched_models import MTSimpleCNN, MTSimpleMLP
-from avalanche.models import SimpleCNN, SimpleMLP
 
 logger = get_logger(__file__)
 

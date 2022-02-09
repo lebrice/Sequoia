@@ -10,6 +10,7 @@ from typing import Callable, ClassVar, Dict, List, Optional, Tuple, Type, Union
 import gym
 import numpy as np
 from gym import spaces
+from gym.envs.registration import EnvSpec
 from gym.utils import colorize
 from gym.vector.utils import batch_space
 from simple_parsing import list_field
@@ -22,8 +23,8 @@ from sequoia.common.metrics import EpisodeMetrics
 from sequoia.common.spaces import Sparse
 from sequoia.common.spaces.typed_dict import TypedDictSpace
 from sequoia.common.transforms import Transforms
-from sequoia.settings.assumptions.incremental import IncrementalAssumption
 from sequoia.settings.assumptions.iid_results import TaskResults
+from sequoia.settings.assumptions.incremental import IncrementalAssumption
 from sequoia.settings.base import Method
 from sequoia.settings.rl.continual import ContinualRLSetting
 from sequoia.settings.rl.envs import (
@@ -36,15 +37,15 @@ from sequoia.settings.rl.envs import (
     mtenv_envs,
 )
 from sequoia.settings.rl.wrappers.task_labels import FixedTaskLabelWrapper
-from sequoia.utils.utils import constant, dict_union, pairwise
 from sequoia.utils.logging_utils import get_logger
+from sequoia.utils.utils import constant, dict_union, pairwise
 
 from ..discrete.setting import DiscreteTaskAgnosticRLSetting
 from ..discrete.setting import supported_envs as _parent_supported_envs
+from .objects import Actions, Observations, Rewards  # type: ignore
 from .results import IncrementalRLResults
-from gym.envs.registration import EnvSpec
 from .tasks import IncrementalTask, is_supported, make_incremental_task, sequoia_registry
-from .objects import Observations, Actions, Rewards  # type: ignore
+
 logger = get_logger(__file__)
 
 # A callable that returns an env.

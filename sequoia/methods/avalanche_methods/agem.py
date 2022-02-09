@@ -5,6 +5,7 @@ See `avalanche.training.plugins.agem.AGEMPlugin` or
 """
 from dataclasses import dataclass
 from typing import ClassVar, Type
+
 import pytest
 from avalanche.training.strategies import AGEM, BaseStrategy
 from simple_parsing import ArgumentParser

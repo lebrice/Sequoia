@@ -6,6 +6,7 @@ See `avalanche.training.plugins.ewc.EWCPlugin` or
 from dataclasses import dataclass
 from typing import ClassVar, Dict, Optional, Type, Union
 
+from avalanche.models import SimpleCNN, SimpleMLP
 from avalanche.training.strategies import EWC, BaseStrategy
 from simple_parsing import ArgumentParser
 from simple_parsing.helpers import choice
@@ -16,7 +17,6 @@ from sequoia.methods import register_method
 from sequoia.settings.sl import TaskIncrementalSLSetting
 
 from .base import AvalancheMethod
-from avalanche.models import SimpleCNN, SimpleMLP
 
 
 @register_method

@@ -6,7 +6,6 @@ import torch
 from gym import Space, spaces
 from torch import Tensor
 
-
 T = TypeVar("T")
 
 
@@ -41,6 +40,7 @@ def _(
 
 from sequoia.utils.generic_functions._namedtuple import is_namedtuple
 
+
 @from_tensor.register
 def _(space: spaces.Tuple, sample: Tuple[Union[Tensor, Any]]) -> Tuple[Union[np.ndarray, Any]]:
     if not isinstance(sample, tuple):
@@ -69,6 +69,7 @@ def _(
 ) -> Dict[str, Union[Tensor, Any]]:
     return torch.as_tensor(sample, device=device, dtype=torch.bool)
 
+
 @to_tensor.register
 def _(
     space: spaces.Tuple,
@@ -91,8 +92,12 @@ def _(
         assert False, (space, sample, device)
     return tuple(to_tensor(subspace, sample[i], device) for i, subspace in enumerate(space.spaces))
 
+
 from typing import NamedTuple
+
 from sequoia.common.spaces.named_tuple import NamedTupleSpace
+
+
 @to_tensor.register
 def _(space: NamedTupleSpace, sample: NamedTuple, device: torch.device = None):
     return space.dtype(

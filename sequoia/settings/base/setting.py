@@ -20,6 +20,7 @@ See: [LightningDataModule](https://pytorch-lightning.readthedocs.io/en/latest/da
 """
 import itertools
 import sys
+import typing
 from abc import abstractmethod
 from dataclasses import dataclass
 from pathlib import Path
@@ -28,23 +29,25 @@ from typing import Any, ClassVar, Dict, Generic, Iterable, List, Optional, Type,
 import gym
 import numpy as np
 import torch
-import typing
 from gym import spaces
 from pytorch_lightning import LightningDataModule
 from simple_parsing import Serializable, field
 from torch import Tensor
+
 from sequoia.common.config import Config, WandbConfig
 from sequoia.common.metrics import Metrics
+
 if typing.TYPE_CHECKING:
     from sequoia.common.transforms import Compose, Transforms
-from sequoia.settings.presets import setting_presets
-from sequoia.utils import Parseable, get_logger
-from sequoia.utils.utils import take
+
 from sequoia.settings.base.bases import Method, SettingABC
 from sequoia.settings.base.environment import Environment
 from sequoia.settings.base.objects import Actions, Observations, Rewards
 from sequoia.settings.base.results import Results, ResultsType
 from sequoia.settings.base.setting_meta import SettingMeta
+from sequoia.settings.presets import setting_presets
+from sequoia.utils import Parseable, get_logger
+from sequoia.utils.utils import take
 
 logger = get_logger(__file__)
 
@@ -168,7 +171,7 @@ class Setting(
         command-line.
         """
         from sequoia.common.transforms import Compose
-        
+
         logger.debug("__post_init__ of Setting")
         # BUG: simple-parsing sometimes parses a list with a single item, itself the
         # list of transforms. Not sure if this still happens.

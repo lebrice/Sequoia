@@ -51,10 +51,11 @@ from sequoia.utils.utils import flag, pairwise
 
 from .environment import GymDataLoader
 from .make_env import make_batched_env
+from .objects import Actions, Observations, Rewards  # type: ignore
 from .results import ContinualRLResults
 from .tasks import ContinuousTask, TaskSchedule, is_supported, make_continuous_task, names_match
 from .test_environment import ContinualRLTestEnvironment
-from .objects import Observations, Actions, Rewards  # type: ignore
+
 logger = get_logger(__file__)
 
 
