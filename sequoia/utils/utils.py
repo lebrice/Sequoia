@@ -302,9 +302,9 @@ def unique_consecutive_with_index(
     the input.
 
     >>> list(unique_consecutive_with_index('AAAABBBCCDAABBB'))
-    [('A', 0), ('B', 4), ('C', 7), ('D', 9), ('A', 10), ('B', 12)]
+    [(0, 'A'), (4, 'B'), (7, 'C'), (9, 'D'), (10, 'A'), (12, 'B')]
     >>> list(unique_consecutive_with_index('ABBCcAD', str.lower))
-    [('A', 0), ('B', 1), ('C', 3), ('A', 5), ('D', 6)]
+    [(0, 'A'), (1, 'B'), (3, 'C'), (5, 'A'), (6, 'D')]
     """
 
     _key = lambda i_v: key(i_v[1]) if key is not None else i_v[1]
