@@ -164,6 +164,12 @@ class IncrementalSLSetting(IncrementalAssumption, DiscreteTaskAgnosticSLSetting)
         self, batch_size: int = None, num_workers: int = None
     ) -> IncrementalSLEnvironment:
         """Returns a DataLoader for the train dataset of the current task."""
+        # NOTE: The implementation for this is in `DiscreteTaskAgnosticSLSetting`:
+        # TODO: Fix the inheritance order so that clicking on this super().train_dataloader gets us
+        # to the right point in code.
+        # train_env = DiscreteTaskAgnosticSLSetting.train_dataloader(
+        #     self, batch_size=batch_size, num_workers=num_workers
+        # )
         train_env = super().train_dataloader(batch_size=batch_size, num_workers=num_workers)
         # Overwrite the wandb prefix for the `MeasureSLPerformanceWrapper` to include
         # the task id.
@@ -211,9 +217,9 @@ class IncrementalSLSetting(IncrementalAssumption, DiscreteTaskAgnosticSLSetting)
 
         # NOTE: The transforms from `self.transforms` (the 'base' transforms) were
         # already added when creating the datasets and the CL scenario.
-        test_specific_transforms = self.additional_transforms(self.test_transforms)
-        if test_specific_transforms:
-            env = TransformObservation(env, f=test_specific_transforms)
+        test_transforms = self.transforms + self.test_transforms
+        if test_transforms:
+            env = TransformObservation(env, f=test_transforms)
 
         if self.config.device:
             # TODO: Put this before or after the image transforms?

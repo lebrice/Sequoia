@@ -354,7 +354,10 @@ class ContinualSLSetting(SLSetting, ContinualAssumption):
         batch_size = batch_size if batch_size is not None else self.batch_size
         num_workers = num_workers if num_workers is not None else self.num_workers
 
+        # NOTE: ATM the dataset here doesn't have any transforms. We add the transforms after the
+        # dataloader below using the TransformObservations wrapper. This isn't ideal.
         dataset = self._make_train_dataset()
+
         # TODO: Add some kind of Wrapper around the dataset to make it
         # semi-supervised?
         env = self.Environment(
@@ -377,11 +380,9 @@ class ContinualSLSetting(SLSetting, ContinualAssumption):
             # Add a wrapper that calls 'env.render' at each step?
             env = RenderEnvWrapper(env)
 
-        # NOTE: The transforms from `self.transforms` (the 'base' transforms) were
-        # already added when creating the datasets and the CL scenario.
-        train_specific_transforms = self.additional_transforms(self.train_transforms)
-        if train_specific_transforms:
-            env = TransformObservation(env, f=train_specific_transforms)
+        train_transforms = Compose(self.transforms + self.train_transforms)
+        if train_transforms:
+            env = TransformObservation(env, f=train_transforms)
 
         if self.config.device:
             # TODO: Put this before or after the image transforms?
@@ -446,9 +447,9 @@ class ContinualSLSetting(SLSetting, ContinualAssumption):
 
         # NOTE: The transforms from `self.transforms` (the 'base' transforms) were
         # already added when creating the datasets and the CL scenario.
-        val_specific_transforms = self.additional_transforms(self.val_transforms)
-        if val_specific_transforms:
-            env = TransformObservation(env, f=val_specific_transforms)
+        val_transforms = self.transforms + self.val_transforms
+        if val_transforms:
+            env = TransformObservation(env, f=val_transforms)
 
         if self.config.device:
             # TODO: Put this before or after the image transforms?
@@ -503,9 +504,9 @@ class ContinualSLSetting(SLSetting, ContinualAssumption):
 
         # NOTE: The transforms from `self.transforms` (the 'base' transforms) were
         # already added when creating the datasets and the CL scenario.
-        test_specific_transforms = self.additional_transforms(self.test_transforms)
-        if test_specific_transforms:
-            env = TransformObservation(env, f=test_specific_transforms)
+        test_transforms = self.transforms + self.test_transforms
+        if test_transforms:
+            env = TransformObservation(env, f=test_transforms)
 
         if self.config.device:
             # TODO: Put this before or after the image transforms?
@@ -581,7 +582,7 @@ class ContinualSLSetting(SLSetting, ContinualAssumption):
                     cl_dataset=self.train_cl_dataset,
                     **nb_tasks_kwarg,
                     initial_increment=self.initial_increment,
-                    transformations=self.train_transforms,
+                    transformations=[],  # NOTE: Changing this: The transforms will get added after.
                     class_order=self.class_order,
                 )
             if not self.train_datasets and not self.val_datasets:
@@ -606,7 +607,7 @@ class ContinualSLSetting(SLSetting, ContinualAssumption):
                     nb_tasks=self.nb_tasks,
                     increment=self.test_increment,
                     initial_increment=self.test_initial_increment,
-                    transformations=self.test_transforms,
+                    transformations=[],  # note: not passing transforms here, they get added later
                     class_order=self.test_class_order,
                 )
             if not self.test_datasets:
@@ -688,11 +689,6 @@ class ContinualSLSetting(SLSetting, ContinualAssumption):
            the task labels space is Sparse, and entries will be `None`.
 
         """
-        # TODO: Want to force re-computing the observation space only when necessary
-        # (a transform changed or something).
-        if self._observation_space and not self._using_custom_envs_foreach_task:
-            return self._observation_space
-
         # TODO: Need to clean this up a bit:
         if self._using_custom_envs_foreach_task:
             x_space = get_observation_space(self.train_datasets[0])
@@ -774,40 +770,6 @@ class ContinualSLSetting(SLSetting, ContinualAssumption):
 
         self._reward_space = reward_space
         return self._reward_space
-
-    def additional_transforms(self, stage_transforms: List[Transforms]) -> Compose:
-        """Returns the transforms in `stage_transforms` that are additional transforms
-        from those in `self.transforms`.
-
-        For example, if:
-        ```
-        setting.transforms = Compose([Transforms.Resize(32), Transforms.ToTensor])
-        setting.train_transforms = Compose([Transforms.Resize(32), Transforms.ToTensor, Transforms.RandomGrayscale])
-        ```
-        Then:
-        ```
-        setting.additional_transforms(setting.train_transforms)
-        # will give:
-        Compose([Transforms.RandomGrayscale])
-        ```
-        """
-        reference_transforms = self.transforms
-
-        if len(stage_transforms) < len(reference_transforms):
-            # Assume no overlap, return all the 'stage' transforms.
-            return Compose(stage_transforms)
-        if stage_transforms == reference_transforms:
-            # Complete overlap, return an empty list.
-            return Compose([])
-
-        # IDEA: Only add the additional transforms, compared to the 'base' transforms.
-        # As soon as one is different, break.
-        i = 0
-        for i, t_a, t_b in enumerate(zip(stage_transforms, self.transforms)):
-            if t_a != t_b:
-                break
-        return Compose(stage_transforms[i:])
-
 
 def smooth_task_boundaries_concat(
     datasets: List[Dataset], seed: int = None, window_length: float = 0.03
@@ -1020,3 +982,11 @@ def limit_to_available_classes(
         y_preds.append(y_pred.reshape(()))  # Just to make sure they all have the same shape.
 
     return torch.stack(y_preds)
+
+
+from sequoia.common.transforms.channels import has_channels_last, has_channels_first
+
+
+@has_channels_last.register(ContinualSLSetting.Observations)
+def _has_channels_last(obs: ContinualSLSetting.Observations) -> bool:
+    return has_channels_last(obs.x)

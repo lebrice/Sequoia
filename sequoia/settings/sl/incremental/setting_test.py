@@ -8,8 +8,8 @@ from gym.spaces import Discrete, Space
 from sequoia.common.config import Config
 from sequoia.common.metrics import ClassificationMetrics
 from sequoia.common.spaces import Sparse
+from sequoia.common.spaces.typed_dict import TypedDictSpace
 from sequoia.conftest import skip_param, xfail_param
-from sequoia.settings.base import Setting
 from sequoia.settings.sl.continual.envs import get_action_space
 
 from ..discrete.setting_test import (
@@ -20,7 +20,7 @@ from .setting import IncrementalSLSetting as ClassIncrementalSetting
 
 
 class TestIncrementalSLSetting(DiscreteTaskAgnosticSLSettingTests):
-    Setting: ClassVar[Type[Setting]] = IncrementalSLSetting
+    Setting: ClassVar[Type[IncrementalSLSetting]] = IncrementalSLSetting
     fast_dev_run_kwargs: ClassVar[Dict[str, Any]] = dict(
         dataset="mnist",
         batch_size=64,
@@ -122,6 +122,8 @@ class TestIncrementalSLSetting(DiscreteTaskAgnosticSLSettingTests):
         property on both the Setting itself, as well as on the corresponding
         dataloaders/environments.
         """
+        import torch
+
         # dataset = ClassIncrementalSetting.available_datasets[dataset_name]
         setting = self.Setting(
             dataset=dataset_name,
@@ -132,21 +134,33 @@ class TestIncrementalSLSetting(DiscreteTaskAgnosticSLSettingTests):
             test_transforms=[],
             batch_size=None,
             num_workers=0,
+            config=Config(device=torch.device("cpu")),
         )
-        assert setting.observation_space.x == Setting.base_observation_spaces[dataset_name]
+        base_x_space = type(setting).base_observation_spaces[dataset_name]
+        assert setting.observation_space.x == base_x_space
         # TODO: Should the 'transforms' apply to ALL the environments, and the
         # train/valid/test transforms apply only to those envs?
         from sequoia.common.transforms import Transforms
 
-        setting.transforms = [
-            Transforms.to_tensor,
-            Transforms.three_channels,
-            Transforms.channels_first_if_needed,
-            Transforms.resize_32x32,
-        ]
+        from sequoia.common.transforms import Compose
+
+        transforms = Compose(
+            [
+                Transforms.to_tensor,
+                Transforms.three_channels,
+                Transforms.channels_first_if_needed,
+                Transforms.resize_32x32,
+            ]
+        )
+        setting.transforms = transforms
+        expected_x_space = transforms(base_x_space)
+        # Check the the `x` property of the setting's observation space has also been transformed:
+        assert setting.observation_space.x == expected_x_space
+
         # When there are no transforms in setting.train_tansforms, the observation
         # space of the Setting and of the train dataloader are the same:
         train_env = setting.train_dataloader(batch_size=None, num_workers=None)
+        assert not setting.train_transforms
         assert train_env.observation_space == setting.observation_space
 
         reset_obs = train_env.reset()
@@ -158,9 +172,12 @@ class TestIncrementalSLSetting(DiscreteTaskAgnosticSLSettingTests):
 
         # When we add a transform to `setting.train_transforms` the observation
         # space of the Setting and of the train dataloader are different:
+        # NOTE: Transforms should act as the 'base', and train_transforms gets added to it.
         setting.train_transforms = [Transforms.resize_64x64]
 
         train_env = setting.train_dataloader(batch_size=None)
+        assert train_env.f == setting.transforms + setting.train_transforms
+
         assert train_env.observation_space.x.shape == (3, 64, 64)
         assert train_env.reset() in train_env.observation_space
 
@@ -189,7 +206,8 @@ class TestIncrementalSLSetting(DiscreteTaskAgnosticSLSettingTests):
                 assert test_env.observation_space == setting.observation_space
             else:
                 assert isinstance(test_env.observation_space["task_labels"], Sparse)
-            assert test_env.reset() in test_env.observation_space
+            obs = test_env.reset()
+            assert obs in test_env.observation_space
 
         setting.test_transforms = [Transforms.resize_64x64]
         with setting.test_dataloader(batch_size=None) as test_env:

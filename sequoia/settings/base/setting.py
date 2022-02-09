@@ -224,9 +224,9 @@ class Setting(
             self.test_transforms = [self.test_transforms]
 
         # Actually compose the list of Transforms or callables into a single transform.
-        self.train_transforms: Compose = Compose(self.train_transforms or [])
-        self.val_transforms: Compose = Compose(self.val_transforms or [])
-        self.test_transforms: Compose = Compose(self.test_transforms or [])
+        self.train_transforms = Compose(self.train_transforms or [])
+        self.val_transforms = Compose(self.val_transforms or [])
+        self.test_transforms = Compose(self.test_transforms or [])
 
         LightningDataModule.__init__(
             self,

@@ -18,6 +18,7 @@ from .utils import is_image
 logger = get_logger(__file__)
 
 
+@singledispatch
 def has_channels_last(img_or_shape: Union[Img, Tuple[int, ...], spaces.Box]) -> bool:
     """Returns wether the given image, or image batch, shape, or Space is in
     the channels last format.

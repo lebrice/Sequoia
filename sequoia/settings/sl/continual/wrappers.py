@@ -38,10 +38,6 @@ def relabel_tensor(y: Tensor, mapping: Dict[int, int] = None) -> Tensor:
 
 @relabel.register
 def relabel_taskset(task_set: TaskSet, mapping: Dict[int, int] = None) -> TaskSet:
-    # if mapping:
-    #     assert False, mapping
-    if len(task_set.get_classes()) > 2:
-        assert False, f"debugging: {task_set.get_classes()}"
     mapping = mapping or {c: i for i, c in enumerate(task_set.get_classes())}
     old_y = task_set._y
     new_y = relabel(old_y, mapping=mapping)

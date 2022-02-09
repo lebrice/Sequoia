@@ -1,4 +1,5 @@
 from dataclasses import is_dataclass, replace
+import dataclasses
 from functools import singledispatch, wraps
 from typing import Any, Dict, Tuple, TypeVar, Union
 
@@ -11,10 +12,47 @@ from torch import Tensor
 from sequoia.common.spaces.image import Image, ImageTensorSpace
 from sequoia.common.spaces.named_tuple import NamedTupleSpace
 from sequoia.common.spaces.typed_dict import TypedDictSpace
-from sequoia.utils.generic_functions import from_tensor, move, to_tensor
+
+from sequoia.utils.generic_functions import from_tensor, move  # , to_tensor
 from sequoia.utils.logging_utils import get_logger
 
-from .utils import IterableWrapper, StepResult
+from .utils import IterableWrapper
+
+
+@singledispatch
+def to_tensor(v, device: torch.device = None) -> Union[Tensor, Any]:
+    """Converts `v` into a tensor if `v` is a value, otherwise convert the items of `v` to tensors.
+
+    - If `v` is a list, tuple, or dict, then the items are converted to tensors recursively.
+    - If `v` is a dataclass, converts the fields to Tensors using `to_tensor` recursively.
+    Otherwise, just uses `torch.as_tensor(v, device=device)`.
+    """
+    if v is None:
+        return None
+    if dataclasses.is_dataclass(v):
+        return type(v)(
+            **{
+                field.name: to_tensor(getattr(v, field.name), device=device)
+                for field in dataclasses.fields(v)
+            }
+        )
+    return torch.as_tensor(v, device=device)
+
+
+@to_tensor.register(tuple)
+def _(
+    v,
+    device: torch.device = None,
+):
+    # NOTE: Choosing to convert tuples of things into tuples of tensor things, rather than torch
+    # tensors.
+    return tuple(to_tensor(v_i, device=device) for v_i in v)
+
+
+@to_tensor.register(dict)
+def _(v: Dict, device: torch.device = None) -> Dict:
+    return type(v)(**{k: to_tensor(v_i, device=device) for k, v_i in v.items()})
+
 
 logger = get_logger(__file__)
 
@@ -65,7 +103,7 @@ class ConvertToFromTensors(IterableWrapper):
         return self.observation(obs)
 
     def observation(self, observation):
-        return to_tensor(self.observation_space, observation, device=self.device)
+        return to_tensor(observation, device=self.device)
 
     def action(self, action):
         if isinstance(self.action_space, spaces.MultiDiscrete) and is_dataclass(action):
@@ -77,13 +115,9 @@ class ConvertToFromTensors(IterableWrapper):
         return from_tensor(self.action_space, action)
 
     def reward(self, reward):
-        # FIXME: This doesn't exactly work when our 'reward space' isn't a dict and
-        # 'reward' is a Batch object, and might also be the same with the actions above
-        if isinstance(self.reward_space, spaces.MultiDiscrete) and is_dataclass(reward):
-            return replace(reward, y=to_tensor(self.reward_space, reward.y, device=self.device))
-        return to_tensor(self.reward_space, reward, device=self.device)
+        return to_tensor(reward, device=self.device)
 
-    def step(self, action: Tensor) -> StepResult:
+    def step(self, action):
         action = self.action(action)
         assert action in self.env.action_space, (action, self.env.action_space)
 
@@ -96,12 +130,7 @@ class ConvertToFromTensors(IterableWrapper):
 
         # We could actually do this!
         # info = np.ndarray(info)
-        if isinstance(result, StepResult):
-            return type(result)(
-                **dict(observation=observation, reward=reward, done=done, info=info)
-            )
-        else:
-            return StepResult(observation, reward, done, info)
+        return observation, reward, done, info
 
 
 def supports_tensors(space: S) -> bool:

@@ -129,6 +129,11 @@ class TensorBox(TensorSpace, spaces.Box):
         if isinstance(x, list):
             x = np.array(x)  # Promote list to array for contains check
         if isinstance(x, Tensor):
+            if not (x.device == self.low_tensor.device == self.high_tensor.device):
+                raise RuntimeError(
+                    f"Values aren't on the same device: {x.device}, {self.device}, {self.low_tensor.device}"
+                )
+
             return (
                 x.shape == self.shape
                 and (x >= self.low_tensor).all()
