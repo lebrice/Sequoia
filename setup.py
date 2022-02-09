@@ -28,6 +28,7 @@ extras_require: Dict[str, Union[str, List[str]]] = {
     # "mtenv": [
     #     "mtenv @ git+https://github.com/facebookresearch/mtenv.git@main#egg='mtenv[metaworld]'"
     # ],
+    "ctrl": "ctrl-benchmark==0.0.4",
     "mujoco": [
         "mujoco_py",
     ],
