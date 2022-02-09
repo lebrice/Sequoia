@@ -9,7 +9,7 @@ from sequoia.common.config import Config
 from sequoia.common.metrics import ClassificationMetrics
 from sequoia.common.spaces import Sparse
 from sequoia.common.spaces.typed_dict import TypedDictSpace
-from sequoia.conftest import skip_param, xfail_param
+from sequoia.conftest import skip_param, xfail_param, requires_pyglet
 from sequoia.settings.sl.continual.envs import get_action_space
 
 from ..discrete.setting_test import (
@@ -221,6 +221,7 @@ class TestIncrementalSLSetting(DiscreteTaskAgnosticSLSettingTests):
 # TODO: This renders, even when we're using the pytest-xvfb plugin, which might
 # mean that it's actually creating a Display somewhere?
 @pytest.mark.timeout(30)
+@requires_pyglet
 def test_render(config: Config):
     setting = ClassIncrementalSetting(dataset="mnist", config=config)
     import matplotlib.pyplot as plt

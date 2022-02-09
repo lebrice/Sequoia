@@ -238,7 +238,7 @@ class ContinualSLSetting(SLSetting, ContinualAssumption):
                     )
                 )
                 self.nb_tasks = 100
-            task_generator: TaskGenerator = ctrl.get_stream(self.dataset)
+            task_generator: TaskGenerator = ctrl.get_stream(self.dataset, seed=42)
             # Get the train/val/test splits from the tasks.
             for task_dataset in itertools.islice(task_generator, self.nb_tasks):
                 train_dataset = task_dataset.datasets[task_dataset.split_names.index("Train")]
@@ -770,6 +770,7 @@ class ContinualSLSetting(SLSetting, ContinualAssumption):
 
         self._reward_space = reward_space
         return self._reward_space
+
 
 def smooth_task_boundaries_concat(
     datasets: List[Dataset], seed: int = None, window_length: float = 0.03

@@ -235,7 +235,8 @@ class PassiveEnvironment(
             image_batch = tile_images(image_batch)
 
         image_batch = Transforms.channels_last_if_needed(image_batch)
-        assert image_batch.shape[-1] in {3, 4}
+        image_batch = Transforms.three_channels(image_batch)
+        assert image_batch.shape[-1] in {3, 4}, image_batch.shape
         if image_batch.dtype == np.float32:
             assert (0 <= image_batch).all() and (image_batch <= 1).all()
             image_batch = (256 * image_batch).astype(np.uint8)
@@ -253,16 +254,11 @@ class PassiveEnvironment(
                 display = None
                 # TODO: There seems to be a bit of a bug, tests sometime fail because
                 # "Can't connect to display: None" etc.
-                try:
-                    from gym.envs.classic_control.rendering import SimpleImageViewer
-                except Exception:
-                    from pyvirtualdisplay import Display
-
-                    display = Display(visible=0, size=(1366, 768))
-                    display.start()
-                    from gym.envs.classic_control.rendering import SimpleImageViewer
-                finally:
-                    self.viewer = SimpleImageViewer(display=display)
+                from gym.utils import pyglet_rendering
+                # from pyvirtualdisplay import Display
+                # display = Display(visible=0, size=(1366, 768))
+                # display.start()
+                self.viewer = pyglet_rendering.SimpleImageViewer()
 
             self.viewer.imshow(image_batch)
             return self.viewer.isopen
