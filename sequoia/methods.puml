@@ -31,18 +31,6 @@ package methods {
             }
             AuxiliaryTask *-- AuxiliaryTask.Options
         }
-
-        package simclr {
-            class SimCLRTask implements AuxiliaryTask {
-                + options: SimCLRTask.Options
-            
-            }
-            class SimCLRTask.Options extends AuxiliaryTask.Options {
-
-            }
-            SimCLRTask *-- SimCLRTask.Options
-        }
-
     }
     !include ./methods/models.puml
 }

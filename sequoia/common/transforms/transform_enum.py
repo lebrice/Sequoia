@@ -31,7 +31,6 @@ from .to_tensor import ToTensor
 from .transform import Transform
 
 # TODO: Add names to the dimensions in the transforms!
-
 # from pl_bolts.models.self_supervised.simclr import (SimCLREvalDataTransform,
 #                                                     SimCLRTrainDataTransform)
 class Transforms(Enum):
@@ -55,7 +54,6 @@ class Transforms(Enum):
     channels_last_if_needed = ChannelsLastIfNeeded()
     resize_64x64 = Resize((64, 64))
     resize_32x32 = Resize((32, 32))
-    # simclr = Simclr
 
     def __call__(self, x):
         return self.value(x)

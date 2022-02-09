@@ -38,7 +38,6 @@ class SelfSupervisedModel(Model[SettingType]):
     class HParams(Model.HParams):
         """Hyperparameters of a Self-Supervised method."""
 
-        # simclr: Optional[SimCLRTask.Options] = None
         # vae: Optional[VAEReconstructionTask.Options] = None
         # ae: Optional[AEReconstructionTask.Options] = None
 
@@ -108,8 +107,6 @@ class SelfSupervisedModel(Model[SettingType]):
         # and then 'enable' them when they are needed? (I'm thinking that maybe
         # being enable/disable auxiliary tasks when needed might be useful
         # later?)
-        # if self.hp.simclr and self.hp.simclr.coefficient:
-        #     tasks[SimCLRTask.name] = SimCLRTask(options=self.hp.simclr)
         # if self.hp.vae and self.hp.vae.coefficient:
         #     tasks[VAEReconstructionTask.name] = VAEReconstructionTask(options=self.hp.vae)
         # if self.hp.ae and self.hp.ae.coefficient:

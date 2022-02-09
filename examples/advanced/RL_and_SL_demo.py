@@ -21,7 +21,7 @@ sys.path.extend([".", ".."])
 from sequoia.common.config import Config
 from sequoia.common.loss import Loss
 from sequoia.methods import BaseMethod
-from sequoia.methods.aux_tasks import AuxiliaryTask, SimCLRTask
+from sequoia.methods.aux_tasks import AuxiliaryTask
 from sequoia.methods.models import BaseModel, ForwardPass
 from sequoia.methods.trainer import TrainerConfig
 from sequoia.settings import Environment, RLSetting, Setting
@@ -138,8 +138,6 @@ class CustomizedBaselineModel(BaseModel):
 
         # Here we add our new auxiliary task:
         self.add_auxiliary_task(SimpleRegularizationAuxTask(options=self.hp.simple_reg))
-        # You could also add other auxiliary tasks, for example SimCLR:
-        # self.add_auxiliary_task(SimCLRTask(coefficient=1.))
 
         # Or, add replay buffers of some sort:
         self.replay_buffer: List = []
