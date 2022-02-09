@@ -213,6 +213,7 @@ class IncrementalSLSetting(IncrementalAssumption, DiscreteTaskAgnosticSLSetting)
             Rewards=self.Rewards,
             pretend_to_be_active=True,
             shuffle=False,
+            drop_last=self.drop_last,
         )
 
         # NOTE: The transforms from `self.transforms` (the 'base' transforms) were

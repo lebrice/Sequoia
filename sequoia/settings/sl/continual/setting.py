@@ -372,6 +372,7 @@ class ContinualSLSetting(SLSetting, ContinualAssumption):
             pin_memory=True,
             batch_size=batch_size,
             num_workers=num_workers,
+            drop_last=self.drop_last,
             shuffle=False,
             one_epoch_only=(not self.known_task_boundaries_at_train_time),
         )
@@ -433,6 +434,7 @@ class ContinualSLSetting(SLSetting, ContinualAssumption):
             Actions=self.Actions,
             Rewards=self.Rewards,
             pin_memory=True,
+            drop_last=self.drop_last,
             batch_size=batch_size,
             num_workers=num_workers,
             one_epoch_only=(not self.known_task_boundaries_at_train_time),
@@ -498,6 +500,7 @@ class ContinualSLSetting(SLSetting, ContinualAssumption):
             Actions=self.Actions,
             Rewards=self.Rewards,
             pretend_to_be_active=True,
+            drop_last=self.drop_last,
             shuffle=False,
             one_epoch_only=True,
         )

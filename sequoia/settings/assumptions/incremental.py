@@ -301,50 +301,57 @@ class IncrementalAssumption(ContinualAssumption):
             pbar = tqdm.tqdm(itertools.count(), total=max_steps, desc="Test")
             episode = 0
 
-            for step in pbar:
-                if obs is None:
-                    break
-                # NOTE: The env might not be closed, while `obs` is actually still there.
-                # if test_env.is_closed():
-                #     logger.debug(f"Env is closed")
-                #     break
-                # logger.debug(f"At step {step}")
-
-                # BUG: Need to pass an action space that actually reflects the batch
-                # size, even for the last batch!
-
+            def get_action_space_with_right_batch_size(env, current_obs):
+                # Return an action space that matches the length of the observations for the last batch in SL.
                 # BUG: This doesn't work if the env isn't batched.
-                action_space = test_env.action_space
-                batch_size = getattr(test_env, "num_envs", getattr(test_env, "batch_size", 0))
+                batch_size = getattr(env, "num_envs", getattr(env, "batch_size", 0))
                 env_is_batched = batch_size is not None and batch_size >= 1
-                if env_is_batched:
-                    # NOTE: Need to pass an action space that actually reflects the batch
-                    # size, even for the last batch!
-                    obs_batch_size = obs.x.shape[0] if obs.x.shape else None
-                    action_space_batch_size = (
-                        test_env.action_space.shape[0] if test_env.action_space.shape else None
-                    )
-                    if obs_batch_size is not None and obs_batch_size != action_space_batch_size:
-                        action_space = batch_space(test_env.single_action_space, obs_batch_size)
+                if not env_is_batched:
+                    return env.action_space
+                obs_batch_size = current_obs.x.shape[0]
+                return batch_space(env.single_action_space, obs_batch_size)
 
-                action = method.get_actions(obs, action_space)
+            # TODO: Rework this into something neater:
+            step = 0
+            episode = 0
+            while not test_env.is_closed():
+                obs = test_env.reset()
+                done = False
+                # NOTE: For batched RL environments, we don't want to stop just because the done
+                # signals are lined up! Instead we just rely on the `is_closed()` method.
+                while not done if isinstance(done, bool) else True:
+                    action_space = test_env.action_space
+                    action = method.get_actions(obs, action_space=action_space)
+                    obs, reward, done, info = test_env.step(action)
+                    step += 1
+                # BUG: The last batch doesn't seem to be ever returned when in SL and with drop_last=False.
+                # action = get_action_space_with_right_batch_size
+                episode += 1
 
-                # logger.debug(f"action: {action}")
-                # TODO: Remove this:
-                if isinstance(action, Actions):
-                    action = action.y_pred
-                if isinstance(action, Tensor):
-                    action = action.detach().cpu().numpy()
+            # for step in pbar:
+            #     if obs is None:
+            #         break
+            #     # NOTE: Need to pass an action space that actually reflects the batch
+            #     # size, even for the last batch!
+            #     action_space = get_action_space_with_right_batch_size(env=test_env, current_obs=obs)
+            #     action = method.get_actions(obs, action_space)
 
-                if test_env.is_closed():
-                    break
+            #     # logger.debug(f"action: {action}")
+            #     # TODO: Remove this:
+            #     if isinstance(action, Actions):
+            #         action = action.y_pred
+            #     if isinstance(action, Tensor):
+            #         action = action.detach().cpu().numpy()
 
-                obs, reward, done, info = test_env.step(action)
+            #     if test_env.is_closed():
+            #         break
 
-                if done and not test_env.is_closed():
-                    # logger.debug(f"end of test episode {episode}")
-                    obs = test_env.reset()
-                    episode += 1
+            #     obs, reward, done, info = test_env.step(action)
+
+            #     if done and not test_env.is_closed():
+            #         # logger.debug(f"end of test episode {episode}")
+            #         obs = test_env.reset()
+            #         episode += 1
 
             test_env.close()
             test_results: TaskSequenceResults = test_env.get_results()

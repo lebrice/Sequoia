@@ -9,6 +9,7 @@ TODO: Tests for the multi-task SL setting.
 - Classes shouldn't be relabeled.
 
 """
+import dataclasses
 import itertools
 
 import numpy as np
@@ -74,6 +75,7 @@ from sequoia.common.config import Config
 
 
 def test_multitask_setting(config: Config):
+    config = dataclasses.replace(config, device=torch.device("cpu"))
     setting = MultiTaskSLSetting(dataset="mnist", config=config)
     assert setting.phases == 1
     assert setting.nb_tasks == 5
@@ -86,7 +88,7 @@ def test_multitask_setting(config: Config):
         dtype=setting.Observations,
     )
     assert setting.action_space == Discrete(10)
-    assert setting.config.device.type == "cuda" if torch.cuda.is_available() else "cpu"
+    # assert setting.config.device.type == "cuda" if torch.cuda.is_available() else "cpu"
 
     with setting.train_dataloader(batch_size=32, num_workers=0) as train_env:
         check_is_multitask_env(train_env, has_rewards=True)

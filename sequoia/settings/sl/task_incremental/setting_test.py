@@ -174,6 +174,7 @@ def test_action_space_always_matches_obs_batch_size(config: Config):
     - The total number of observations match the dataset size.
     """
     nb_tasks = 5
+    # TODO: The `drop_last` argument seems to not be used correctly by the dataloaders / test loop.
     batch_size = 128
 
     # HUH why are we doing this here?
@@ -183,6 +184,7 @@ def test_action_space_always_matches_obs_batch_size(config: Config):
         batch_size=batch_size,
         num_workers=4,
         monitor_training_performance=True,
+        drop_last=False,
     )
 
     # 10_000 examples in the test dataset of mnist.
@@ -194,4 +196,7 @@ def test_action_space_always_matches_obs_batch_size(config: Config):
     # Multiply by nb_tasks because the test loop is ran after each training task.
     assert sum(method.batch_sizes) == total_samples * nb_tasks
     assert len(method.batch_sizes) == math.ceil(total_samples / batch_size) * nb_tasks
-    assert set(method.batch_sizes) == {batch_size, total_samples % batch_size}
+    if total_samples % batch_size == 0:
+        assert set(method.batch_sizes) == {batch_size}
+    else:
+        assert set(method.batch_sizes) == {batch_size, total_samples % batch_size}
