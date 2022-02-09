@@ -4,7 +4,7 @@ You can use this model and method as a jumping off point for your own submission
 """
 from dataclasses import dataclass, replace
 from logging import getLogger
-from typing import Optional
+from typing import ClassVar, Optional, Type
 
 import torch
 from gym import Space, spaces
@@ -154,7 +154,8 @@ class MultiHeadClassifier(Classifier):
         unique_task_ids, inv_indices = torch.unique(task_labels, return_inverse=True)
         # There might be more than one task in the batch.
         batch_size = observations.batch_size
-        all_indices = torch.arange(batch_size, dtype=int, device=self.device)
+        assert batch_size is not None
+        all_indices = torch.arange(batch_size, dtype=torch.int64, device=self.device)
 
         # Placeholder for the predicitons for each item in the batch.
         task_outputs = [None for _ in range(batch_size)]
@@ -272,8 +273,12 @@ class MultiHeadClassifier(Classifier):
 
 
 class ExampleTaskInferenceMethod(ExampleMethod):
+
+    ModelType: ClassVar[Type[Classifier]] = MultiHeadClassifier
+
     def __init__(self, hparams: MultiHeadClassifier.HParams = None):
         super().__init__(hparams=hparams or MultiHeadClassifier.HParams())
+        self.hparams: MultiHeadClassifier.HParams
 
     def configure(self, setting: ClassIncrementalSetting):
         """Called before the method is applied on a setting (before training).

@@ -27,6 +27,13 @@ try:
 except ImportError:
     pass
 
+PROCGEN_INSTALLED = False
+try:
+    import procgen
+
+    PROCGEN_INSTALLED = True
+except ImportError:
+    pass
 
 # Prevent the collection of these modules if the requirements for them aren't installed.
 collect_ignore = []

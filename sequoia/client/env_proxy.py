@@ -98,7 +98,7 @@ class EnvironmentProxy(Environment[ObservationType, ActionType, RewardType]):
         if isinstance(actions, Actions):
             actions = actions.y_pred
         if isinstance(actions, Tensor):
-            actions = actions.numpy()
+            actions = actions.cpu().numpy()
         actions_pkl = actions
         rewards_pkl = self.__environment.send(actions_pkl)
         if isinstance(rewards_pkl, (Rewards, dict)):

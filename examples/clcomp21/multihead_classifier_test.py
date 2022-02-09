@@ -2,9 +2,25 @@ import pytest
 
 from sequoia.client.setting_proxy import SettingProxy
 from sequoia.conftest import slow
-from sequoia.settings import ClassIncrementalSetting
+from sequoia.settings import ClassIncrementalSetting, TaskIncrementalSLSetting
 
 from .multihead_classifier import ExampleTaskInferenceMethod, MultiHeadClassifier
+
+
+@pytest.mark.timeout(120)
+def test_task_incremental_mnist(
+    task_incremental_mnist_setting: SettingProxy[TaskIncrementalSLSetting],
+):
+    """Applies this Method to the class-incremental mnist Setting."""
+    mnist_setting = task_incremental_mnist_setting
+    method = ExampleTaskInferenceMethod(hparams=MultiHeadClassifier.HParams(max_epochs_per_task=1))
+    results = mnist_setting.apply(method)
+    assert results.to_log_dict()
+
+    results: ClassIncrementalSetting.Results
+    # There should be an improvement over the Method in `classifier.py`:
+    assert 0.80 <= results.average_online_performance.objective <= 1.00
+    assert 0.50 <= results.average_final_performance.objective <= 1.00
 
 
 @pytest.mark.timeout(120)
