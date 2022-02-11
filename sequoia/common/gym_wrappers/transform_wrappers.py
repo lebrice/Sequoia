@@ -8,9 +8,10 @@ from gym.wrappers import TransformReward as TransformReward_
 
 from sequoia.common.gym_wrappers.convert_tensors import add_tensor_support, has_tensor_support
 from sequoia.common.transforms.compose import Compose
+from sequoia.common.transforms.transform import Transform
 
-if typing.TYPE_CHECKING:
-    from sequoia.common.transforms.transform import Transform
+# if typing.TYPE_CHECKING:
+#     from sequoia.common.transforms.transform import Transform
 from sequoia.utils.logging_utils import get_logger
 
 from .utils import IterableWrapper
