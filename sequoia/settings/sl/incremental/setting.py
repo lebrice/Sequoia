@@ -359,7 +359,7 @@ class IncrementalSLSetting(IncrementalAssumption, DiscreteTaskAgnosticSLSetting)
             return self.dataset
 
         else:
-            raise NotImplementedError
+            raise NotImplementedError(self.dataset)
 
     # These methods below are used by the MultiHeadModel, mostly when
     # using a multihead model, to figure out how to relabel the batches, or how

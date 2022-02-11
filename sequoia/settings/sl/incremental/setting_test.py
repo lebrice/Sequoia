@@ -104,7 +104,6 @@ class TestIncrementalSLSetting(DiscreteTaskAgnosticSLSettingTests):
     @pytest.mark.parametrize("dataset_name", ["mnist"])
     @pytest.mark.parametrize("nb_tasks", [2, 5])
     def test_task_label_space(self, dataset_name: str, nb_tasks: int):
-        # dataset = ClassIncrementalSetting.available_datasets[dataset_name]
         nb_tasks = 2
         setting = ClassIncrementalSetting(
             dataset=dataset_name,

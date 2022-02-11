@@ -71,7 +71,7 @@ class AuxiliaryTask(nn.Module):
         # instance, then we create the Options for this auxiliary task.
         self.name = name or type(self).name
         self.options = options or type(self).Options(*args, **kwargs)
-        self.device: torch.device = torch.device("cuda" if cuda_available else "cpu")
+        self.device: torch.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         self._disabled = False
 
     def encode(self, x: Tensor) -> Tensor:
