@@ -17,7 +17,7 @@ from .utils import dict_union
 register_decoding_fn(torch.device, torch.device)
 
 T = TypeVar("T")
-logger = get_logger(__file__)
+logger = get_logger(__name__)
 
 
 def cpu(x: Any) -> Any:

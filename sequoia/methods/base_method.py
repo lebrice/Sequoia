@@ -39,7 +39,7 @@ from sequoia.utils.utils import compute_identity
 from .models import BaseModel
 from .trainer import Trainer, TrainerConfig
 
-logger = get_logger(__file__)
+logger = get_logger(__name__)
 
 
 @register_method

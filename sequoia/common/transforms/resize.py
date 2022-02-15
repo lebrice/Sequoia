@@ -21,7 +21,7 @@ from .channels import channels_first, channels_last, has_channels_first, has_cha
 from .transform import Img, Transform
 from .utils import is_image
 
-logger = get_logger(__file__)
+logger = get_logger(__name__)
 
 
 @singledispatch

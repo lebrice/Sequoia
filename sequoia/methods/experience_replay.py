@@ -26,7 +26,7 @@ from sequoia.settings.base import Actions, Environment, Method, Observations
 from sequoia.settings.sl.continual.setting import smart_class_prediction
 from sequoia.utils import get_logger
 
-logger = get_logger(__file__)
+logger = get_logger(__name__)
 
 
 @register_method

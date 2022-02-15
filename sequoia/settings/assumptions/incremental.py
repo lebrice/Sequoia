@@ -19,7 +19,7 @@ from sequoia.utils.utils import add_prefix, constant, flag
 from .continual import ContinualAssumption, TestEnvironment
 from .incremental_results import IncrementalResults, TaskSequenceResults
 
-logger = get_logger(__file__)
+logger = get_logger(__name__)
 
 
 @dataclass

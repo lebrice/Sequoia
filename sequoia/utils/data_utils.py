@@ -10,7 +10,7 @@ from torchvision.datasets import CIFAR100, VisionDataset
 
 from sequoia.utils.logging_utils import get_logger
 
-logger = get_logger(__file__)
+logger = get_logger(__name__)
 
 
 def train_valid_split(

@@ -18,7 +18,7 @@ from sequoia.utils.logging_utils import get_logger
 
 from .base import SB3BaseHParams, StableBaselines3Method
 
-logger = get_logger(__file__)
+logger = get_logger(__name__)
 
 
 class OnPolicyModel(OnPolicyAlgorithm, ABC):

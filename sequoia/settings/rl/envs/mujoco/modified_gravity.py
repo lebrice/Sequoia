@@ -5,7 +5,7 @@ from gym.envs.mujoco import MujocoEnv
 
 from sequoia.utils.logging_utils import get_logger
 
-logger = get_logger(__file__)
+logger = get_logger(__name__)
 
 
 class ModifiedGravityEnv(MujocoEnv):

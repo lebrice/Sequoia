@@ -12,7 +12,7 @@ from sequoia.utils.logging_utils import get_logger
 from ..continual.environment import ContinualSLTestEnvironment
 from .objects import Actions, ActionType, Observations, ObservationType, RewardType
 
-logger = get_logger(__file__)
+logger = get_logger(__name__)
 
 
 class IncrementalSLEnvironment(ContinualSLEnvironment[ObservationType, ActionType, RewardType]):

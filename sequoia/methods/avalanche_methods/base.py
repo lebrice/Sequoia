@@ -43,7 +43,7 @@ from sequoia.utils import get_logger
 from .experience import SequoiaExperience
 from .patched_models import MTSimpleCNN, MTSimpleMLP
 
-logger = get_logger(__file__)
+logger = get_logger(__name__)
 
 StrategyType = TypeVar("StrategyType", bound=BaseStrategy)
 

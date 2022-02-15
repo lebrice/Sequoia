@@ -57,7 +57,7 @@ from .objects import Actions, ActionSpace, Observations, ObservationSpace, Rewar
 from .results import ContinualSLResults
 from .wrappers import relabel
 
-logger = get_logger(__file__)
+logger = get_logger(__name__)
 
 EnvironmentType = TypeVar("EnvironmentType", bound=ContinualSLEnvironment)
 

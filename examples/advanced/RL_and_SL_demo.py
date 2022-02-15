@@ -28,7 +28,7 @@ from sequoia.settings import Environment, RLSetting, Setting
 from sequoia.utils.utils import camel_case, dict_intersection
 from sequoia.utils.logging_utils import get_logger
 
-logger = get_logger(__file__)
+logger = get_logger(__name__)
 
 
 class SimpleRegularizationAuxTask(AuxiliaryTask):

@@ -22,7 +22,7 @@ from .model import Model
 # from sequoia.utils.module_dict import ModuleDict
 
 
-logger = get_logger(__file__)
+logger = get_logger(__name__)
 HParamsType = TypeVar("HParamsType", bound="SelfSupervisedModel.HParams")
 
 

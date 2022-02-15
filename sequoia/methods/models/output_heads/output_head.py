@@ -19,7 +19,7 @@ from sequoia.utils import Parseable, get_logger
 
 from ..forward_pass import ForwardPass
 
-logger = get_logger(__file__)
+logger = get_logger(__name__)
 
 
 class OutputHead(nn.Module, ABC):

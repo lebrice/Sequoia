@@ -10,7 +10,7 @@ from sequoia.utils.logging_utils import get_logger
 
 from .layers import PNNLinearBlock
 
-logger = get_logger(__file__)
+logger = get_logger(__name__)
 
 
 class PnnClassifier(nn.Module):

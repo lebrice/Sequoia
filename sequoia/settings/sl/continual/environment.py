@@ -38,7 +38,7 @@ from sequoia.utils.logging_utils import get_logger
 
 from .objects import Actions, ActionType, Observations, ObservationType, Rewards, RewardType
 
-logger = get_logger(__file__)
+logger = get_logger(__name__)
 
 
 base_observation_spaces: Dict[str, Space] = {

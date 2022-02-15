@@ -15,7 +15,7 @@ from sequoia.utils.logging_utils import get_logger
 from .transform import Img, Transform
 from .utils import is_image
 
-logger = get_logger(__file__)
+logger = get_logger(__name__)
 
 
 @singledispatch

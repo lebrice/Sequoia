@@ -16,7 +16,7 @@ from .classification import ClassificationMetrics
 from .metrics import Metrics
 from .regression import RegressionMetrics
 
-logger = get_logger(__file__)
+logger = get_logger(__name__)
 
 
 def to_optional_tensor(x: Optional[Union[Tensor, np.ndarray, List]]) -> Optional[Tensor]:

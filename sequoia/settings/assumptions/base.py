@@ -1,7 +1,7 @@
 from sequoia.settings.base.bases import SettingABC
 from sequoia.utils.logging_utils import get_logger
 
-logger = get_logger(__file__)
+logger = get_logger(__name__)
 
 # IDEA:  (@lebrice) Exploring the idea of using metaclasses to customize the isinstance
 # and subclass checks, so that it could be property-based. This is probably not worth it

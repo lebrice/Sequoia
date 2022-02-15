@@ -23,7 +23,7 @@ from ...forward_pass import ForwardPass
 from ..classification_head import ClassificationHead
 from .policy_head import Categorical, PolicyHeadOutput
 
-logger = get_logger(__file__)
+logger = get_logger(__name__)
 
 
 class ActorCriticHead(ClassificationHead):

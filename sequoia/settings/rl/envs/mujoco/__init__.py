@@ -29,7 +29,7 @@ from .modified_gravity import ModifiedGravityEnv
 from .modified_size import ModifiedSizeEnv
 from .walker2d import ContinualWalker2dV2Env, ContinualWalker2dV3Env, Walker2dV2Env, Walker2dV3Env
 
-logger = get_logger(__file__)
+logger = get_logger(__name__)
 
 # NOTE: Prefer the 'V3' variants
 # HalfCheetahEnv = HalfCheetahV3Env

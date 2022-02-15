@@ -38,7 +38,7 @@ try:
 except ImportError:
     from singledispatchmethod import singledispatchmethod  # type: ignore
 
-logger = get_logger(__file__)
+logger = get_logger(__name__)
 
 B = TypeVar("B", bound="Batch", covariant=True)
 T = TypeVar("T", Tensor, np.ndarray, "Batch")

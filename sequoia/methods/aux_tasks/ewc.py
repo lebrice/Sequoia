@@ -29,7 +29,7 @@ from sequoia.settings.base.objects import Observations
 from sequoia.utils.logging_utils import get_logger
 from sequoia.utils.utils import dict_intersection
 
-logger = get_logger(__file__)
+logger = get_logger(__name__)
 
 
 class EWCTask(AuxiliaryTask):

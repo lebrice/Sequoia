@@ -17,7 +17,7 @@ from sequoia.utils.logging_utils import get_logger
 
 from .multihead_classifier import ExampleTaskInferenceMethod, MultiHeadClassifier
 
-logger = get_logger(__file__)
+logger = get_logger(__name__)
 
 
 class RegularizedClassifier(MultiHeadClassifier):

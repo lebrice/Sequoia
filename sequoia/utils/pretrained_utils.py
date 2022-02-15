@@ -4,7 +4,7 @@ from torch import nn
 
 from sequoia.utils.logging_utils import get_logger
 
-logger = get_logger(__file__)
+logger = get_logger(__name__)
 
 
 def get_pretrained_encoder(

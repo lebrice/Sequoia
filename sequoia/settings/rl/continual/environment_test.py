@@ -16,7 +16,7 @@ from sequoia.utils.utils import take
 from .environment import GymDataLoader
 from .make_env import make_batched_env
 
-logger = get_logger(__file__)
+logger = get_logger(__name__)
 
 
 class TestGymDataLoader:

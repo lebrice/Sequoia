@@ -25,7 +25,7 @@ from sequoia.utils.logging_utils import get_logger
 from .channels import channels_first_if_needed
 from .transform import Img, Transform
 
-logger = get_logger(__file__)
+logger = get_logger(__name__)
 
 
 def copy_if_negative_strides(image: Img) -> Img:

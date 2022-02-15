@@ -16,7 +16,7 @@ from sequoia.utils.logging_utils import get_logger
 
 from .off_policy_method import OffPolicyMethod, OffPolicyModel
 
-logger = get_logger(__file__)
+logger = get_logger(__name__)
 
 
 class SACModel(SAC, OffPolicyModel):

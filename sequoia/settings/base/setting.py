@@ -50,7 +50,7 @@ from sequoia.settings.presets import setting_presets
 from sequoia.utils import Parseable, get_logger
 from sequoia.utils.utils import take
 
-logger = get_logger(__file__)
+logger = get_logger(__name__)
 
 SettingType = TypeVar("SettingType", bound="Setting")
 EnvironmentType = TypeVar("EnvironmentType", bound=Environment)

@@ -7,7 +7,7 @@ from sequoia.utils.logging_utils import get_logger
 
 from .transform import InputType, OutputType, Transform
 
-logger = get_logger(__file__)
+logger = get_logger(__name__)
 
 T = TypeVar("T", bound=Callable)
 

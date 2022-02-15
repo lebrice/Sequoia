@@ -48,7 +48,7 @@ from sequoia.utils.utils import flag
 
 from ..classification_head import ClassificationHead, ClassificationOutput
 
-logger = get_logger(__file__)
+logger = get_logger(__name__)
 T = TypeVar("T")
 
 

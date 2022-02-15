@@ -15,7 +15,7 @@ from .utils import MayCloseEarly as CloseableWrapper
 from .utils import ObservationType, RewardType, StepResult
 
 # from sequoia.settings.base.objects import Observations, Rewards, Actions
-logger = get_logger(__file__)
+logger = get_logger(__name__)
 
 
 Item = TypeVar("Item")

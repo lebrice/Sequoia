@@ -17,7 +17,7 @@ from sequoia.utils.logging_utils import get_logger
 from sequoia.utils.parseable import Parseable
 
 # from .trainer_config import TrainerConfig
-logger = get_logger(__file__)
+logger = get_logger(__name__)
 
 
 virtual_display = None

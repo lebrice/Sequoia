@@ -10,7 +10,7 @@ from torch import Tensor
 
 from sequoia.utils import get_logger
 
-logger = get_logger(__file__)
+logger = get_logger(__name__)
 
 T = TypeVar("T")
 Policy = TypeVar("Policy", bound=BasePolicy)

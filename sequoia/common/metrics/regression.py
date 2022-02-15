@@ -16,7 +16,7 @@ from sequoia.utils.logging_utils import get_logger
 
 from .metrics import Metrics
 
-logger = get_logger(__file__)
+logger = get_logger(__name__)
 
 
 @total_ordering

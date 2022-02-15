@@ -10,7 +10,7 @@ from sequoia.common.spaces.image import Image
 from sequoia.utils.generic_functions import singledispatchmethod
 from sequoia.utils.logging_utils import get_logger
 
-logger = get_logger(__file__)
+logger = get_logger(__name__)
 
 
 class Lambda(nn.Module):

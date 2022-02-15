@@ -11,7 +11,7 @@ from sequoia.utils.utils import constant
 from ..task_incremental import TaskIncrementalRLSetting
 from ..traditional import TraditionalRLSetting
 
-logger = get_logger(__file__)
+logger = get_logger(__name__)
 
 
 @dataclass

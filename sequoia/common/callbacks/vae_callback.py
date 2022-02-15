@@ -10,7 +10,7 @@ from sequoia.methods.aux_tasks.reconstruction import AEReconstructionTask, VAERe
 from sequoia.methods.models import BaseModel
 from sequoia.utils.logging_utils import get_logger
 
-logger = get_logger(__file__)
+logger = get_logger(__name__)
 
 
 @dataclass

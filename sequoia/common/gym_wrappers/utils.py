@@ -226,7 +226,7 @@ def is_monsterkong_env(env: Union[str, gym.Env, Callable[[], gym.Env]]) -> bool:
         return False
 
 
-logger = get_logger(__file__)
+logger = get_logger(__name__)
 
 EnvType = TypeVar("EnvType", bound=gym.Env)
 ObservationType = TypeVar("ObservationType")

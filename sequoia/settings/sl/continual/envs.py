@@ -31,7 +31,7 @@ from sequoia.common.spaces import ImageTensorSpace, TensorBox, TensorDiscrete
 from sequoia.common.spaces.image import could_become_image
 from sequoia.utils.logging_utils import get_logger
 
-logger = get_logger(__file__)
+logger = get_logger(__name__)
 
 
 base_observation_spaces: Dict[str, Space] = {

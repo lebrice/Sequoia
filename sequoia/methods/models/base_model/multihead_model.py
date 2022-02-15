@@ -16,7 +16,7 @@ from ..forward_pass import ForwardPass
 from ..output_heads import OutputHead
 from .model import Model, SettingType
 
-logger = get_logger(__file__)
+logger = get_logger(__name__)
 
 
 class MultiHeadModel(Model[SettingType]):

@@ -43,7 +43,7 @@ from sequoia.methods.base_method import BaseMethod
 from sequoia.settings import Results, Setting, TraditionalSLSetting
 from sequoia.utils.logging_utils import get_logger
 
-logger = get_logger(__file__)
+logger = get_logger(__name__)
 
 
 if __name__ == "__main__":

@@ -11,7 +11,7 @@ from sequoia.utils.logging_utils import get_logger
 from ..incremental.setting_test import TestIncrementalSLSetting as IncrementalSLSettingTests
 from .setting import TaskIncrementalSLSetting
 
-logger = get_logger(__file__)
+logger = get_logger(__name__)
 
 
 class TestTaskIncrementalSLSetting(IncrementalSLSettingTests):

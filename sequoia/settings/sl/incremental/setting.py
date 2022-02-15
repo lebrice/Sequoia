@@ -47,7 +47,7 @@ from .environment import IncrementalSLEnvironment, IncrementalSLTestEnvironment
 from .objects import Actions, Observations, Rewards
 from .results import IncrementalSLResults
 
-logger = get_logger(__file__)
+logger = get_logger(__name__)
 # # NOTE: This dict reflects the observation space of the different datasets
 # # *BEFORE* any transforms are applied. The resulting property on the Setting is
 # # based on this 'base' observation space, passed through the transforms.

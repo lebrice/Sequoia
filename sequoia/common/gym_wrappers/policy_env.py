@@ -14,7 +14,7 @@ from sequoia.utils.logging_utils import get_logger
 
 from .utils import StepResult
 
-logger = get_logger(__file__)
+logger = get_logger(__name__)
 # from sequoia.settings.base.environment import Environment
 # from sequoia.settings.base.objects import (ActionType, ObservationType, RewardType)
 ObservationType = TypeVar("ObservationType")

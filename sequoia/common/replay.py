@@ -15,7 +15,7 @@ from torch.utils.data import TensorDataset
 from sequoia.utils.logging_utils import get_logger
 from sequoia.utils.serialization import Pickleable, Serializable
 
-logger = get_logger(__file__)
+logger = get_logger(__name__)
 T = TypeVar("T")
 
 

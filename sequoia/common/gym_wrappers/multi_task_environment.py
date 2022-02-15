@@ -18,7 +18,7 @@ task_param_names: Dict[Union[Type[gym.Env], str], List[str]] = {
     CartPoleEnv: ["gravity", "masscart", "masspole", "length", "force_mag", "tau"]
     # TODO: Add more of the classic control envs here.
 }
-logger = get_logger(__file__)
+logger = get_logger(__name__)
 
 
 X = TypeVar("X")

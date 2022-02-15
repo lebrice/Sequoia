@@ -29,7 +29,7 @@ from sequoia.settings.sl import PassiveEnvironment
 from sequoia.utils.logging_utils import get_logger
 from sequoia.utils.parseable import Parseable
 
-logger = get_logger(__file__)
+logger = get_logger(__name__)
 
 
 @dataclass

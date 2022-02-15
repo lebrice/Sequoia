@@ -28,7 +28,7 @@ from sequoia.settings.sl import ClassIncrementalSetting
 from sequoia.utils.logging_utils import get_logger, pbar
 from sequoia.utils.utils import roundrobin, take
 
-logger = get_logger(__file__)
+logger = get_logger(__name__)
 
 
 @dataclass

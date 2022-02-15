@@ -46,7 +46,7 @@ from ..output_heads import (
 from ..output_heads.rl.episodic_a2c import EpisodicA2C
 from ..simple_convnet import SimpleConvNet
 
-logger = get_logger(__file__)
+logger = get_logger(__name__)
 SettingType = TypeVar("SettingType", bound=IncrementalAssumption)
 
 available_optimizers: Dict[str, Type[Optimizer]] = {

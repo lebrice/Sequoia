@@ -27,7 +27,7 @@ from sequoia.utils.utils import add_prefix, flag
 from .base import AssumptionBase
 from .iid_results import TaskResults
 
-logger = get_logger(__file__)
+logger = get_logger(__name__)
 
 
 @dataclass

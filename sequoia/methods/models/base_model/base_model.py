@@ -29,7 +29,7 @@ from .semi_supervised_model import SemiSupervisedModel
 
 torch.autograd.set_detect_anomaly(True)
 
-logger = get_logger(__file__)
+logger = get_logger(__name__)
 SettingType = TypeVar("SettingType", bound=IncrementalAssumption)
 
 

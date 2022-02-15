@@ -36,7 +36,7 @@ from setuptools import find_packages
 from sequoia.settings.base import Method
 from sequoia.utils.logging_utils import get_logger
 
-logger = get_logger(__file__)
+logger = get_logger(__name__)
 
 
 AbstractMethod = Method

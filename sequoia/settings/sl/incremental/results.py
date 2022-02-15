@@ -13,7 +13,7 @@ from sequoia.settings.assumptions.incremental import IncrementalAssumption
 from sequoia.utils.logging_utils import get_logger
 from sequoia.utils.plotting import autolabel
 
-logger = get_logger(__file__)
+logger = get_logger(__name__)
 
 
 class IncrementalSLResults(IncrementalAssumption.Results):

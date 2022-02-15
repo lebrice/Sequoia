@@ -22,7 +22,7 @@ from sequoia.settings.rl.continual import ContinualRLSetting
 from sequoia.utils.logging_utils import get_logger
 from sequoia.utils.serialization import register_decoding_fn
 
-logger = get_logger(__file__)
+logger = get_logger(__name__)
 
 # "Patch" the _wrap_env function of the BaseAlgorithm class of
 # stable_baselines, to make it recognize the VectorEnv from gym.vector as a

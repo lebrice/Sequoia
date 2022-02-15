@@ -20,7 +20,7 @@ from sequoia.utils import get_logger
 
 from .policy_head import PolicyHead, PolicyHeadOutput, normalize
 
-logger = get_logger(__file__)
+logger = get_logger(__name__)
 
 
 @dataclass(frozen=True)

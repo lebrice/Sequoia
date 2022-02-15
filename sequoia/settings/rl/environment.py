@@ -5,7 +5,7 @@ from torch.utils.data import DataLoader, Dataset, IterableDataset
 from sequoia.settings.base.environment import ActionType, Environment, ObservationType, RewardType
 from sequoia.utils.logging_utils import get_logger
 
-logger = get_logger(__file__)
+logger = get_logger(__name__)
 
 from typing_extensions import Final
 

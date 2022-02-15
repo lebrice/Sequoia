@@ -65,7 +65,7 @@ from .results import ContinualRLResults
 from .tasks import ContinuousTask, TaskSchedule, is_supported, make_continuous_task, names_match
 from .test_environment import ContinualRLTestEnvironment
 
-logger = get_logger(__file__)
+logger = get_logger(__name__)
 
 
 # Type alias for the Environment returned by `train/val/test_dataloader`.

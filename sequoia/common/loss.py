@@ -60,7 +60,7 @@ from sequoia.utils.utils import add_dicts, add_prefix
 
 from .metrics import ClassificationMetrics, Metrics, RegressionMetrics, get_metrics
 
-logger = get_logger(__file__)
+logger = get_logger(__name__)
 
 
 @dataclass

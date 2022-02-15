@@ -12,7 +12,7 @@ from sequoia.utils.utils import camel_case
 
 from .logging_utils import get_logger
 
-logger = get_logger(__file__)
+logger = get_logger(__name__)
 P = TypeVar("P", bound="Parseable")
 
 

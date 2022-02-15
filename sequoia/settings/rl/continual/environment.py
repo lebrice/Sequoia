@@ -40,7 +40,7 @@ from sequoia.settings.base.objects import Actions
 from sequoia.settings.rl.environment import ActiveEnvironment
 from sequoia.utils.logging_utils import get_logger
 
-logger = get_logger(__file__)
+logger = get_logger(__name__)
 T = TypeVar("T")
 
 

@@ -54,7 +54,7 @@ def _(v: Dict, device: torch.device = None) -> Dict:
     return type(v)(**{k: to_tensor(v_i, device=device) for k, v_i in v.items()})
 
 
-logger = get_logger(__file__)
+logger = get_logger(__name__)
 
 T = TypeVar("T")
 S = TypeVar("S", bound=Space)

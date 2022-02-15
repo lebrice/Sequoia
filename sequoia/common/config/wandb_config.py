@@ -51,7 +51,7 @@ wandb.integration.gym.monitor = patched_monitor
 # else:
 #     assert False, "importing this a second time?"
 
-logger = get_logger(__file__)
+logger = get_logger(__name__)
 
 
 @dataclass

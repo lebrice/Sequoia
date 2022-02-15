@@ -16,7 +16,7 @@ from ..continual.setting import supported_envs as _parent_supported_envs
 from .tasks import DiscreteTask, is_supported, make_discrete_task
 from .test_environment import DiscreteTaskAgnosticRLTestEnvironment
 
-logger = get_logger(__file__)
+logger = get_logger(__name__)
 
 supported_envs: Dict[str, EnvSpec] = dict_union(
     _parent_supported_envs,

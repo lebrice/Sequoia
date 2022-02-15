@@ -11,7 +11,7 @@ from gym.envs.registration import EnvSpec, registry
 
 from sequoia.utils import get_logger
 
-logger = get_logger(__file__)
+logger = get_logger(__name__)
 
 # IDEA: Modify a copy of the gym registry?
 # sequoia_registry = copy.deepcopy(registry)

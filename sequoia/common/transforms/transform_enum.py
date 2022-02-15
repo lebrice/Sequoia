@@ -18,7 +18,7 @@ from torchvision.transforms import RandomGrayscale
 from sequoia.utils.logging_utils import get_logger
 from sequoia.utils.serialization import decode
 
-logger = get_logger(__file__)
+logger = get_logger(__name__)
 
 from .channels import (
     ChannelsFirst,

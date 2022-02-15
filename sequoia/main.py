@@ -20,7 +20,7 @@ from sequoia.settings.base import Method, Results, Setting
 from sequoia.utils import get_logger
 
 # TODO: Fix all the `get_logger` to use __name__ instead of __file__.
-logger = get_logger(__file__)
+logger = get_logger(__name__)
 
 
 def main():

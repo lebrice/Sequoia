@@ -18,7 +18,7 @@ from sequoia.utils import get_logger
 
 from .on_policy_method import OnPolicyMethod, OnPolicyModel
 
-logger = get_logger(__file__)
+logger = get_logger(__name__)
 
 
 class A2CModel(A2C, OnPolicyModel):

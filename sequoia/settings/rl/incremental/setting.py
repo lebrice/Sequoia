@@ -46,7 +46,7 @@ from .objects import Actions, Observations, Rewards  # type: ignore
 from .results import IncrementalRLResults
 from .tasks import IncrementalTask, is_supported, make_incremental_task, sequoia_registry
 
-logger = get_logger(__file__)
+logger = get_logger(__name__)
 
 # A callable that returns an env.
 EnvFactory = Callable[[], gym.Env]

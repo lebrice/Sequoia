@@ -13,7 +13,7 @@ from sequoia.utils.utils import fix_channels
 
 from ..auxiliary_task import AuxiliaryTask
 
-logger = get_logger(__file__)
+logger = get_logger(__name__)
 
 
 def wrap_pil_transform(function: Callable):

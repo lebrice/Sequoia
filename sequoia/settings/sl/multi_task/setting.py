@@ -11,7 +11,7 @@ from sequoia.utils.utils import constant_property
 from ..task_incremental.setting import TaskIncrementalSLSetting
 from ..traditional.setting import TraditionalSLSetting
 
-logger = get_logger(__file__)
+logger = get_logger(__name__)
 
 
 @dataclass

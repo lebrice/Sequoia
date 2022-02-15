@@ -34,7 +34,7 @@ from sequoia.utils import get_logger
 from .model_rl import PnnA2CAgent
 from .model_sl import PnnClassifier
 
-logger = get_logger(__file__)
+logger = get_logger(__name__)
 
 # BUG: Can't apply PNN to the ClassIncrementalSetting at the moment.
 # BUG: Can't apply PNN to any RL Settings at the moment.

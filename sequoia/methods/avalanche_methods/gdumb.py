@@ -26,7 +26,7 @@ from sequoia.utils.logging_utils import get_logger
 
 from .base import AvalancheMethod
 
-logger = get_logger(__file__)
+logger = get_logger(__name__)
 
 
 class GDumbPlugin(_GDumbPlugin):

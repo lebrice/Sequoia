@@ -15,7 +15,7 @@ from torch.nn import functional as F
 
 from sequoia.utils import get_logger
 
-logger = get_logger(__file__)
+logger = get_logger(__name__)
 
 
 class PatchedMultiTaskModule(MultiTaskModule):

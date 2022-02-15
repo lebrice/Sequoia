@@ -16,7 +16,7 @@ from sequoia.utils.logging_utils import get_logger
 
 from .utils import IterableWrapper
 
-logger = get_logger(__file__)
+logger = get_logger(__name__)
 
 
 class TransformObservation(TransformObservation_, IterableWrapper):

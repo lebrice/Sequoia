@@ -16,7 +16,7 @@ from sequoia.common.gym_wrappers.utils import MayCloseEarly
 from sequoia.utils.generic_functions import concatenate
 from sequoia.utils.logging_utils import get_logger
 
-logger = get_logger(__file__)
+logger = get_logger(__name__)
 
 
 def instantiate_env(env: Union[str, gym.Env, Callable[[], gym.Env]]) -> gym.Env:

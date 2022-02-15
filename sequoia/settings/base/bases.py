@@ -46,7 +46,7 @@ from sequoia.utils.utils import (
     remove_suffix,
 )
 
-logger = get_logger(__file__)
+logger = get_logger(__name__)
 
 
 class SettingABC:

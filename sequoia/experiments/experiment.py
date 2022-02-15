@@ -18,7 +18,7 @@ from sequoia.settings.presets import setting_presets
 from sequoia.utils import Parseable, Serializable, get_logger
 from sequoia.utils.logging_utils import get_logger
 
-logger = get_logger(__file__)
+logger = get_logger(__name__)
 
 source_dir = Path(os.path.dirname(__file__))
 
