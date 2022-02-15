@@ -1,4 +1,4 @@
-from typing import ClassVar, Type
+from typing import ClassVar, Dict, Type
 
 import pytest
 
@@ -11,13 +11,14 @@ from .experience_replay import ExperienceReplayMethod
 
 
 class TestExperienceReplay(MethodTests):
-    Method: ClassVar[Type[Method]] = ExperienceReplayMethod
+    Method: ClassVar[Type[ExperienceReplayMethod]] = ExperienceReplayMethod
+    method_debug_kwargs: ClassVar[Dict] = {"buffer_capacity": 100, "max_epochs_per_task": 1}
 
     @classmethod
     @pytest.fixture
     def method(cls, config: Config) -> ExperienceReplayMethod:
         """Fixture that returns the Method instance to use when testing/debugging."""
-        return cls.Method()
+        return cls.Method(**cls.method_debug_kwargs)
 
     def validate_results(
         self,

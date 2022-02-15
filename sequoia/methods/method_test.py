@@ -74,7 +74,7 @@ class MethodTests(ABC):
         Needs to be implemented when creating a new test class (to generate tests for a
         new method).
         """
-        return cls.Method()
+        return cls.Method(**cls.method_debug_kwargs)
 
     @abstractmethod
     def validate_results(

@@ -30,10 +30,11 @@ References
 [1] https://github.com/PacktPublishing/Deep-Reinforcement-Learning-Hands-On-
 Second-Edition/blob/master/Chapter06/02_dqn_pong.py
 """
-
+from dataclasses import dataclass
 import argparse
 from collections import defaultdict, deque, namedtuple, OrderedDict
 import dataclasses
+import functools
 from typing import (
     Any,
     Callable,
@@ -177,21 +178,14 @@ class ExperienceBatch(Generic[T]):
 
         return self._map(_numpy)
 
-    def to_torch(self, *args, **kwargs) -> "ExperienceBatch[Tensor]":
-        def _torch(v) -> Tensor:
-            return torch.as_tensor(v, *args, **kwargs)
-
-        return self._map(_torch)
-
-    def to(self, device: Union[str, torch.device] = "cpu"):
-        return self.to_torch(device=device)
+    def to(self, *args, **kwargs):
+        return self._map(functools.partial(torch.as_tensor, *args, **kwargs))
 
 
 class ReplayBuffer:
     """Replay Buffer for storing past experiences allowing the agent to learn from them.
 
-    >>> ReplayBuffer(5)  # doctest: +ELLIPSIS
-    <...reinforce_learn_Qnet.ReplayBuffer object at ...>
+    >>> buffer = ReplayBuffer(5)
     """
 
     def __init__(self, capacity: int) -> None:
@@ -235,10 +229,10 @@ class ReplayBuffer:
 
 
 class RLDataset(IterableDataset):
-    """Iterable Dataset containing the ExperienceBuffer which will be updated with new experiences during training.
+    """Iterable Dataset containing the buffer which will be updated with new experiences during
+    training.
 
-    >>> RLDataset(ReplayBuffer(5))  # doctest: +ELLIPSIS
-    <...reinforce_learn_Qnet.RLDataset object at ...>
+    >>> dataset = RLDataset(ReplayBuffer(5))
     """
 
     def __init__(self, buffer: ReplayBuffer, sample_size: int = 200) -> None:
@@ -251,21 +245,19 @@ class RLDataset(IterableDataset):
         self.sample_size = sample_size
 
     def __iter__(self) -> Iterator[Experience[np.ndarray]]:
-        try:
-            sampled_experience_batch = self.buffer.sample(self.sample_size)
-            for i, sampled_experience in enumerate(sampled_experience_batch):
-                yield sampled_experience
-        except gym.error.ClosedEnvironmentError:
-            raise StopIteration
+        sampled_experience_batch = self.buffer.sample(self.sample_size)
+        for sampled_experience in sampled_experience_batch:
+            yield sampled_experience
 
 
 class Agent:
     """Base Agent class handling the interaction with the environment.
 
-    >>> env = gym.make("CartPole-v1")
-    >>> buffer = ReplayBuffer(10)
-    >>> Agent(env, buffer)  # doctest: +ELLIPSIS
-    <...reinforce_learn_Qnet.Agent object at ...>
+    ```python
+    env = gym.make("CartPole-v1")
+    buffer = ReplayBuffer(10)
+    agent = Agent(env, buffer)
+    ```
     """
 
     def __init__(self, env: gym.Env, replay_buffer: ReplayBuffer) -> None:
@@ -341,21 +333,12 @@ class Agent:
         return reward, done
 
 
-from dataclasses import dataclass
-
-
 class DQNLightning(pl.LightningModule):
     """Basic DQN Model.
 
-    >>> DQNLightning(env="CartPole-v1")  # doctest: +ELLIPSIS +NORMALIZE_WHITESPACE
-    DQNLightning(
-      (net): DQN(
-        (net): Sequential(...)
-      )
-      (target_net): DQN(
-        (net): Sequential(...)
-      )
-    )
+    ```python
+    DQNLightning(env="CartPole-v1")
+    ```
     """
 
     @dataclass
@@ -422,6 +405,7 @@ class DQNLightning(pl.LightningModule):
         self.agent = Agent(self.env, self.buffer)
         self.total_reward = 0
         self.episode_reward = 0
+        self.trainer: Optional[pl.Trainer]
         self.populate(self.hp.warm_start_steps)
 
     def populate(self, steps: int = 1000) -> None:
@@ -434,7 +418,8 @@ class DQNLightning(pl.LightningModule):
         for i in range(steps):
             try:
                 self.agent.play_step(self.net, epsilon=1.0)
-            except gym.error.ClosedEnvironmentError:
+            except gym.error.ClosedEnvironmentError as err:
+                print(f"Unable to add more data to the buffer: env closed after {i} steps.")
                 break
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
@@ -475,7 +460,7 @@ class DQNLightning(pl.LightningModule):
         expected_state_action_values = next_state_values * self.hp.gamma + rewards
         return F.mse_loss(state_action_values, expected_state_action_values)
 
-    def training_step(self, batch: ExperienceBatch[Tensor], batch_idx: int) -> Tensor:
+    def training_step(self, batch: ExperienceBatch[Tensor], batch_idx: int) -> Optional[Tensor]:
         """Carries out a single step through the environment to update the replay buffer. Then calculates loss
         based on the minibatch received.
 
@@ -496,7 +481,7 @@ class DQNLightning(pl.LightningModule):
             reward, done = self.agent.play_step(self.net, epsilon, device)
         except gym.error.ClosedEnvironmentError:
             print(f"Environment closed at batch {batch_idx}")
-            self.trainer: pl.Trainer
+            assert self.trainer is not None
             self.trainer.should_stop = True
             return
 
@@ -609,7 +594,11 @@ class PlDqnMethod(Method, target_setting=RLSetting):
     def get_actions(self, observations: Observations, action_space: Discrete) -> Actions:
         assert self.model is not None
         with torch.no_grad():
-            obs = torch.as_tensor(observations.x, device=self.model.device, dtype=self.model.dtype)
+            obs = torch.as_tensor(
+                observations.x,
+                device=torch.device(self.model.device),
+                dtype=self.model.dtype,
+            )
             v = self.model.forward(obs)
         selected_action = v.argmax(-1).cpu().numpy()
         return selected_action
