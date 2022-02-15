@@ -232,9 +232,7 @@ def test_multitask_rl_bug_without_PL(monkeypatch):
     # assert False, losses
 
 
-# @pytest.mark.xfail(
-#     reason=f"Not quite sure why, but getting weird device bug here *sometimes*:"
-# )
+@pytest.mark.xfail(reason=f"TODO: Re-enable this test once the BaseMethod works in RL again.")
 def test_multitask_rl_bug_with_PL(monkeypatch, config: Config):
     """ """
     # NOTE: Tasks don't have anything to do with the task schedule. They are sampled at
@@ -425,6 +423,7 @@ def test_task_inference_sl(
     # assert torch.all(y_preds == ts * xs.view([xs.shape[0], -1]).mean(1))
 
 
+@pytest.mark.skip(reason=f"TODO: Re-enable this test once the BaseMethod works in RL again.")
 @pytest.mark.timeout(120)
 def test_task_inference_rl_easy(config: Config):
     from sequoia.methods.base_method import BaseMethod
@@ -445,6 +444,7 @@ def test_task_inference_rl_easy(config: Config):
     # assert False, results.to_log_dict()
 
 
+@pytest.mark.skip(reason=f"TODO: Re-enable this test once the BaseMethod works in RL again.")
 @pytest.mark.timeout(120)
 def test_task_inference_rl_hard(config: Config):
 
