@@ -8,8 +8,7 @@ from typing import Any, List, Type, Union
 
 import numpy as np
 import torch
-from simple_parsing.helpers import encode
-from simple_parsing.helpers.serialization import register_decoding_fn
+from simple_parsing.helpers.serialization import encode, register_decoding_fn
 from torch import Tensor, nn, optim
 
 # Register functions for decoding Tensor and ndarray fields from json/yaml.
