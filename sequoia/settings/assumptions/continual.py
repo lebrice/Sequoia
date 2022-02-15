@@ -76,7 +76,7 @@ class ContinualAssumption(AssumptionBase):
     """Assumptions for Setting where the environments change over time."""
 
     # Which dataset to use.
-    dataset: str = ""
+    # dataset: ClassVar[str] = ""
 
     known_task_boundaries_at_train_time: bool = flag(False)
     # Wether we get informed when reaching the boundary between two tasks during

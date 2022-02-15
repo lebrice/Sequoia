@@ -36,7 +36,7 @@ class IncrementalAssumption(ContinualAssumption):
     """
 
     # Which dataset to use.
-    dataset: str
+    # dataset: str
 
     Results: ClassVar[Type[Results]] = IncrementalResults
 

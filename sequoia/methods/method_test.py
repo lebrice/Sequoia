@@ -109,6 +109,7 @@ class MethodTests(ABC):
             setting = setting_type(
                 **setting_kwargs,
             )
+            assert setting.dataset, setting_kwargs
             setting.config = session_config
             setting.batch_size = 10
             setting.prepare_data()

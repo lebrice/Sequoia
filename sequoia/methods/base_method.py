@@ -41,10 +41,10 @@ from .trainer import Trainer, TrainerConfig
 
 logger = get_logger(__name__)
 
-
+# TODO: Set the target setting back to Setting once we fix the PL + RL issues.
 @register_method
 @dataclass
-class BaseMethod(Method, Serializable, Parseable, target_setting=Setting):
+class BaseMethod(Method, Serializable, Parseable, target_setting=SLSetting):
     """Versatile Base method which targets all settings.
 
     Uses pytorch-lightning's Trainer for training and LightningModule as model.

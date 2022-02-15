@@ -557,6 +557,7 @@ class ContinualSLSetting(SLSetting, ContinualAssumption):
                 data_dir = Path("data")
 
         logger.info(f"Downloading datasets to directory {data_dir}")
+        self._using_custom_envs_foreach_task = bool(self.train_datasets)
         if not self._using_custom_envs_foreach_task:
             self.train_cl_dataset = self.make_dataset(data_dir, download=True, train=True)
             self.test_cl_dataset = self.make_dataset(data_dir, download=True, train=False)

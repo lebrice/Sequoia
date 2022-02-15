@@ -20,7 +20,7 @@ from .method_test import MethodTests
 
 class TestBaseMethod(MethodTests):
     Method: ClassVar[Type[BaseMethod]] = BaseMethod
-    method_debug_kwargs: Dict = {"max_epochs": 1}
+    method_debug_kwargs: ClassVar[Dict] = {"max_epochs": 1}
 
     @classmethod
     @pytest.fixture(scope="module")
