@@ -13,7 +13,7 @@ from sequoia.methods.base_method import BaseMethod, BaseModel
 from sequoia.methods.trainer import TrainerConfig
 from sequoia.settings import Setting
 from sequoia.settings.assumptions import IncrementalAssumption as IncrementalSetting
-from sequoia.settings.sl import TaskIncrementalSLSetting
+from sequoia.settings.sl import IncrementalSLSetting, TaskIncrementalSLSetting
 
 
 class PackNet(Callback, nn.Module):
@@ -348,8 +348,9 @@ class PackNet(Callback, nn.Module):
         self.mode = "train"
 
 
+# TODO: Reset this to IncrementalAssumption after the fixes are made to BaseMethod in RL.
 @dataclass
-class PackNetMethod(BaseMethod, target_setting=IncrementalSetting):
+class PackNetMethod(BaseMethod, target_setting=IncrementalSLSetting):
     # NOTE: these two fields are also used to create the command-line arguments.
     # HyperParameters of the method.
     hparams: BaseModel.HParams = mutable_field(BaseModel.HParams)
