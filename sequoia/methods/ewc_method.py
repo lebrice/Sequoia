@@ -18,7 +18,7 @@ from sequoia.methods import register_method
 from sequoia.methods.aux_tasks.ewc import EWCTask
 from sequoia.methods.base_method import BaseMethod, BaseModel
 from sequoia.methods.trainer import TrainerConfig
-from sequoia.settings import Setting, TaskIncrementalRLSetting
+from sequoia.settings import Setting, TaskIncrementalRLSetting, IncrementalSLSetting
 from sequoia.settings.assumptions.incremental import IncrementalAssumption
 
 
@@ -43,7 +43,7 @@ class EwcModel(BaseModel):
 
 @register_method
 @dataclass
-class EwcMethod(BaseMethod, target_setting=IncrementalAssumption):
+class EwcMethod(BaseMethod, target_setting=IncrementalSLSetting):
     """Subclass of the BaseMethod, which adds the EWCTask to the `BaseModel`.
 
     This Method is applicable to any CL setting (RL or SL) where there are clear task

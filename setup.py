@@ -35,6 +35,7 @@ extras_require: Dict[str, Union[str, List[str]]] = {
     "metaworld": [
         "metaworld @ git+https://github.com/rlworkgroup/metaworld.git@master#egg=metaworld"
     ],
+    "sb3": "stable-baselines3==1.2.0",
 }
 # Add-up all the optional requirements, and then remove any duplicates.
 extras_require["all"] = sum(

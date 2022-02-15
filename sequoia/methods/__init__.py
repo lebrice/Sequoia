@@ -171,15 +171,28 @@ BaselineMethod = BaseMethod
 # Setting := fn(dataset, **kwargs) -> Callable[[Method], Results]
 
 
+AVALANCHE_INSTALLED = False
 try:
-    from sequoia.methods.avalanche import *
+    from avalanche.training.strategies import BaseStrategy  # type: ignore
+
+    AVALANCHE_INSTALLED = True
 except ImportError:
     pass
 
+if AVALANCHE_INSTALLED:
+    from sequoia.methods.avalanche_methods import *
+
+
+SB3_INSTALLED = False
 try:
-    from sequoia.methods.stable_baselines3_methods import *
+    import stable_baselines3
+
+    SB3_INSTALLED = True
 except ImportError:
     pass
+
+if SB3_INSTALLED:
+    from sequoia.methods.stable_baselines3_methods import *
 
 
 try:
@@ -201,6 +214,6 @@ def get_all_methods() -> List[Type[Method]]:
     # methods = Method.__subclasses__()
     # This includes all registered methods, e.g. not any base classes.
     methods = _registered_methods
-    methods = add_external_methods(methods)  # This won't.
+    methods = add_external_methods(methods)
     methods = list(set(methods))
     return list(sorted(methods, key=lambda method: method.get_full_name()))

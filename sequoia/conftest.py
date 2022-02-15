@@ -18,22 +18,8 @@ from sequoia.settings.rl.envs import (
     MTENV_INSTALLED,
     MUJOCO_INSTALLED,
 )
+from sequoia.methods import AVALANCHE_INSTALLED, SB3_INSTALLED
 
-AVALANCHE_INSTALLED = False
-try:
-    from avalanche.training.strategies import BaseStrategy  # type: ignore
-
-    AVALANCHE_INSTALLED = True
-except ImportError:
-    pass
-
-PROCGEN_INSTALLED = False
-try:
-    import procgen
-
-    PROCGEN_INSTALLED = True
-except ImportError:
-    pass
 
 # Prevent the collection of these modules if the requirements for them aren't installed.
 collect_ignore = []
@@ -44,6 +30,8 @@ if not MUJOCO_INSTALLED:
     collect_ignore.append("settings/rl/envs/mujoco")
 if not AVALANCHE_INSTALLED:
     collect_ignore.append("methods/avalanche_methods")
+if not SB3_INSTALLED:
+    collect_ignore.append("methods/stable_baselines3_methods")
 logger = logging.getLogger(__name__)
 
 parametrize = pytest.mark.parametrize
