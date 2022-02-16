@@ -326,7 +326,27 @@ class Method(Generic[SettingType], Parseable, ABC):
             Test environment which monitors your actions, and in which you are
             only allowed a limited number of steps.
         """
-        raise NotImplementedError
+        import tqdm
+
+        pbar = tqdm.tqdm(desc="Testing")
+        postfix = {}
+        steps = 0
+        episodes = 0
+        while not test_env.is_closed():
+            observations = test_env.reset()
+            done = False
+            episode_steps = 0
+            while not (done or test_env.is_closed()):
+                actions = self.get_actions(observations, action_space=test_env.action_space)
+                observations, rewards, done, info = test_env.step(actions)
+                steps += 1
+                episode_steps += 1
+                postfix.update(steps=steps, episode_steps=episode_steps)
+                pbar.set_postfix(postfix)
+            pbar.update()
+            episodes += 1
+            postfix.update(episodes=episodes)
+        pbar.close()
 
     def receive_results(self, setting: SettingType, results: Results) -> None:
         """Receive the Results of applying this method on the given Setting.

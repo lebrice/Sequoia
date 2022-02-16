@@ -17,7 +17,7 @@ The template illustrates using Lightning for Reinforcement Learning. The example
 classic CartPole environment.
 
 To run the template, just run:
-`python reinforce_learn_Qnet.py`
+`python template/methods/rl/dqn_pl.py`
 
 After ~1500 steps, you will see the total_reward hitting the max score of 475+.
 Open up TensorBoard to see the metrics:
@@ -30,14 +30,15 @@ References
 [1] https://github.com/PacktPublishing/Deep-Reinforcement-Learning-Hands-On-
 Second-Edition/blob/master/Chapter06/02_dqn_pong.py
 """
-from dataclasses import dataclass
-import argparse
-from collections import defaultdict, deque, namedtuple, OrderedDict
 import dataclasses
-import functools
+from collections import defaultdict, deque
+from dataclasses import dataclass
 from typing import (
     Any,
     Callable,
+    Container,
+    Deque,
+    Generic,
     Iterator,
     List,
     Optional,
@@ -46,37 +47,30 @@ from typing import (
     SupportsInt,
     Tuple,
     Type,
+    TypeVar,
     Union,
 )
 
 import gym
-from matplotlib import collections
 import numpy as np
-from simple_parsing import ArgumentParser, Serializable
+import pytorch_lightning as pl
 import simple_parsing
 import torch
 import torch.nn as nn
 import torch.optim as optim
+import tqdm
+from gym.spaces import Discrete
+from sequoia.common.spaces.typed_dict import TypedDictSpace
+from simple_parsing import ArgumentParser, Serializable
+from torch import Tensor
+from torch.nn import functional as F
 from torch.optim.optimizer import Optimizer
 from torch.utils.data import DataLoader
 from torch.utils.data.dataset import IterableDataset
-import tqdm
-import pytorch_lightning as pl
-from typing import NamedTuple, Any
-from torch import Tensor
-from torch.nn import functional as F
-from sequoia.common.spaces.typed_dict import TypedDictSpace
-from gym.spaces import Discrete
 
 
 class DQN(nn.Module):
-    """Simple MLP network.
-
-    >>> DQN(10, 5)  # doctest: +ELLIPSIS +NORMALIZE_WHITESPACE
-    DQN(
-      (net): Sequential(...)
-    )
-    """
+    """Simple MLP network."""
 
     def __init__(self, obs_size: int, n_actions: int, hidden_size: int = 128):
         """
@@ -96,12 +90,8 @@ class DQN(nn.Module):
         return self.net(torch.as_tensor(x, dtype=torch.float32))
 
 
-from typing import TypeVar, Generic
-from dataclasses import dataclass
-
-
 T = TypeVar("T", np.ndarray, Tensor)
-T_ = TypeVar("T_", np.ndarray, Tensor)
+V = TypeVar("V", np.ndarray, Tensor)
 
 
 @dataclass
@@ -115,8 +105,7 @@ class Experience(Generic[T]):
     new_state: T
 
 
-# Named tuple for storing experience steps gathered in training
-@dataclass()
+@dataclass
 class ExperienceBatch(Generic[T]):
     """Experience for more than one step.
 
@@ -167,7 +156,7 @@ class ExperienceBatch(Generic[T]):
             # new_states=np.concatenate(next_states),
         )
 
-    def _map(self, fn: Callable[[T], T_]) -> "ExperienceBatch[T_]":
+    def _map(self, fn: Callable[[T], V]) -> "ExperienceBatch[V]":
         return type(self)(  # type: ignore
             **{f.name: fn(getattr(self, f.name)) for f in dataclasses.fields(self)}
         )
@@ -178,11 +167,14 @@ class ExperienceBatch(Generic[T]):
 
         return self._map(_numpy)
 
-    def to(self, *args, **kwargs):
-        return self._map(functools.partial(torch.as_tensor, *args, **kwargs))
+    def to(self, device: torch.device = None, **kwargs) -> "ExperienceBatch[Tensor]":
+        return self._map(lambda v: torch.as_tensor(v, device=device, **kwargs))
 
 
-class ReplayBuffer:
+E = TypeVar("E", bound=Experience)
+
+
+class ReplayBuffer(Generic[T]):
     """Replay Buffer for storing past experiences allowing the agent to learn from them.
 
     >>> buffer = ReplayBuffer(5)
@@ -193,12 +185,12 @@ class ReplayBuffer:
         Args:
             capacity: size of the buffer
         """
-        self.buffer = deque(maxlen=capacity)
+        self.buffer: Deque[Experience[T]] = deque(maxlen=capacity)
 
     def __len__(self) -> int:
         return len(self.buffer)
 
-    def append(self, experience: Experience[np.ndarray]) -> None:
+    def append(self, experience: Experience[T]) -> None:
         """Add experience to the buffer.
 
         Args:
@@ -209,26 +201,13 @@ class ReplayBuffer:
     def sample(
         self,
         batch_size: int,
-    ) -> ExperienceBatch[np.ndarray]:
+    ) -> ExperienceBatch[T]:
         indices = np.random.choice(len(self.buffer), batch_size, replace=False)
-        # states, actions, rewards, dones, next_states = zip(*(self.buffer[idx] for idx in indices))
-
-        samples = [self.buffer[idx] for idx in indices]
+        samples: List[Experience[T]] = [self.buffer[idx] for idx in indices]
         return ExperienceBatch.stack(samples)
-        # return ExperienceBatch(
-        #     states=np.array(states),
-        #     actions=np.array(actions),
-        #     rewards=np.array(rewards, dtype=np.float32),
-        #     dones=np.array(dones, dtype=bool),
-        #     new_states=np.array(next_states),
-        # )
-        # for sample in samples
-        # return ExperienceBatch(
-        #     states=np.stack([sample.state for sample in samples]),
-        # )
 
 
-class RLDataset(IterableDataset):
+class RLDataset(IterableDataset[ExperienceBatch[T]]):
     """Iterable Dataset containing the buffer which will be updated with new experiences during
     training.
 
@@ -244,9 +223,10 @@ class RLDataset(IterableDataset):
         self.buffer = buffer
         self.sample_size = sample_size
 
-    def __iter__(self) -> Iterator[Experience[np.ndarray]]:
+    def __iter__(self) -> Iterator[Experience[T]]:
         sampled_experience_batch = self.buffer.sample(self.sample_size)
         for sampled_experience in sampled_experience_batch:
+            assert isinstance(sampled_experience, Experience), sampled_experience
             yield sampled_experience
 
 
@@ -298,7 +278,10 @@ class Agent:
 
     @torch.no_grad()
     def play_step(
-        self, net: nn.Module, epsilon: float = 0.0, device: Union[str, torch.device] = "cpu"
+        self,
+        net: nn.Module,
+        epsilon: float = 0.0,
+        device: Union[str, torch.device] = "cpu",
     ) -> Tuple[float, bool]:
         """Carries out a single interaction step between the agent and the environment.
 
@@ -553,8 +536,8 @@ def get_max_episode_length(env: Union[gym.Env, gym.Wrapper]) -> Optional[int]:
 
 
 from sequoia import Method
-from sequoia.settings.rl import RLSetting, RLEnvironment
-from sequoia.settings.rl.objects import Observations, Actions, Rewards
+from sequoia.settings.rl import RLEnvironment, RLSetting
+from sequoia.settings.rl.objects import Actions, Observations, Rewards
 
 
 class PlDqnMethod(Method, target_setting=RLSetting):
@@ -587,7 +570,10 @@ class PlDqnMethod(Method, target_setting=RLSetting):
             self.model = DQNLightning(env=train_env, hp=self.hp)
 
         trainer = pl.Trainer(
-            gpus=1, strategy="dp", val_check_interval=100, max_steps=self.train_max_steps
+            gpus=1,
+            strategy="dp",
+            val_check_interval=100,
+            max_steps=self.train_max_steps,
         )
         trainer.fit(self.model)
 
@@ -611,25 +597,32 @@ def main() -> None:
 
     args = parser.parse_args()
 
-    env = gym.make("CartPole-v1")
+    # env = gym.make("CartPole-v1")
+    # hp: DQNLightning.HParams = args.hp
 
-    from sequoia.settings.rl import TraditionalRLSetting
+    # model = DQNLightning(env=env, hp=hp)
+    # pl.seed_everything(args.seed)
 
-    setting = TraditionalRLSetting(dataset="cartpole", nb_tasks=1, train_max_steps=2_000)
+    # trainer = pl.Trainer(gpus=1, strategy="dp", val_check_interval=100)
+
+    # trainer.fit(model)
+    from sequoia.settings.rl import TraditionalRLSetting, MultiTaskRLSetting
+
+    setting = MultiTaskRLSetting(
+        dataset="CartPole-v1",
+        nb_tasks=1,
+        train_max_steps=2_000,
+    )
+    setting.prepare_data()
+    setting.setup()
+    setting.train_dataloader()
+    setting.test_dataloader()
     method = PlDqnMethod()
     from sequoia.common.config import Config
 
     results = setting.apply(method, config=Config(debug=True))
     print(results)
     return
-    hp: DQNLightning.HParams = args.hp
-
-    model = DQNLightning(env=env, hp=hp)
-    pl.seed_everything(args.seed)
-
-    trainer = pl.Trainer(gpus=1, strategy="dp", val_check_interval=100)
-
-    trainer.fit(model)
 
 
 if __name__ == "__main__":

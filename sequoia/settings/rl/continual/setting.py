@@ -1031,7 +1031,8 @@ class ContinualRLSetting(RLSetting, ContinualAssumption):
         else:
             test_dir = self.config.log_dir
 
-        # TODO: Debug wandb Monitor integration.
+        # TODO: Split this up into an ActionLimit wrapper, a RecordVideo wrapper,
+        # and a RecordEpisodeStatistics wrapper.
         self.test_env = self.TestEnvironment(
             env_dataloader,
             task_schedule=self.test_task_schedule,
