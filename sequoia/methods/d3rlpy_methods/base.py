@@ -1,12 +1,18 @@
-from typing import Type, ClassVar, List, Tuple, Dict, Optional, Union
+from typing import ClassVar, Type, Union
 
 import gym
-from d3rlpy.algos import *
 import numpy as np
-from d3rlpy.dataset import MDPDataset
+
+try:
+    from d3rlpy.algos import *
+    from d3rlpy.dataset import MDPDataset
+except ImportError as err:
+    raise RuntimeError(f"You need to have `d3rlpy` installed to use these methods.") from err
+
 from gym import Space
 from gym.wrappers.record_episode_statistics import RecordEpisodeStatistics
-from sequoia import Method, Environment, Observations, Actions, Rewards, TraditionalRLSetting
+
+from sequoia import Actions, Environment, Method, Observations, Rewards
 from sequoia.settings.offline_rl.setting import OfflineRLSetting
 
 
@@ -27,12 +33,15 @@ class OfflineRLWrapper(gym.Wrapper):
 class BaseOfflineRLMethod(Method, target_setting=OfflineRLSetting):
     Algo: ClassVar[Type[AlgoBase]] = AlgoBase
 
-    def __init__(self,
-                 train_steps: int = 1_000_000,
-                 train_steps_per_epoch=1_000_000,
-                 test_steps=1_000,
-                 scorers: dict = None,
-                 use_gpu: bool = False, **kwargs):
+    def __init__(
+        self,
+        train_steps: int = 1_000_000,
+        train_steps_per_epoch=1_000_000,
+        test_steps=1_000,
+        scorers: dict = None,
+        use_gpu: bool = False,
+        **kwargs,
+    ):
         super().__init__()
         self.train_steps = train_steps
         self.train_steps_per_epoch = train_steps_per_epoch
@@ -48,19 +57,23 @@ class BaseOfflineRLMethod(Method, target_setting=OfflineRLSetting):
         self.setting = setting
         self.algo = type(self).Algo(use_gpu=self.use_gpu, **self.kwargs)
 
-    def fit(self,
-            train_env: Union[Environment[Observations, Actions, Rewards], MDPDataset],
-            valid_env: Union[Environment[Observations, Actions, Rewards], MDPDataset]) -> None:
+    def fit(
+        self,
+        train_env: Union[Environment[Observations, Actions, Rewards], MDPDataset],
+        valid_env: Union[Environment[Observations, Actions, Rewards], MDPDataset],
+    ) -> None:
         """
         Fit self.algo on training and evaluation environment
         Works for both gym environments and d3rlpy datasets
         """
         if isinstance(self.setting, OfflineRLSetting):
-            self.offline_metrics = self.algo.fit(train_env,
-                                                 eval_episodes=valid_env,
-                                                 n_steps=self.train_steps,
-                                                 n_steps_per_epoch=self.train_steps_per_epoch,
-                                                 scorers=self.scorers)
+            self.offline_metrics = self.algo.fit(
+                train_env,
+                eval_episodes=valid_env,
+                n_steps=self.train_steps,
+                n_steps_per_epoch=self.train_steps_per_epoch,
+                scorers=self.scorers,
+            )
         else:
             train_env = RecordEpisodeStatistics(OfflineRLWrapper(train_env))
             valid_env = RecordEpisodeStatistics(OfflineRLWrapper(valid_env))

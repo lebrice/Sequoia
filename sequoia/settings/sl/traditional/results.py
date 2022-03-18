@@ -1,25 +1,16 @@
 """Defines the Results of apply a Method to an IID Setting.  
 """
-import json
-from dataclasses import dataclass
 from pathlib import Path
-from typing import Dict, List, Union
-from io import StringIO
-from contextlib import redirect_stdout
+from typing import Dict, Union
 
-import numpy as np
 import matplotlib.pyplot as plt
-from simple_parsing import list_field
 
-from sequoia.common import ClassificationMetrics, Loss, Metrics, RegressionMetrics
-from sequoia.settings.base.results import Results
-from sequoia.utils.plotting import PlotSectionLabel, autolabel
 from sequoia.settings.sl.incremental.results import IncrementalSLResults
 
 
 class IIDResults(IncrementalSLResults):
-    """Results of applying a Method on an IID Setting.    
-    
+    """Results of applying a Method on an IID Setting.
+
     # TODO: Refactor this to be based on `TaskResults`?
     """
 

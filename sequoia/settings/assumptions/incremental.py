@@ -1,55 +1,30 @@
 import itertools
-import json
-import math
 import time
-from abc import ABC, abstractmethod
-from contextlib import redirect_stdout
+from abc import abstractmethod
 from dataclasses import dataclass
-from io import StringIO
-from itertools import accumulate, chain
-from pathlib import Path
-from typing import ClassVar, Dict, List, Optional, Sequence, Tuple, Type, TypeVar, Union
+from typing import ClassVar, Optional, Sequence, Type, Union
 
-import gym
-import matplotlib.pyplot as plt
-import torch
 import tqdm
-import wandb
-from gym import spaces
-from gym.vector import VectorEnv
 from gym.vector.utils.spaces import batch_space
 from simple_parsing import field
 from torch import Tensor
 from wandb.wandb_run import Run
 
-from sequoia.common import ClassificationMetrics, Metrics, RegressionMetrics
-from sequoia.common.config import Config, WandbConfig
-from sequoia.common.gym_wrappers.step_callback_wrapper import (
-    Callback,
-    StepCallbackWrapper,
-)
-from sequoia.common.gym_wrappers.utils import IterableWrapper
-from sequoia.settings.base import (
-    Actions,
-    Environment,
-    Method,
-    Results,
-    Rewards,
-    Setting,
-    SettingABC,
-)
-from sequoia.utils import constant, flag, mean
+import wandb
+from sequoia.common.gym_wrappers.step_callback_wrapper import StepCallbackWrapper
+from sequoia.settings.base import Actions, Environment, Method, Results, Rewards, Setting
 from sequoia.utils.logging_utils import get_logger
-from sequoia.utils.utils import add_prefix
-from .continual import ContinualAssumption, TestEnvironment
-from .incremental_results import IncrementalResults, TaskResults, TaskSequenceResults
+from sequoia.utils.utils import add_prefix, constant, flag
 
-logger = get_logger(__file__)
+from .continual import ContinualAssumption, TestEnvironment
+from .incremental_results import IncrementalResults, TaskSequenceResults
+
+logger = get_logger(__name__)
 
 
 @dataclass
 class IncrementalAssumption(ContinualAssumption):
-    """ Mixin that defines methods that are common to all 'incremental'
+    """Mixin that defines methods that are common to all 'incremental'
     settings, where the data is separated into tasks, and where you may not
     always get the task labels.
 
@@ -59,17 +34,19 @@ class IncrementalAssumption(ContinualAssumption):
     is quite important.
 
     """
+
     # Which dataset to use.
-    dataset: str
+    # dataset: str
 
     Results: ClassVar[Type[Results]] = IncrementalResults
 
     @dataclass(frozen=True)
     class Observations(Setting.Observations):
-        """ Observations produced by an Incremental setting.
+        """Observations produced by an Incremental setting.
 
         Adds the 'task labels' to the base Observation.
         """
+
         task_labels: Union[Optional[Tensor], Sequence[Optional[Tensor]]] = None
 
     # Wether we have clear boundaries between tasks, or if the transition is
@@ -123,7 +100,7 @@ class IncrementalAssumption(ContinualAssumption):
 
     @property
     def current_task_id(self) -> Optional[int]:
-        """ Get the current task id.
+        """Get the current task id.
 
         TODO: Do we want to return None if the task labels aren't currently
         available? (at either Train or Test time?) Or if we 'detect' if
@@ -136,7 +113,7 @@ class IncrementalAssumption(ContinualAssumption):
 
     @current_task_id.setter
     def current_task_id(self, value: int) -> None:
-        """ Sets the current task id. """
+        """Sets the current task id."""
         self._current_task_id = value
 
     def task_boundary_reached(self, method: Method, task_id: int, training: bool):
@@ -146,9 +123,7 @@ class IncrementalAssumption(ContinualAssumption):
             else self.known_task_boundaries_at_test_time
         )
         task_labels_available = (
-            self.task_labels_at_train_time
-            if training
-            else self.task_labels_at_test_time
+            self.task_labels_at_train_time if training else self.task_labels_at_test_time
         )
 
         if known_task_boundaries:
@@ -174,7 +149,7 @@ class IncrementalAssumption(ContinualAssumption):
                 method.on_task_switch(task_id)
 
     def main_loop(self, method: Method) -> IncrementalResults:
-        """ Runs an incremental training loop, wether in RL or CL. """
+        """Runs an incremental training loop, wether in RL or CL."""
         # TODO: Add ways of restoring state to continue a given run?
         # For each training task, for each test task, a list of the Metrics obtained
         # during testing on that task.
@@ -202,8 +177,7 @@ class IncrementalAssumption(ContinualAssumption):
 
         for task_id in range(self.phases):
             logger.info(
-                f"Starting training"
-                + (f" on task {task_id}." if self.nb_tasks > 1 else ".")
+                f"Starting training" + (f" on task {task_id}." if self.nb_tasks > 1 else ".")
             )
             self.current_task_id = task_id
             self.task_boundary_reached(method, task_id=task_id, training=True)
@@ -214,15 +188,14 @@ class IncrementalAssumption(ContinualAssumption):
             task_valid_env = self.val_dataloader()
 
             method.fit(
-                train_env=task_train_env, valid_env=task_valid_env,
+                train_env=task_train_env,
+                valid_env=task_valid_env,
             )
             task_train_env.close()
             task_valid_env.close()
 
             if self.monitor_training_performance:
-                results._online_training_performance.append(
-                    task_train_env.get_online_performance()
-                )
+                results._online_training_performance.append(task_train_env.get_online_performance())
 
             logger.info(f"Finished Training on task {task_id}.")
             test_metrics: TaskSequenceResults = self.test_loop(method)
@@ -245,7 +218,7 @@ class IncrementalAssumption(ContinualAssumption):
         return results
 
     def test_loop(self, method: Method) -> "IncrementalAssumption.Results":
-        """ (WIP): Runs an incremental test loop and returns the Results.
+        """(WIP): Runs an incremental test loop and returns the Results.
 
         The idea is that this loop should be exactly the same, regardless of if
         you're on the RL or the CL side of the tree.
@@ -305,83 +278,11 @@ class IncrementalAssumption(ContinualAssumption):
 
             test_env = StepCallbackWrapper(test_env, callbacks=[_on_task_switch])
 
-        try:
-            # If the Method has `test` defined, use it.
-            method.test(test_env)
-            test_env.close()
-            test_env: TestEnvironment
-            # Get the metrics from the test environment
-            test_results: Results = test_env.get_results()
-
-        except NotImplementedError:
-            logger.debug(
-                f"Will query the method for actions at each step, "
-                f"since it doesn't implement a `test` method."
-            )
-            obs = test_env.reset()
-
-            # TODO: Do we always have a maximum number of steps? or of episodes?
-            # Will it work the same for Supervised and Reinforcement learning?
-            max_steps: int = getattr(test_env, "step_limit", None)
-
-            # Reset on the last step is causing trouble, since the env is closed.
-            pbar = tqdm.tqdm(itertools.count(), total=max_steps, desc="Test")
-            episode = 0
-
-            for step in pbar:
-                if obs is None:
-                    break
-                # NOTE: The env might not be closed, while `obs` is actually still there.
-                # if test_env.is_closed():
-                #     logger.debug(f"Env is closed")
-                #     break
-                # logger.debug(f"At step {step}")
-
-                # BUG: Need to pass an action space that actually reflects the batch
-                # size, even for the last batch!
-
-                # BUG: This doesn't work if the env isn't batched.
-                action_space = test_env.action_space
-                batch_size = getattr(test_env, "num_envs", getattr(test_env, "batch_size", 0))
-                env_is_batched = batch_size is not None and batch_size >= 1
-                if env_is_batched:
-                    # NOTE: Need to pass an action space that actually reflects the batch
-                    # size, even for the last batch!
-                    obs_batch_size = obs.x.shape[0] if obs.x.shape else None
-                    action_space_batch_size = (
-                        test_env.action_space.shape[0]
-                        if test_env.action_space.shape
-                        else None
-                    )
-                    if (
-                        obs_batch_size is not None
-                        and obs_batch_size != action_space_batch_size
-                    ):
-                        action_space = batch_space(
-                            test_env.single_action_space, obs_batch_size
-                        )
-
-                action = method.get_actions(obs, action_space)
-
-                # logger.debug(f"action: {action}")
-                # TODO: Remove this:
-                if isinstance(action, Actions):
-                    action = action.y_pred
-                if isinstance(action, Tensor):
-                    action = action.detach().cpu().numpy()
-
-                if test_env.is_closed():
-                    break
-
-                obs, reward, done, info = test_env.step(action)
-
-                if done and not test_env.is_closed():
-                    # logger.debug(f"end of test episode {episode}")
-                    obs = test_env.reset()
-                    episode += 1
-
-            test_env.close()
-            test_results: TaskSequenceResults = test_env.get_results()
+        # If the Method has `test` defined, use it.
+        method.test(test_env)
+        test_env: TestEnvironment
+        # Get the metrics from the test environment
+        test_results: TaskSequenceResults = test_env.get_results()
 
         # Restore 'training' mode, if it was set at the start.
         if was_training:
@@ -397,14 +298,14 @@ class IncrementalAssumption(ContinualAssumption):
     def train_dataloader(
         self, *args, **kwargs
     ) -> Environment["IncrementalAssumption.Observations", Actions, Rewards]:
-        """ Returns the DataLoader/Environment for the current train task. """
+        """Returns the DataLoader/Environment for the current train task."""
         return super().train_dataloader(*args, **kwargs)
 
     @abstractmethod
     def val_dataloader(
         self, *args, **kwargs
     ) -> Environment["IncrementalAssumption.Observations", Actions, Rewards]:
-        """ Returns the DataLoader/Environment used for validation on the
+        """Returns the DataLoader/Environment used for validation on the
         current task.
         """
         return super().val_dataloader(*args, **kwargs)
@@ -413,7 +314,7 @@ class IncrementalAssumption(ContinualAssumption):
     def test_dataloader(
         self, *args, **kwargs
     ) -> Environment["IncrementalAssumption.Observations", Actions, Rewards]:
-        """ Returns the Test Environment (for all the tasks). """
+        """Returns the Test Environment (for all the tasks)."""
         return super().test_dataloader(*args, **kwargs)
 
     def _get_objective_scaling_factor(self) -> float:

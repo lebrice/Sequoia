@@ -1,13 +1,14 @@
 """ Example where we start from a Method from stable-baselines3 to solve the rl track.
 """
 from dataclasses import dataclass
-from typing import ClassVar, Dict, Mapping, Type, Union, Optional
+from typing import ClassVar, Dict, Mapping, Optional, Type, Union
 
 import gym
 from gym import spaces
+from simple_parsing import mutable_field
+
 from sequoia.methods.stable_baselines3_methods.ppo import PPOMethod, PPOModel
 from sequoia.settings.rl import ContinualRLSetting
-from simple_parsing import mutable_field
 
 # from stable_baselines3.ppo.policies import ActorCriticCnnPolicy, ActorCriticPolicy
 
@@ -15,7 +16,7 @@ from simple_parsing import mutable_field
 class CustomPPOModel(PPOModel):
     @dataclass
     class HParams(PPOModel.HParams):
-        """ Hyper-parameters of the PPO Model. """
+        """Hyper-parameters of the PPO Model."""
 
 
 @dataclass
@@ -37,11 +38,12 @@ class CustomPPOMethod(PPOMethod):
         self, observations: ContinualRLSetting.Observations, action_space: spaces.Space
     ) -> ContinualRLSetting.Actions:
         return super().get_actions(
-            observations=observations, action_space=action_space,
+            observations=observations,
+            action_space=action_space,
         )
 
     def on_task_switch(self, task_id: Optional[int]) -> None:
-        """ Called when switching tasks in a CL setting.
+        """Called when switching tasks in a CL setting.
 
         If task labels are available, `task_id` will correspond to the index of
         the new task. Otherwise, if task labels aren't available, `task_id` will
@@ -50,9 +52,7 @@ class CustomPPOMethod(PPOMethod):
         todo: use this to customize how your method handles task transitions.
         """
 
-    def get_search_space(
-        self, setting: ContinualRLSetting
-    ) -> Mapping[str, Union[str, Dict]]:
+    def get_search_space(self, setting: ContinualRLSetting) -> Mapping[str, Union[str, Dict]]:
         return super().get_search_space(setting)
 
 

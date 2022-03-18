@@ -1,6 +1,8 @@
 from typing import NamedTuple
-from sequoia.utils.generic_functions._namedtuple import is_namedtuple, is_namedtuple_type
+
 import pytest
+
+from sequoia.utils.generic_functions._namedtuple import is_namedtuple, is_namedtuple_type
 
 
 class DummyTuple(NamedTuple):
@@ -11,6 +13,7 @@ class DummyTuple(NamedTuple):
 def test_is_namedtuple():
     bob = DummyTuple(1, "bob")
     assert is_namedtuple(bob)
+
 
 def test_is_namedtuple_type():
     assert is_namedtuple_type(DummyTuple)
@@ -30,11 +33,9 @@ def test_instance_check():
 
 @pytest.mark.xfail(reason="Not sure this is actually a good idea.")
 def test_instance_check():
-    from typing import Tuple
     assert issubclass(DummyTuple, NamedTuple)
     assert issubclass(DummyTuple, tuple)
     assert issubclass(DummyTuple, DummyTuple)
     assert not issubclass(list, DummyTuple)
     assert not issubclass(tuple, DummyTuple)
     assert not issubclass(NamedTuple, DummyTuple)
-

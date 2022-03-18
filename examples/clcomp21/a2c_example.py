@@ -12,10 +12,6 @@ import torch.nn as nn
 import torch.optim as optim
 from gym import spaces
 from gym.spaces.utils import flatdim
-from sequoia.common.spaces import Image
-from sequoia.common.hparams import HyperParameters, log_uniform
-from sequoia.methods import Method
-from sequoia.settings.rl import ActiveEnvironment, RLSetting
 
 # TODO: Migrate stuff to directly import simple-parsing's hparams module.
 # from simple_parsing.helpers.hparams import HyperParameters
@@ -23,10 +19,18 @@ from simple_parsing import ArgumentParser
 from torch import Tensor
 from torch.distributions import Categorical
 
+from sequoia.common.hparams import HyperParameters, log_uniform
+from sequoia.common.spaces import Image
+from sequoia.methods import Method
+from sequoia.settings.rl import ActiveEnvironment, RLSetting
+
 
 class ActorCritic(nn.Module):
     def __init__(
-        self, observation_space: gym.Space, action_space: gym.Space, hidden_size: int,
+        self,
+        observation_space: gym.Space,
+        action_space: gym.Space,
+        hidden_size: int,
     ):
         super().__init__()
         self.observation_space = observation_space
@@ -36,9 +40,7 @@ class ActorCritic(nn.Module):
         self.hidden_size = hidden_size
 
         if not isinstance(action_space, spaces.Discrete):
-            raise NotImplementedError(
-                "This example only works with discrete action spaces."
-            )
+            raise NotImplementedError("This example only works with discrete action spaces.")
         self.action_space = action_space
         self.num_actions = self.action_space.n
 
@@ -90,9 +92,7 @@ class ActorCritic(nn.Module):
                 nn.Linear(self.hidden_size, self.num_actions),
             )
 
-    def forward(
-        self, observation: RLSetting.Observations
-    ) -> Tuple[Tensor, Categorical]:
+    def forward(self, observation: RLSetting.Observations) -> Tuple[Tensor, Categorical]:
         x = observation.x
         state = torch.as_tensor(x, dtype=torch.float)
 
@@ -123,7 +123,7 @@ class ActorCritic(nn.Module):
 
 
 class ExampleA2CMethod(Method, target_setting=RLSetting):
-    """ Example A2C method.
+    """Example A2C method.
 
     Most of the code here was taken from:
     https://towardsdatascience.com/understanding-actor-critic-methods-931b97b6df3f
@@ -131,7 +131,7 @@ class ExampleA2CMethod(Method, target_setting=RLSetting):
 
     @dataclass
     class HParams(HyperParameters):
-        """ Hyper-Parameters of the model, as a dataclass.
+        """Hyper-Parameters of the model, as a dataclass.
 
         Fields get command-line arguments with simple-parsing.
         """
@@ -261,9 +261,7 @@ class ExampleA2CMethod(Method, target_setting=RLSetting):
             actor_loss = (-log_probs * advantage).mean()
             critic_loss = 0.5 * advantage.pow(2).mean()
             ac_loss = (
-                actor_loss
-                + critic_loss
-                + self.hparams.entropy_term_coefficient * entropy_term
+                actor_loss + critic_loss + self.hparams.entropy_term_coefficient * entropy_term
             )
 
             self.ac_optimizer.zero_grad()
@@ -335,16 +333,12 @@ if __name__ == "__main__":
     # CartPole for debugging:
     from sequoia.settings.rl import TraditionalRLSetting
 
-    setting = TraditionalRLSetting(
-        dataset="CartPole-v0", nb_tasks=1, train_max_steps=10_000
-    )
+    setting = TraditionalRLSetting(dataset="CartPole-v0", nb_tasks=1, train_max_steps=10_000)
 
     # OR: Incremental CartPole:
     from sequoia.settings.rl import IncrementalRLSetting
 
-    setting = IncrementalRLSetting(
-        dataset="CartPole-v0", nb_tasks=5, train_steps_per_task=10_000
-    )
+    setting = IncrementalRLSetting(dataset="CartPole-v0", nb_tasks=5, train_steps_per_task=10_000)
 
     # OR: Setting of the RL Track of the competition:
     # setting = IncrementalRLSetting.load_benchmark("rl_track")

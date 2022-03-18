@@ -2,14 +2,15 @@ from typing import List, Optional, Tuple
 
 import torch
 import torch.nn as nn
+from torch import Tensor
+
 from sequoia.settings import Actions, PassiveEnvironment
 from sequoia.settings.sl.incremental.objects import Observations, Rewards
-from torch import Tensor
 from sequoia.utils.logging_utils import get_logger
-from .layers import PNNLinearBlock
-import numpy as np
 
-logger = get_logger(__file__)
+from .layers import PNNLinearBlock
+
+logger = get_logger(__name__)
 
 
 class PnnClassifier(nn.Module):
@@ -33,9 +34,7 @@ class PnnClassifier(nn.Module):
         self.n_classes_per_task: List[int] = []
 
     def forward(self, observations: Observations):
-        assert (
-            self.columns
-        ), "PNN should at least have one column (missing call to `new_task` ?)"
+        assert self.columns, "PNN should at least have one column (missing call to `new_task` ?)"
         x = observations.x
         x = torch.flatten(x, start_dim=1)
         task_labels: Optional[Tensor] = observations.task_labels
@@ -101,9 +100,7 @@ class PnnClassifier(nn.Module):
         modules = []
         # TODO: Would it also be possible to use convolutional layers here?
         for i in range(0, self.n_layers):
-            modules.append(
-                PNNLinearBlock(col=task_id, depth=i, n_in=sizes[i], n_out=sizes[i + 1])
-            )
+            modules.append(PNNLinearBlock(col=task_id, depth=i, n_in=sizes[i], n_out=sizes[i + 1]))
 
         new_column = nn.ModuleList(modules).to(device)
         self.columns.append(new_column)

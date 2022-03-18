@@ -1,5 +1,7 @@
 from dataclasses import dataclass
-from sequoia.utils import constant, flag
+
+from sequoia.utils.utils import constant, flag
+
 from .base import AssumptionBase
 
 

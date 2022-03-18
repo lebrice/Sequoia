@@ -1,20 +1,14 @@
-import itertools
 from dataclasses import fields
 from typing import Any, ClassVar, Dict, Optional, Type
 
 import gym
 import pytest
+
 from sequoia.common.config import Config
-from sequoia.conftest import monsterkong_required
+from sequoia.conftest import monsterkong_required, param_requires_monsterkong
 from sequoia.methods import Method
-from sequoia.settings import Setting
 from sequoia.settings.assumptions.incremental_test import DummyMethod as _DummyMethod
-from sequoia.settings.rl.envs import (
-    ATARI_PY_INSTALLED,
-    MONSTERKONG_INSTALLED,
-    MUJOCO_INSTALLED,
-    MetaMonsterKongEnv,
-)
+from sequoia.settings.rl.envs import MetaMonsterKongEnv
 
 from ..continual.setting_test import TestContinualRLSetting as ContinualRLSettingTests
 from .setting import DiscreteTaskAgnosticRLSetting
@@ -31,21 +25,19 @@ class TestDiscreteTaskAgnosticRLSetting(ContinualRLSettingTests):
 
     @pytest.fixture()
     def setting_kwargs(self, dataset: str, nb_tasks: int, config: Config):
-        """ Fixture used to pass keyword arguments when creating a Setting. """
+        """Fixture used to pass keyword arguments when creating a Setting."""
         return {"dataset": dataset, "nb_tasks": nb_tasks, "config": config}
 
     @pytest.mark.parametrize(
         "dataset, expected_resulting_name",
         [
-            ("monsterkong", "MetaMonsterKong-v0"),
-            ("monsterkong-v0", "MetaMonsterKong-v0"),
-            ("meta_monsterkong", "MetaMonsterKong-v0"),
+            param_requires_monsterkong("monsterkong", "MetaMonsterKong-v0"),
+            param_requires_monsterkong("monsterkong-v0", "MetaMonsterKong-v0"),
+            param_requires_monsterkong("meta_monsterkong", "MetaMonsterKong-v0"),
             ("cartpole", "CartPole-v1"),
         ],
     )
-    def test_passing_name_variant_works(
-        self, dataset: str, expected_resulting_name: str
-    ):
+    def test_passing_name_variant_works(self, dataset: str, expected_resulting_name: str):
         assert self.Setting(dataset=dataset).dataset == expected_resulting_name
 
     def validate_results(
@@ -141,16 +133,13 @@ class TestDiscreteTaskAgnosticRLSetting(ContinualRLSettingTests):
             else default_max_train_steps
         )
         assert list(setting.train_task_schedule.keys()) == [
-            i * (setting.train_max_steps / setting.nb_tasks)
-            for i in range(0, setting.nb_tasks + 1)
+            i * (setting.train_max_steps / setting.nb_tasks) for i in range(0, setting.nb_tasks + 1)
         ]
         assert list(setting.val_task_schedule.keys()) == [
-            i * (setting.train_max_steps / setting.nb_tasks)
-            for i in range(0, setting.nb_tasks + 1)
+            i * (setting.train_max_steps / setting.nb_tasks) for i in range(0, setting.nb_tasks + 1)
         ]
         assert list(setting.test_task_schedule.keys()) == [
-            i * (setting.test_max_steps / setting.nb_tasks)
-            for i in range(0, setting.nb_tasks + 1)
+            i * (setting.test_max_steps / setting.nb_tasks) for i in range(0, setting.nb_tasks + 1)
         ]
 
         # When giving only the number of tasks:

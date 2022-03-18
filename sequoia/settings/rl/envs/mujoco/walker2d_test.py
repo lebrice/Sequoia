@@ -1,9 +1,11 @@
+from typing import ClassVar, Type
+
 from sequoia.conftest import mujoco_required
-from .walker2d import ContinualWalker2dV2Env, ContinualWalker2dV3Env
+
 from .modified_gravity_test import ModifiedGravityEnvTests
-from .modified_size_test import ModifiedSizeEnvTests
 from .modified_mass_test import ModifiedMassEnvTests
-from typing import ClassVar, List, Type
+from .modified_size_test import ModifiedSizeEnvTests
+from .walker2d import ContinualWalker2dV2Env, ContinualWalker2dV3Env
 
 pytestmark = mujoco_required
 

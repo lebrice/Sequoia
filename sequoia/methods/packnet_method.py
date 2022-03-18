@@ -1,28 +1,19 @@
-from torch import nn
-from sequoia.methods.base_method import BaseMethod
-from sequoia.settings.sl import TaskIncrementalSLSetting
-from pytorch_lightning.callbacks import EarlyStopping
-import torch
-from torch import Tensor
-from simple_parsing.helpers import mutable_field
-from sequoia.methods.base_method import BaseModel
 from dataclasses import dataclass
-from pytorch_lightning import LightningModule, Trainer, Callback
-from simple_parsing.helpers.hparams import HyperParameters, uniform
-from typing import (
-    Union,
-    List,
-    Optional,
-    Mapping,
-    Dict,
-    Any,
-    Type,
-    Sequence,
-    Iterable,
-    Tuple,
-)
+from typing import Any, Dict, Iterable, List, Mapping, Optional, Sequence, Tuple, Type, Union
 
+import torch
+from pytorch_lightning import Callback, LightningModule, Trainer
+from pytorch_lightning.callbacks import EarlyStopping
+from simple_parsing.helpers import mutable_field
+from simple_parsing.helpers.hparams import HyperParameters, uniform
+from torch import Tensor, nn
+
+from sequoia.common.config import Config
+from sequoia.methods.base_method import BaseMethod, BaseModel
+from sequoia.methods.trainer import TrainerConfig
+from sequoia.settings import Setting
 from sequoia.settings.assumptions import IncrementalAssumption as IncrementalSetting
+from sequoia.settings.sl import IncrementalSLSetting, TaskIncrementalSLSetting
 
 
 class PackNet(Callback, nn.Module):
@@ -41,12 +32,12 @@ class PackNet(Callback, nn.Module):
         fine_tune_epochs: int = uniform(0, 5, default=1)
 
     def __init__(
-            self,
-            n_tasks: int,
-            hparams: Optional["PackNet.HParams"]=None,
-            prunable_types: Sequence[Type[nn.Module]] = (nn.Conv2d, nn.Linear),
-            ignore_modules: Sequence[str] = None,
-            ignore_parameters: Sequence[str] = ("bias",),
+        self,
+        n_tasks: int,
+        hparams: Optional["PackNet.HParams"] = None,
+        prunable_types: Sequence[Type[nn.Module]] = (nn.Conv2d, nn.Linear),
+        ignore_modules: Sequence[str] = None,
+        ignore_parameters: Sequence[str] = ("bias",),
     ):
         """Create the PackNet callback.
 
@@ -87,9 +78,7 @@ class PackNet(Callback, nn.Module):
         self.mode: str = None
         self.params_dict: dict = None
 
-    def filtered_parameter_iterator(
-            self, module: nn.Module
-    ) -> Iterable[Tuple[str, nn.Parameter]]:
+    def filtered_parameter_iterator(self, module: nn.Module) -> Iterable[Tuple[str, nn.Parameter]]:
         """Iterator that, given a module, yields tuples with the full name of the
         parameters that will be modified by the PackNet callback, as well as the
         parameters themselves.
@@ -304,7 +293,7 @@ class PackNet(Callback, nn.Module):
             assert 0 < self.prune_instructions < 1
             self.prune_instructions = [self.prune_instructions] * (self.n_tasks - 1)
         assert (
-                len(self.prune_instructions) == self.n_tasks - 1
+            len(self.prune_instructions) == self.n_tasks - 1
         ), "Must give prune instructions for every task"
 
     def save_final_state(self, model, PATH="model_weights.pth"):
@@ -334,9 +323,7 @@ class PackNet(Callback, nn.Module):
         elif self.mode == "fine_tune":
             self.fine_tune_mask(pl_module)
 
-    def on_train_epoch_end(
-            self, trainer: Trainer, pl_module: LightningModule, *args, **kwargs
-    ):
+    def on_train_epoch_end(self, trainer: Trainer, pl_module: LightningModule, *args, **kwargs):
         super().on_train_epoch_end(trainer, pl_module)
         if pl_module.current_epoch == self.epoch_split[0] - 1:  # Train epochs completed
             self.mode = "fine_tune"
@@ -361,13 +348,9 @@ class PackNet(Callback, nn.Module):
         self.mode = "train"
 
 
-from sequoia.methods.trainer import TrainerConfig
-from sequoia.common.config import Config
-from sequoia.settings import Setting
-
-
+# TODO: Reset this to IncrementalAssumption after the fixes are made to BaseMethod in RL.
 @dataclass
-class PackNetMethod(BaseMethod, target_setting=IncrementalSetting):
+class PackNetMethod(BaseMethod, target_setting=IncrementalSLSetting):
     # NOTE: these two fields are also used to create the command-line arguments.
     # HyperParameters of the method.
     hparams: BaseModel.HParams = mutable_field(BaseModel.HParams)
@@ -379,16 +362,14 @@ class PackNetMethod(BaseMethod, target_setting=IncrementalSetting):
     packnet_hparams: PackNet.HParams = mutable_field(PackNet.HParams)
 
     def __init__(
-            self,
-            hparams: BaseModel.HParams = None,
-            config: Config = None,
-            trainer_options: TrainerConfig = None,
-            packnet_hparams: PackNet.HParams = None,
-            **kwargs,
+        self,
+        hparams: BaseModel.HParams = None,
+        config: Config = None,
+        trainer_options: TrainerConfig = None,
+        packnet_hparams: PackNet.HParams = None,
+        **kwargs,
     ):
-        super().__init__(
-            hparams=hparams, config=config, trainer_options=trainer_options
-        )
+        super().__init__(hparams=hparams, config=config, trainer_options=trainer_options)
         self.packnet_hparams = packnet_hparams or PackNet.HParams()
         self.p_net: PackNet  # This gets set in configure
 
@@ -432,9 +413,7 @@ class PackNetMethod(BaseMethod, target_setting=IncrementalSetting):
             self.p_net.apply_eval_mask(task_idx=task_id, model=self.model)
         self.p_net.current_task = task_id
 
-    def configure_callbacks(
-            self, setting: TaskIncrementalSLSetting = None
-    ) -> List[Callback]:
+    def configure_callbacks(self, setting: TaskIncrementalSLSetting = None) -> List[Callback]:
         """Create the PyTorch-Lightning Callbacks for this Setting.
 
         These callbacks will get added to the Trainer in `create_trainer`.
@@ -466,7 +445,7 @@ class PackNetMethod(BaseMethod, target_setting=IncrementalSetting):
             Trainer: the Trainer object.
         """
         self.trainer_options.max_epochs = (
-                self.packnet_hparams.train_epochs + self.packnet_hparams.fine_tune_epochs
+            self.packnet_hparams.train_epochs + self.packnet_hparams.fine_tune_epochs
         )
 
         return super().create_trainer(setting)
@@ -484,9 +463,7 @@ class PackNetMethod(BaseMethod, target_setting=IncrementalSetting):
             have the same structure as the search space.
         """
         self.hparams = self.hparams.replace(**new_hparams)
-        self.packnet_hparams = self.packnet_hparams.replace(
-            **new_hparams["packnet_hparams"]
-        )
+        self.packnet_hparams = self.packnet_hparams.replace(**new_hparams["packnet_hparams"])
 
     def get_search_space(self, setting: Setting) -> Mapping[str, Union[str, Dict]]:
         """Returns the search space to use for HPO in the given Setting.

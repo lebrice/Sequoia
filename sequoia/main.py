@@ -5,7 +5,6 @@ Used to run experiments, which consist in applying a Method to a Setting.
 from argparse import _SubParsersAction
 from dataclasses import dataclass
 from pathlib import Path
-from sequoia.common.config.wandb_config import WandbConfig
 from typing import Optional, Type, Union
 
 from simple_parsing import ArgumentParser
@@ -14,13 +13,14 @@ from simple_parsing.helpers import choice
 
 import sequoia
 from sequoia.common.config import Config
+from sequoia.common.config.wandb_config import WandbConfig
 from sequoia.methods import get_all_methods
 from sequoia.settings import all_settings
 from sequoia.settings.base import Method, Results, Setting
 from sequoia.utils import get_logger
 
 # TODO: Fix all the `get_logger` to use __name__ instead of __file__.
-logger = get_logger(__file__)
+logger = get_logger(__name__)
 
 
 def main():

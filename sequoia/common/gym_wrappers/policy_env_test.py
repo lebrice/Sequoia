@@ -1,10 +1,7 @@
 from typing import List
 
-import gym
-import pytest
-from gym.spaces import Discrete
-
 from sequoia.conftest import DummyEnvironment
+
 from .policy_env import PolicyEnv, StateTransition
 
 
@@ -17,17 +14,16 @@ def test_iterating_with_policy():
     expected_obs = [0, 0, 1, 2, 1, 2, 3, 4, 5]
     expected_rewards = [5, 4, 3, 4, 3, 2, 1, 0]
     expected_dones = [False, False, False, False, False, False, False, True]
-    
+
     # Expect the transitions to have this form.
-    expected_transitions = list(zip(expected_obs[0:],
-                                    actions[0:],
-                                    expected_obs[1:]))
+    expected_transitions = list(zip(expected_obs[0:], actions[0:], expected_obs[1:]))
 
     reset_obs = 0
     # obs = env.reset()
     # assert obs == reset_obs
 
     n_calls = 0
+
     def custom_policy(observations, action_space):
         # Deteministic policy used for testing purposes.
         nonlocal n_calls
@@ -48,7 +44,7 @@ def test_iterating_with_policy():
         observation, action, next_observation = state_transition.as_tuple()
 
         assert observation == expected_obs[i]
-        assert next_observation == expected_obs[i+1]
+        assert next_observation == expected_obs[i + 1]
         assert action == actions[i]
         assert reward == expected_rewards[i]
 

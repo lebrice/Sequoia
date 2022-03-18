@@ -1,12 +1,12 @@
 """ Defines a bunch of single-dispatch generic functions, that are applicable
 on structured objects, numpy arrays, tensors, spaces, etc.
 """
-from .singledispatchmethod import singledispatchmethod
 from ._namedtuple import NamedTuple, is_namedtuple
-from .move import move
+from .concatenate import concatenate
 from .detach import detach
+from .move import move
 from .replace import replace
+from .singledispatchmethod import singledispatchmethod
 from .slicing import get_slice, set_slice
 from .stack import stack
-from .concatenate import concatenate
-from .to_from_tensor import to_tensor, from_tensor
+from .to_from_tensor import from_tensor, to_tensor

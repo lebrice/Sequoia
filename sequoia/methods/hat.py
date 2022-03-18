@@ -13,7 +13,7 @@
 
 from argparse import Namespace
 from dataclasses import dataclass
-from typing import Dict, NamedTuple, Optional, Tuple, Mapping, Union, Any
+from typing import Any, Dict, Mapping, NamedTuple, Optional, Tuple, Union
 
 import gym
 import numpy as np
@@ -24,22 +24,18 @@ from simple_parsing import ArgumentParser
 from torch import Tensor
 from wandb.wandb_run import Run
 
-from sequoia.methods import register_method
 from sequoia.common import Config
-from sequoia.common.hparams import HyperParameters, log_uniform, uniform, categorical
+from sequoia.common.hparams import HyperParameters, categorical, log_uniform, uniform
 from sequoia.common.spaces import Image
-from sequoia.settings import Method, Environment, Setting
+from sequoia.methods import register_method
+from sequoia.settings import Environment, Method, Setting
 from sequoia.settings.sl import TaskIncrementalSLSetting
-from sequoia.settings.sl.incremental.objects import (
-    Actions,
-    Observations,
-    Rewards,
-)
 from sequoia.settings.sl.environment import PassiveEnvironment
+from sequoia.settings.sl.incremental.objects import Actions, Observations, Rewards
 
 
 class Masks(NamedTuple):
-    """ Named tuple for the masked tensors created in the HATNet. """
+    """Named tuple for the masked tensors created in the HATNet."""
 
     gc1: Tensor
     gc2: Tensor
@@ -63,9 +59,7 @@ class HatNet(torch.nn.Module):
     are defined.
     """
 
-    def __init__(
-        self, image_space: Image, n_classes_per_task: Dict[int, int], s_hat: int = 50
-    ):
+    def __init__(self, image_space: Image, n_classes_per_task: Dict[int, int], s_hat: int = 50):
         super().__init__()
 
         ncha = image_space.channels
@@ -113,9 +107,7 @@ class HatNet(torch.nn.Module):
         self.loss = torch.nn.CrossEntropyLoss()
         self.current_task: Optional[int] = 0
 
-    def forward(
-        self, observations: TaskIncrementalSLSetting.Observations
-    ) -> Tuple[Tensor, Masks]:
+    def forward(self, observations: TaskIncrementalSLSetting.Observations) -> Tuple[Tensor, Masks]:
         observations.as_list_of_tuples()
         x = observations.x
         t = observations.task_labels
@@ -215,11 +207,7 @@ class HatNet(torch.nn.Module):
 def compute_conv_output_size(
     Lin: int, kernel_size: int, stride: int = 1, padding: int = 0, dilation: int = 1
 ) -> int:
-    return int(
-        np.floor(
-            (Lin + 2 * padding - dilation * (kernel_size - 1) - 1) / float(stride) + 1
-        )
-    )
+    return int(np.floor((Lin + 2 * padding - dilation * (kernel_size - 1) - 1) / float(stride) + 1))
 
 
 @register_method
@@ -239,7 +227,7 @@ class HatMethod(Method, target_setting=TaskIncrementalSLSetting):
 
     @dataclass
     class HParams(HyperParameters):
-        """ Hyper-parameters of the Settings. """
+        """Hyper-parameters of the Settings."""
 
         # Learning rate of the optimizer.
         learning_rate: float = log_uniform(1e-6, 1e-2, default=0.001)
@@ -258,7 +246,7 @@ class HatMethod(Method, target_setting=TaskIncrementalSLSetting):
         self.optimizer: torch.optim.Optimizer
 
     def configure(self, setting: TaskIncrementalSLSetting):
-        """ Called before the method is applied on a setting (before training).
+        """Called before the method is applied on a setting (before training).
 
         You can use this to instantiate your model, for instance, since this is
         where you get access to the observation & action spaces.
@@ -268,8 +256,7 @@ class HatMethod(Method, target_setting=TaskIncrementalSLSetting):
             setting.increment == setting.test_increment
         ), "Assuming same number of classes per task for training and testing."
         n_classes_per_task = {
-            i: setting.num_classes_in_task(i, train=True)
-            for i in range(setting.nb_tasks)
+            i: setting.num_classes_in_task(i, train=True) for i in range(setting.nb_tasks)
         }
         image_space: Image = setting.observation_space["x"]
         self.model = HatNet(
@@ -278,7 +265,8 @@ class HatMethod(Method, target_setting=TaskIncrementalSLSetting):
             s_hat=self.hparams.s_hat,
         )
         self.optimizer = torch.optim.Adam(
-            self.model.parameters(), lr=self.hparams.learning_rate,
+            self.model.parameters(),
+            lr=self.hparams.learning_rate,
         )
 
     def fit(self, train_env: PassiveEnvironment, valid_env: PassiveEnvironment):
@@ -305,7 +293,8 @@ class HatMethod(Method, target_setting=TaskIncrementalSLSetting):
                 train_pbar.set_description(f"Training Epoch {epoch}")
                 for i, batch in enumerate(train_pbar):
                     loss, metrics_dict = self.model.shared_step(
-                        batch, environment=train_env,
+                        batch,
+                        environment=train_env,
                     )
                     self.optimizer.zero_grad()
                     loss.backward()
@@ -323,7 +312,8 @@ class HatMethod(Method, target_setting=TaskIncrementalSLSetting):
 
                 for i, batch in enumerate(val_pbar):
                     batch_val_loss, metrics_dict = self.model.shared_step(
-                        batch, environment=valid_env,
+                        batch,
+                        environment=valid_env,
                     )
                     epoch_val_loss += batch_val_loss
                     postfix.update(metrics_dict, val_loss=epoch_val_loss)
@@ -337,10 +327,8 @@ class HatMethod(Method, target_setting=TaskIncrementalSLSetting):
                 print(f"Early stopping at epoch {epoch}")
                 break
 
-    def get_actions(
-        self, observations: Observations, action_space: gym.Space
-    ) -> Actions:
-        """ Get a batch of predictions (aka actions) for these observations. """
+    def get_actions(self, observations: Observations, action_space: gym.Space) -> Actions:
+        """Get a batch of predictions (aka actions) for these observations."""
         with torch.no_grad():
             logits, _ = self.model(observations)
         # Get the predicted classes
@@ -402,7 +390,7 @@ class HatMethod(Method, target_setting=TaskIncrementalSLSetting):
         self.hparams = self.hparams.replace(**new_hparams)
 
     def setup_wandb(self, run: Run) -> None:
-        """ Called by the Setting when using Weights & Biases, after `wandb.init`.
+        """Called by the Setting when using Weights & Biases, after `wandb.init`.
 
         This method is here to provide Methods with the opportunity to log some of their
         configuration options or hyper-parameters to wandb.

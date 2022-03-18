@@ -1,28 +1,24 @@
 import platform
 from functools import partial
-from typing import ClassVar, Iterable, List, Tuple, Type, TypeVar
-from sequoia.common.gym_wrappers.utils import is_proxy_to
+from typing import ClassVar, Iterable, Tuple, Type, TypeVar
 
 import gym
 import numpy as np
 import psutil
 import pytest
+from torch import Tensor
+from torchvision.datasets import MNIST
+
 from sequoia.common.gym_wrappers.env_dataset import EnvDataset
-from sequoia.common.gym_wrappers.env_dataset_test import \
-    TestEnvDataset as _TestEnvDataset
+from sequoia.common.gym_wrappers.env_dataset_test import TestEnvDataset as _TestEnvDataset
+from sequoia.common.gym_wrappers.utils import is_proxy_to
 from sequoia.common.spaces import Image
 from sequoia.common.transforms import Compose, Transforms
-from sequoia.settings.rl import IncrementalRLSetting
-from sequoia.settings.rl.continual.environment import GymDataLoader
-from sequoia.settings.rl.continual.environment_test import \
-    TestGymDataLoader as _TestGymDataLoader
 from sequoia.settings.assumptions import IncrementalAssumption
+from sequoia.settings.rl.continual.environment import GymDataLoader
+from sequoia.settings.rl.continual.environment_test import TestGymDataLoader as _TestGymDataLoader
 from sequoia.settings.sl.environment import PassiveEnvironment
-from sequoia.settings.sl.environment_test import \
-    TestPassiveEnvironment as _TestPassiveEnvironment
-from torch import Tensor
-from torch.utils.data import DataLoader
-from torchvision.datasets import MNIST
+from sequoia.settings.sl.environment_test import TestPassiveEnvironment as _TestPassiveEnvironment
 
 from .env_proxy import EnvironmentProxy
 
@@ -45,9 +41,7 @@ ProxyPassiveEnvironment = wrap_type_with_proxy(PassiveEnvironment)
 ProxyGymDataLoader = wrap_type_with_proxy(GymDataLoader)
 
 
-class TestEnvironmentProxy(
-    _TestEnvDataset, _TestPassiveEnvironment, _TestGymDataLoader
-):
+class TestEnvironmentProxy(_TestEnvDataset, _TestPassiveEnvironment, _TestGymDataLoader):
     # IDEA: Reuse the tests for the EnvDataset, but using a proxy to the environment
     # instead.
     EnvDataset: ClassVar[Type[EnvDataset]] = ProxyEnvDataset
@@ -68,11 +62,13 @@ def test_sanity_check():
 @pytest.mark.parametrize("use_wrapper", [False, True])
 def test_is_proxy_to(use_wrapper: bool):
     import numpy as np
+
     from sequoia.common.transforms import Compose, Transforms
 
     transforms = Compose([Transforms.to_tensor, Transforms.three_channels])
-    from sequoia.common.spaces import Image
     from torchvision.datasets import MNIST
+
+    from sequoia.common.spaces import Image
 
     batch_size = 32
     dataset = MNIST("data", transform=transforms)
@@ -81,7 +77,10 @@ def test_is_proxy_to(use_wrapper: bool):
 
     env_type = ProxyPassiveEnvironment if use_wrapper else PassiveEnvironment
     env: Iterable[Tuple[Tensor, Tensor]] = env_type(
-        dataset, batch_size=batch_size, n_classes=10, observation_space=obs_space,
+        dataset,
+        batch_size=batch_size,
+        n_classes=10,
+        observation_space=obs_space,
     )
     if use_wrapper:
         assert isinstance(env, EnvironmentProxy)
@@ -100,9 +99,9 @@ def test_is_proxy_to(use_wrapper: bool):
     reason="Not sure this would work the same on non-Linux systems.",
 )
 def test_issue_204():
-    """ Test that reproduces the issue #204, which was that some zombie processes
+    """Test that reproduces the issue #204, which was that some zombie processes
     appeared to be created when iterating using an EnvironmentProxy.
-    
+
     The issue appears to have been caused by calling `self.__environment.reset()` in
     `__iter__`, which I think caused another dataloader iterator to be created?
     """
@@ -163,7 +162,7 @@ def test_issue_204():
         done = False
         while not done:
             obs, reward, done, info = env.step(env.action_space.sample())
-            
+
             # env.render(mode="human")
 
             threads = current_process.num_threads()
@@ -179,6 +178,7 @@ def test_issue_204():
         env.close()
 
         import time
+
         # Need to give it a second (or so) to cleanup.
         time.sleep(1)
 

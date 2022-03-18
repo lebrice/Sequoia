@@ -1,5 +1,6 @@
 """ TODO: Wrapper that modifies the friction, if possible on-the-fly. """
 from typing import ClassVar
+
 from gym.envs.mujoco import MujocoEnv
 
 

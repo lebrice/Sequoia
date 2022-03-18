@@ -1,13 +1,15 @@
+from typing import Callable, List
+
 import numpy as np
 import tqdm as tqdm
-from typing import List, Callable
 
 
-def get_fraction_of_observations_with_grad(n_envs: int,
-                                           new_episode_length: Callable[[], int],
-                                           n_updates: int = 10,
-                                           min_episodes_before_update: int = 1,
-                                           ):
+def get_fraction_of_observations_with_grad(
+    n_envs: int,
+    new_episode_length: Callable[[], int],
+    n_updates: int = 10,
+    min_episodes_before_update: int = 1,
+):
     n_used_steps = 0
     n_wasted_steps = 0
     # min_episode_length = 0
@@ -21,12 +23,12 @@ def get_fraction_of_observations_with_grad(n_envs: int,
     episode_lengths = np.array([new_episode_length() for _ in range(n_envs)])
     steps_left_in_episode = episode_lengths.copy()
     num_finished_episodes = np.zeros(n_envs)
-    
+
     for step in tqdm.tqdm(range(n_updates), leave=False):
         # print(f"Step {step}")
         steps_since_last_update = np.zeros(n_envs)
         finished_episodes_since_last_update = np.zeros(n_envs)
-        
+
         # Loop over all the envs, until all of them have produced a loss (reached
         # the end of an episode).
         while not all(finished_episodes_since_last_update >= min_episodes_before_update):
@@ -46,7 +48,7 @@ def get_fraction_of_observations_with_grad(n_envs: int,
                     wasted = episode_lengths[env] - steps_since_last_update
                     # print(f"Step {step}, doing backward for env {env} using {used} steps.")
                     steps_since_last_update[env] = 0
-                    
+
                     finished_episodes_since_last_update[env] += 1
                     num_finished_episodes[env] += 1
 
@@ -81,60 +83,61 @@ def get_fraction_of_observations_with_grad(n_envs: int,
 
 if __name__ == "__main__":
     import matplotlib.pyplot as plt
-    
+
     fig: plt.Figure
     axes: List[plt.Axes]
     n_updates_per_run: int = 20
     fig, axes = plt.subplots(1, 2)
     import textwrap
-    
-    
+
     # x: np.ndarray = np.random.randint(1, 32, size=100)
     x: np.ndarray = np.arange(63, dtype=int) + 1
-    
+
     min_episodes_before_update = 3
     # min_episodes_before_updates = [1, 3, 5]
 
     min_episode_length: int = 5
     max_episode_length: int = 100
     episode_len_dist = f"U[{min_episode_length},{max_episode_length}]"
-    
 
     # Normally distributed episode lengths:
     # episode_length_mean = (max_episode_length + min_episode_length) / 2
     episode_length_mean = 50
     # episode_length_std = np.sqrt(max_episode_length - episode_length_mean)
     # episode_len_dist = f"N({episode_length_mean:.1f}, {episode_length_std:.1f})"
-    episode_length_stds = [1., 3., 5., 10.]
+    episode_length_stds = [1.0, 3.0, 5.0, 10.0]
     episode_len_dist = f"N({episode_length_mean:.1f}, {episode_length_stds})"
-    
+
     s = "s" if min_episodes_before_update > 1 else ""
-    fig.suptitle(textwrap.dedent(f"""\
+    fig.suptitle(
+        textwrap.dedent(
+            f"""\
         Episode length ~ {episode_len_dist},
         Updating model when all envs have finished at least {min_episodes_before_update} episode{s},
         {n_updates_per_run} total updates per run.
         """
-    ))
-    
+        )
+    )
+
     # for min_episodes_before_update in min_episodes_before_updates:
     for episode_length_std in episode_length_stds:
         label = f"episode_length_std={episode_length_std:.1f}"
         # label = f"min_episodes_before_update={min_episodes_before_update}"
-        
+
         # new_episode_length = lambda: np.random.randint(min_episode_length, max_episode_length)
         new_episode_length = lambda: int(np.random.normal(episode_length_mean, episode_length_std))
-        
+
         # x.sort()
         used_ = []
         wasted_ = []
-        
+
         for n_envs in tqdm.tqdm(x, desc="n_envs"):
             used, wasted = get_fraction_of_observations_with_grad(
                 n_envs=n_envs,
                 new_episode_length=new_episode_length,
                 min_episodes_before_update=min_episodes_before_update,
                 n_updates=n_updates_per_run,
-                )
+            )
             used_.append(used)
             wasted_.append(wasted)
 
@@ -143,10 +146,10 @@ if __name__ == "__main__":
 
         used_ratio = y_used / (y_used + y_wasted)
         wasted_ratio = 1 - used_ratio
-            
+
         axes[0].set_title(f"Percentage of used vs 'wasted' gradients w.r.t. batch size")
         axes[0].scatter(x, used_ratio, label=label)
-        axes[0].set_ylim(0., 1.)
+        axes[0].set_ylim(0.0, 1.0)
 
         used_per_env = y_used / x / n_updates_per_run
         axes[1].scatter(x, used_per_env)
@@ -165,9 +168,8 @@ if __name__ == "__main__":
     axes[0].set_ylabel("% of used gradients")
     axes[0].set_xlabel("batch size (number of environments)")
 
-
     axes[1].set_title(f"''Data efficiency'': Average number of used steps per update per env")
-    
+
     axes[1].set_xlabel(f"# of environments")
     axes[1].set_ylabel(f"# of used steps per env")
 

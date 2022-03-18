@@ -1,33 +1,13 @@
-import sys
-from functools import singledispatch
-from pathlib import Path
-from typing import Any, Callable, Dict, List, Tuple, Type
+from typing import Dict, List, Tuple, Type
 
 import pytest
-from sequoia.common import ClassificationMetrics, Loss
-from sequoia.conftest import get_dataset_params, id_fn, parametrize, slow, xfail_param
-from sequoia.methods.aux_tasks import (
-    AE,
-    EWC,
-    SIMCLR,
-    VAE,
-    AEReconstructionTask,
-    EWCTask,
-    SimCLRTask,
-    VAEReconstructionTask,
-)
-from sequoia.methods.base_method import BaseMethod
-from sequoia.settings.base import Setting, Results
-from sequoia.settings.sl import (
-    TaskIncrementalSLSetting,
-    TraditionalSLSetting,
-)
-from sequoia.settings.sl.incremental import (
-    IncrementalSLResults,
-    ClassIncrementalSetting,
-)
 
-from .self_supervised_model import SelfSupervisedModel
+from sequoia.conftest import id_fn, parametrize, slow
+from sequoia.methods.aux_tasks import AE, EWC, VAE
+from sequoia.methods.base_method import BaseMethod
+from sequoia.settings.base import Results, Setting
+from sequoia.settings.sl import TaskIncrementalSLSetting, TraditionalSLSetting
+from sequoia.settings.sl.incremental import ClassIncrementalSetting
 
 Method = BaseMethod
 # Use 'Method' as an alias for the actual Method subclass under test. (since at
@@ -51,11 +31,16 @@ def test_get_applicable_settings():
 
 @pytest.fixture(
     scope="module",
-    params=[{}, {SIMCLR: 1}, {VAE: 1}, {AE: 1}, {EWC: 1},],  # no aux task.
+    params=[
+        {},
+        {VAE: 1},
+        {AE: 1},
+        {EWC: 1},
+    ],  # no aux task.
     ids=id_fn,
 )
 def method_and_coefficients(request, tmp_path_factory):
-    """ Fixture that creates a method to be reused for the tests below as well
+    """Fixture that creates a method to be reused for the tests below as well
     as return the coefficients for each auxiliary task.
     """
     # Reuse the Method accross all tests below
@@ -90,7 +75,7 @@ def test_fast_dev_run(
     setting_type: Type[Setting],
     test_dataset: str,
 ):
-    """ Performs a quick run with only one batch of train / val / test data and
+    """Performs a quick run with only one batch of train / val / test data and
     check that the 'Results' objects are ok.
     """
     method, aux_task_coefficients = method_and_coefficients
@@ -106,7 +91,7 @@ def validate_results(results: Results, aux_task_coefficients: Dict[str, float]):
     """Makes sure that the results make sense for the method being tested.
 
     Checks that the Loss object has losses for each 'enabled' auxiliary task.
-    
+
     Args:
         results (Results): A given Results object.
     """
@@ -120,32 +105,3 @@ def validate_results(results: Results, aux_task_coefficients: Dict[str, float]):
             aux_task_loss = loss.losses[aux_task_name]
             assert aux_task_loss.loss >= 0.0
             assert aux_task_loss._coefficient == coef
-
-
-@pytest.mark.skip(
-    "Actually, SimCLR doesn't really work on MNIST (especially with large "
-    "batch sizes) because the samples might be too similar, so this is fine."
-)
-@slow
-def test_simclr_iid_accuracy_one_epoch():
-    # TODO: SimCLR supervised in IID setting has low accuracy (one epoch)
-    # and the number of samples in the metrics is 3200, which doesn't make
-    # much sense I think:
-    """
-    python main.py --setting iid --dataset kmnist --method self_supervised
-    --debug --max_epochs 1 --simclr.coef 1 --limit_train_batches 50
-    --limit_test_batches 10 --batch-size 100 --max_knn_samples 0
-    """
-    setting: TraditionalSLSetting = TraditionalSLSetting()
-    aux_task_coefficients: Dict[str, float] = {SIMCLR: 1}
-    method = SelfSupervision.from_args(
-        """
-        --dataset mnist --debug --max_epochs 1 --simclr.coef 1
-    """
-    )
-    results: IIDResults = method.apply_to(setting)
-    assert isinstance(results, IIDResults)
-    validate_results(results, aux_task_coefficients)
-
-    # The resulting accuracy should be better than 95%, even with just one epoch!
-    assert 0.95 <= results <= 1.0, results.objective

@@ -1,14 +1,23 @@
 import pytest
 
 from sequoia.client.setting_proxy import SettingProxy
-from sequoia.settings.sl import ClassIncrementalSetting
 from sequoia.settings.rl import IncrementalRLSetting, TraditionalRLSetting
+from sequoia.settings.sl import ClassIncrementalSetting, TaskIncrementalSLSetting
 
 
 @pytest.fixture()
 def mnist_setting():
     return SettingProxy(
         ClassIncrementalSetting,
+        dataset="mnist",
+        monitor_training_performance=True,
+    )
+
+
+@pytest.fixture()
+def task_incremental_mnist_setting():
+    return SettingProxy(
+        TaskIncrementalSLSetting,
         dataset="mnist",
         monitor_training_performance=True,
     )

@@ -1,5 +1,7 @@
 from dataclasses import dataclass
-from sequoia.utils import constant, flag
+
+from sequoia.utils.utils import constant, flag
+
 from .base import AssumptionBase
 
 
@@ -13,7 +15,7 @@ class HiddenContextAssumption(AssumptionBase):
     # training.
     known_task_boundaries_at_train_time: bool = flag(False)
     # Wether we get informed when reaching the boundary between two tasks during
-    # testing. 
+    # testing.
     known_task_boundaries_at_test_time: bool = flag(False)
 
 
@@ -32,5 +34,5 @@ class FullyObservableContextAssumption(PartiallyObservableContextAssumption):
     # Wether the task labels are observable during testing.
     task_labels_at_test_time: bool = constant(True)
     # Wether we get informed when reaching the boundary between two tasks during
-    # testing. 
+    # testing.
     known_task_boundaries_at_test_time: bool = constant(True)

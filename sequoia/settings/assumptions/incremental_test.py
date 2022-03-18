@@ -4,14 +4,15 @@ import gym
 import numpy as np
 from gym import Space
 from gym.vector.utils.spaces import batch_space
+
 from sequoia.methods import Method
-from sequoia.settings import Actions, Environment, Observations, Setting
+from sequoia.settings import Actions, Environment, Observations
 
 from .incremental import IncrementalAssumption, TestEnvironment
 
 
 class DummyMethod(Method, target_setting=IncrementalAssumption):
-    """ Dummy method used to check that the Setting calls `on_task_switch` with the
+    """Dummy method used to check that the Setting calls `on_task_switch` with the
     right arguments.
     """
 
@@ -86,10 +87,7 @@ class OtherDummyMethod(Method, target_setting=IncrementalAssumption):
                             if train_env.action_space.shape
                             else None
                         )
-                        if (
-                            obs_batch_size is not None
-                            and obs_batch_size != action_space_batch_size
-                        ):
+                        if obs_batch_size is not None and obs_batch_size != action_space_batch_size:
                             action_space = batch_space(
                                 train_env.single_action_space, obs_batch_size
                             )

@@ -4,28 +4,18 @@ NOTE (@lebrice): This 'Environment' abstraction isn't super useful at the moment
 because there's only the `ActiveDataLoader` that fits this interface (since we
 can't send anything to the usual DataLoader).
 """
-from abc import ABC, ABCMeta, abstractmethod
-from dataclasses import dataclass
-from typing import Generic, Iterable, Optional, Type, TypeVar
+from abc import ABC
+from typing import Generic
 
 import gym
-import numpy as np
-from gym import spaces
-from sequoia.common.batch import Batch
+
 from sequoia.utils.logging_utils import get_logger
-from torch import Tensor
-from torch.utils.data import DataLoader
 
-from .objects import (
-    Actions,
-    ActionType,
-    Observations,
-    ObservationType,
-    Rewards,
-    RewardType,
-)
+from .objects import ActionType, ObservationType, RewardType
 
-logger = get_logger(__file__)
+logger = get_logger(__name__)
+
+from abc import abstractmethod
 
 
 class Environment(
@@ -33,30 +23,16 @@ class Environment(
     Generic[ObservationType, ActionType, RewardType],
     ABC,
 ):
-    """ABC for a learning 'environment' in Reinforcement or Supervised Learning.
+    """ABC for a learning 'environment' in *both* Supervised and Reinforcement Learning.
 
     Different settings can implement this interface however they want.
     """
 
     reward_space: gym.Space
-    # TODO: This is currently changing. We don't really need to force the envs
-    # on the RL branch to also be iterables/dataloaders, only those on the
-    # supervised learning branch. Rather than force RL/active setups to adopt
-    # something like __iter__ and send, we can adapt 'active' datasets to be gym
-    # Envs instead.
-    # The reason why I was considering doing it that way would have been so we
-    # could use pytorch lightning Trainers and the other "facilities" meant for
-    # supervised learning in RL.
 
     # @abstractmethod
-    # def __iter__(self) -> Iterable[ObservationType]:
-    #     """ Returns a generator yielding observations and accepting actions. """
-
-    # @abstractmethod
-    # def send(self, action: ActionType) -> RewardType:
-    #     """ Send an action to the environment, and returns the corresponding reward. """
-
-    # TODO: (@lebrice): Not sure if we really want/need an abstract __next__.
-    # @abstractmethod
-    # def __next__(self) -> ObservationType:
-    #     """ Generate the next observation. """
+    def is_closed(self) -> bool:
+        """Returns wether this environment is closed."""
+        if hasattr(self, "env") and hasattr(self.env, "is_closed"):
+            return self.env.is_closed()
+        raise NotImplementedError(self)

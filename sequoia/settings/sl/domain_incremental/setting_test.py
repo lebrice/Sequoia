@@ -1,17 +1,17 @@
 import itertools
+from typing import Any, ClassVar, Dict, Type
 
-from .setting import DomainIncrementalSLSetting
-from sequoia.common.spaces import Image, TypedDictSpace
-from gym.spaces import Discrete
 import numpy as np
+from gym import spaces
+from gym.spaces import Discrete
 
-from typing import ClassVar, Type, Dict, Any
-from sequoia.settings.base import Setting
+from sequoia.common.metrics import ClassificationMetrics
+from sequoia.common.spaces import Image, TypedDictSpace
 from sequoia.settings.sl.incremental.setting_test import (
     TestIncrementalSLSetting as IncrementalSLSettingTests,
 )
-from gym import spaces
-from sequoia.common.metrics import ClassificationMetrics
+
+from .setting import DomainIncrementalSLSetting
 
 
 class TestDiscreteTaskAgnosticSLSetting(IncrementalSLSettingTests):
@@ -19,7 +19,8 @@ class TestDiscreteTaskAgnosticSLSetting(IncrementalSLSettingTests):
 
     # The kwargs to be passed to the Setting when we want to create a 'short' setting.
     fast_dev_run_kwargs: ClassVar[Dict[str, Any]] = dict(
-        dataset="mnist", batch_size=64,
+        dataset="mnist",
+        batch_size=64,
     )
 
     # Override how we measure 'chance' accuracy for DomainIncrementalSetting.
@@ -56,7 +57,10 @@ class TestDiscreteTaskAgnosticSLSetting(IncrementalSLSettingTests):
 
 
 def test_domain_incremental_mnist_setup():
-    setting = DomainIncrementalSLSetting(dataset="mnist", increment=2,)
+    setting = DomainIncrementalSLSetting(
+        dataset="mnist",
+        increment=2,
+    )
     setting.prepare_data(data_dir="data")
     setting.setup()
     assert setting.observation_space == TypedDictSpace(
@@ -73,9 +77,7 @@ def test_domain_incremental_mnist_setup():
         batch_size = 5
         train_loader = setting.train_dataloader(batch_size=batch_size)
 
-        for j, (observations, rewards) in enumerate(
-            itertools.islice(train_loader, 100)
-        ):
+        for j, (observations, rewards) in enumerate(itertools.islice(train_loader, 100)):
             x = observations.x
             t = observations.task_labels
             y = rewards.y
@@ -106,4 +108,3 @@ def test_domain_incremental_mnist_setup():
             assert rewards is not None
             y = rewards.y
             assert ((0 <= y) & (y < setting.n_classes_per_task)).all()
-

@@ -4,17 +4,7 @@ action to take whenever the `action` argument to the `step` method is None.
 This policy should then accept the 'state' or something like that.
 """
 from dataclasses import dataclass
-from typing import (
-    Any,
-    Callable,
-    Iterator,
-    Optional,
-    Tuple,
-    TypeVar,
-    Dict,
-    Generic,
-    Iterable,
-)
+from typing import Any, Callable, Dict, Generic, Iterable, Iterator, Optional, Tuple, TypeVar
 
 import gym
 from torch.utils.data import IterableDataset
@@ -24,7 +14,7 @@ from sequoia.utils.logging_utils import get_logger
 
 from .utils import StepResult
 
-logger = get_logger(__file__)
+logger = get_logger(__name__)
 # from sequoia.settings.base.environment import Environment
 # from sequoia.settings.base.objects import (ActionType, ObservationType, RewardType)
 ObservationType = TypeVar("ObservationType")
@@ -48,15 +38,16 @@ DatasetItem = TypeVar("DatasetItem")
 # IterableDataset below, given the current 'Context',
 DatasetItemCreator = Callable[
     [
-        ObservationType, # 'current' state
-        ActionType, # actions applied on the 'current' state
-        ObservationType, # resulting 'next' state
-        RewardType, # rewards associated with the transition above
-        bool, # Wether the 'next' state is final (i.e. the last in an episode)
-        Dict, # the 'info' dict associated with the 'next' state (from Env.step)
+        ObservationType,  # 'current' state
+        ActionType,  # actions applied on the 'current' state
+        ObservationType,  # resulting 'next' state
+        RewardType,  # rewards associated with the transition above
+        bool,  # Wether the 'next' state is final (i.e. the last in an episode)
+        Dict,  # the 'info' dict associated with the 'next' state (from Env.step)
     ],
-    DatasetItem
+    DatasetItem,
 ]
+
 
 @dataclass(frozen=True)
 class StateTransition(Batch, Generic[ObservationType, ActionType]):
@@ -70,7 +61,7 @@ class StateTransition(Batch, Generic[ObservationType, ActionType]):
     @property
     def state(self) -> ObservationType:
         return self.observation
-    
+
     @property
     def next_state(self) -> ObservationType:
         return self.next_observation
@@ -79,12 +70,15 @@ class StateTransition(Batch, Generic[ObservationType, ActionType]):
 # By default, the PolicyEnv will yield this kind of item:
 DefaultDatasetItem = Tuple[StateTransition, RewardType]
 
-def default_dataset_item_creator(observations: ObservationType,
-                                 actions: ActionType,
-                                 next_observations: ObservationType,
-                                 rewards: RewardType,
-                                 done: bool,
-                                 info: Dict = None) -> DefaultDatasetItem:
+
+def default_dataset_item_creator(
+    observations: ObservationType,
+    actions: ActionType,
+    next_observations: ObservationType,
+    rewards: RewardType,
+    done: bool,
+    info: Dict = None,
+) -> DefaultDatasetItem:
     """Create an item of the IterableDataset below, given the current 'context'.
 
     Parameters
@@ -107,7 +101,7 @@ def default_dataset_item_creator(observations: ObservationType,
     Tuple[StateTransition, Rewards]
         A Tuple of the form
         `Tuple[Tuple[Observations, Actions, Observations], Rewards]`.
-    
+
     NOTE: `done` and `info` aren't used here, but you could use them in your own
     version of this function that you'd then pass to the PolicyEnv constructor
     or to the `set_policy` method.
@@ -117,7 +111,7 @@ def default_dataset_item_creator(observations: ObservationType,
 
 
 class PolicyEnv(gym.Wrapper, IterableDataset, Iterable[DatasetItem]):
-    """ Wrapper for an environment that adds the following capabilities:
+    """Wrapper for an environment that adds the following capabilities:
     1. Makes it possible to call step(None), in which case the policy will be
        used to determine the action to take given the current observation and
        the action space.
@@ -130,10 +124,13 @@ class PolicyEnv(gym.Wrapper, IterableDataset, Iterable[DatasetItem]):
        `StateTransition` is a tuple-like object of the form
        `Tuple<observations, actions, next_observations>`.
     """
-    def __init__(self,
-                 env: Environment[ObservationType, ActionType, RewardType],
-                 policy: Optional[Callable[[Tuple], Any]] = None,
-                 make_dataset_item: DatasetItemCreator = default_dataset_item_creator):
+
+    def __init__(
+        self,
+        env: Environment[ObservationType, ActionType, RewardType],
+        policy: Optional[Callable[[Tuple], Any]] = None,
+        make_dataset_item: DatasetItemCreator = default_dataset_item_creator,
+    ):
         super().__init__(env)
         self.make_dataset_item = make_dataset_item
         self.policy = policy
@@ -147,7 +144,7 @@ class PolicyEnv(gym.Wrapper, IterableDataset, Iterable[DatasetItem]):
         self._action: Optional[Actions] = None
 
     def set_policy(self, policy: Callable[[ObservationType, gym.Space], ActionType]) -> None:
-        """ Sets a new policy to be used to generate missing actions. """
+        """Sets a new policy to be used to generate missing actions."""
         self.policy = policy
 
     def step(self, action: Optional[Any] = None) -> StepResult:
@@ -159,8 +156,9 @@ class PolicyEnv(gym.Wrapper, IterableDataset, Iterable[DatasetItem]):
             # Get the 'filler' action using the current policy.
             action = self.policy(self._observation, self.action_space)
             if action not in self.action_space:
-                raise RuntimeError(f"The policy returned an action which isn't "
-                                   f"in the action space: {action}")
+                raise RuntimeError(
+                    f"The policy returned an action which isn't " f"in the action space: {action}"
+                )
         step_result = StepResult(*self.env.step(action))
         self._observation = step_result[0]
         self._n_steps += 1
@@ -181,12 +179,12 @@ class PolicyEnv(gym.Wrapper, IterableDataset, Iterable[DatasetItem]):
 
     def __iter__(self) -> Iterator[DatasetItem]:
         """Iterator for an episode/trajectory in the env.
-        
+
         This uses the policy to iteratively perform an episode in the env, and
         yields items at each step, which are the result of the
         `make_dataset_item` function. By default, these items are of the form
         `Tuple<Tuple<observations, actions, next_observation>, rewards>`.
-        
+
         Returns
         -------
         Iterable[DatasetItem]
@@ -204,8 +202,7 @@ class PolicyEnv(gym.Wrapper, IterableDataset, Iterable[DatasetItem]):
             If no policy is set.
         """
         if not self.policy:
-            raise RuntimeError("Need to have a policy set in order to iterate "
-                               "on this env.")
+            raise RuntimeError("Need to have a policy set in order to iterate " "on this env.")
 
         if not self._reset:
             # Reset the env, if needed.
@@ -237,7 +234,7 @@ class PolicyEnv(gym.Wrapper, IterableDataset, Iterable[DatasetItem]):
             )
             # Update the 'previous' observation.
             previous_observations = observations
-            
+
             if not isinstance(done, bool):
                 if any(done):
                     raise RuntimeError(
@@ -250,5 +247,3 @@ class PolicyEnv(gym.Wrapper, IterableDataset, Iterable[DatasetItem]):
 
         logger.debug(f"Episode has ended.")
         self._reset = False
-        
-    

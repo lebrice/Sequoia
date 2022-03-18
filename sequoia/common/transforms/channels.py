@@ -2,24 +2,25 @@
 from collections.abc import Mapping
 from dataclasses import dataclass
 from functools import singledispatch
-from typing import Any, Callable, Iterable, Tuple, Union
+from typing import Any, Iterable, Tuple, Union
 
-import gym
 import numpy as np
 import torch
 from gym import spaces
+from torch import Tensor
+
 from sequoia.common.spaces import NamedTupleSpace, TypedDictSpace
 from sequoia.utils.logging_utils import get_logger
-from torch import Tensor
 
 from .transform import Img, Transform
 from .utils import is_image
 
-logger = get_logger(__file__)
+logger = get_logger(__name__)
 
 
+@singledispatch
 def has_channels_last(img_or_shape: Union[Img, Tuple[int, ...], spaces.Box]) -> bool:
-    """ Returns wether the given image, or image batch, shape, or Space is in
+    """Returns wether the given image, or image batch, shape, or Space is in
     the channels last format.
     """
     shape = getattr(img_or_shape, "shape", img_or_shape)
@@ -27,7 +28,7 @@ def has_channels_last(img_or_shape: Union[Img, Tuple[int, ...], spaces.Box]) -> 
 
 
 def has_channels_first(img_or_shape: Union[Img, Tuple[int, ...], spaces.Box]) -> bool:
-    """ Returns wether the given image or image batch, shape, or Space is in
+    """Returns wether the given image or image batch, shape, or Space is in
     the channels first format.
     """
     shape = getattr(img_or_shape, "shape", img_or_shape)
@@ -69,19 +70,17 @@ class NamedDimensions(Transform[Tensor, Tensor]):
 
 @singledispatch
 def three_channels(x: Any) -> Any:
-    """ Transform that makes the input images have three channels if they don't.
-    
-    * New: Also adds names to each dimension, when possible. (edit: off for now) 
+    """Transform that makes the input images have three channels if they don't.
+
+    * New: Also adds names to each dimension, when possible. (edit: off for now)
 
     For instance, if the input shape is:
     [28, 28] -> [3, 28, 28] (copy the image three times)
     [1, 28, 28] -> [3, 28, 28] (same idea)
     [10, 1, 28, 28] -> [10, 3, 28, 28] (keep batch intact, do the same again.)
-    
+
     """
-    raise NotImplementedError(
-        f"This doesn't currently support input {x} of type {type(x)}"
-    )
+    raise NotImplementedError(f"This doesn't currently support input {x} of type {type(x)}")
 
 
 @three_channels.register(Tensor)
@@ -138,9 +137,7 @@ def _(x: np.ndarray) -> np.ndarray:
 
 @three_channels.register(spaces.Box)
 def _(x: spaces.Box) -> spaces.Box:
-    return type(x)(
-        low=three_channels(x.low), high=three_channels(x.high), dtype=x.dtype
-    )
+    return type(x)(low=three_channels(x.low), high=three_channels(x.high), dtype=x.dtype)
 
 
 @three_channels.register(torch.Size)
@@ -165,10 +162,7 @@ def _(x: Tuple[int, ...]) -> Tuple[int, ...]:
 @three_channels.register(NamedTupleSpace)
 def _three_channels(x: Any) -> Any:
     return type(x)(
-        **{
-            key: three_channels(value) if is_image(value) else value
-            for key, value in x.items()
-        },
+        **{key: three_channels(value) if is_image(value) else value for key, value in x.items()},
         dtype=x.dtype,
     )
 
@@ -177,35 +171,29 @@ def _three_channels(x: Any) -> Any:
 @three_channels.register(Mapping)
 def _three_channels(x: Any) -> Any:
     return type(x)(
-        **{
-            key: three_channels(value) if is_image(value) else value
-            for key, value in x.items()
-        }
+        **{key: three_channels(value) if is_image(value) else value for key, value in x.items()}
     )
 
 
 @three_channels.register(TypedDictSpace)
 def _three_channels(x: TypedDictSpace) -> TypedDictSpace:
     return type(x)(
-        {
-            key: three_channels(value) if is_image(value) else value
-            for key, value in x.items()
-        },
+        {key: three_channels(value) if is_image(value) else value for key, value in x.items()},
         dtype=x.dtype,
     )
 
 
 @dataclass
 class ThreeChannels(Transform[Tensor, Tensor]):
-    """ Transform that makes the input images have three tensors.
-    
+    """Transform that makes the input images have three tensors.
+
     * New: Also adds names to each dimension, when possible.
-    
+
     For instance, if the input shape is:
     [28, 28] -> [3, 28, 28] (copy the image three times)
     [1, 28, 28] -> [3, 28, 28] (same idea)
     [10, 1, 28, 28] -> [10, 3, 28, 28] (keep batch intact, do the same again.)
-    
+
     """
 
     def __call__(self, x: Tensor) -> Tensor:
@@ -214,7 +202,7 @@ class ThreeChannels(Transform[Tensor, Tensor]):
 
 @singledispatch
 def channels_first(x: Any) -> Any:
-    """ Re-orders the dimensions of the input from ((n), H, W, C) to ((n), C, H, W).
+    """Re-orders the dimensions of the input from ((n), H, W, C) to ((n), C, H, W).
     If the tensor doesn't have named dimensions, this will ALWAYS re-order the
     dimensions, regarless of if the image or space already has channels first.
 
@@ -268,13 +256,15 @@ def _(x: Tuple[int, ...]) -> Tuple[int, ...]:
 @channels_first.register(spaces.Box)
 def _(x: spaces.Box) -> spaces.Box:
     return type(x)(
-        low=channels_first(x.low), high=channels_first(x.high), dtype=x.dtype,
+        low=channels_first(x.low),
+        high=channels_first(x.high),
+        dtype=x.dtype,
     )
 
 
 @dataclass
 class ChannelsFirst(Transform[Union[np.ndarray, Tensor], Tensor]):
-    """ Re-orders the dimensions of the tensor from ((n), H, W, C) to ((n), C, H, W).
+    """Re-orders the dimensions of the tensor from ((n), H, W, C) to ((n), C, H, W).
     If the tensor doesn't have named dimensions, this will ALWAYS re-order the
     dimensions, regarless of the length of the last dimension.
 
@@ -316,7 +306,7 @@ class ChannelsFirst(Transform[Union[np.ndarray, Tensor], Tensor]):
 
 @dataclass
 class ChannelsFirstIfNeeded(ChannelsFirst):
-    """ Only puts the channels first if the input has channels last. """
+    """Only puts the channels first if the input has channels last."""
 
     @classmethod
     def apply(cls, x: Tensor) -> Tensor:
@@ -369,7 +359,11 @@ def _(x: np.ndarray) -> np.ndarray:
 
 @channels_last.register(spaces.Box)
 def _(x: spaces.Box) -> spaces.Box:
-    return type(x)(low=channels_last(x.low), high=channels_last(x.high), dtype=x.dtype,)
+    return type(x)(
+        low=channels_last(x.low),
+        high=channels_last(x.high),
+        dtype=x.dtype,
+    )
 
 
 @dataclass
@@ -384,7 +378,7 @@ class ChannelsLast(Transform[Tensor, Tensor]):
 
 @dataclass
 class ChannelsLastIfNeeded(ChannelsLast):
-    """ Only puts the channels last if the input has channels first. """
+    """Only puts the channels last if the input has channels first."""
 
     @classmethod
     def apply(cls, x: Tensor) -> Tensor:

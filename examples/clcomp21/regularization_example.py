@@ -12,22 +12,22 @@ from torch import Tensor
 from sequoia.common.hparams import uniform
 from sequoia.settings import DomainIncrementalSLSetting
 from sequoia.settings.sl.incremental.objects import Observations, Rewards
-from sequoia.utils import dict_intersection
+from sequoia.utils.utils import dict_intersection
 from sequoia.utils.logging_utils import get_logger
-from .multihead_classifier import (ExampleTaskInferenceMethod,
-                                   MultiHeadClassifier)
 
-logger = get_logger(__file__)
+from .multihead_classifier import ExampleTaskInferenceMethod, MultiHeadClassifier
+
+logger = get_logger(__name__)
 
 
 class RegularizedClassifier(MultiHeadClassifier):
-    """ Adds an ewc-like penalty to the base classifier, to prevent its weights from
+    """Adds an ewc-like penalty to the base classifier, to prevent its weights from
     shifting too much during training.
     """
 
     @dataclass
     class HParams(MultiHeadClassifier.HParams):
-        """ Hyperparameters of this improved method.
+        """Hyperparameters of this improved method.
 
         Adds the hyper-parameters related the 'ewc-like' regularization to those of the
         ExampleMethod.
@@ -47,10 +47,13 @@ class RegularizedClassifier(MultiHeadClassifier):
         observation_space: gym.Space,
         action_space: gym.Space,
         reward_space: gym.Space,
-        hparams: "RegularizedClassifier.HParams" = None
+        hparams: "RegularizedClassifier.HParams" = None,
     ):
         super().__init__(
-            observation_space, action_space, reward_space, hparams=hparams,
+            observation_space,
+            action_space,
+            reward_space,
+            hparams=hparams,
         )
         self.reg_coefficient = self.hparams.reg_coefficient
         self.reg_p_norm = self.hparams.reg_p_norm
@@ -67,8 +70,7 @@ class RegularizedClassifier(MultiHeadClassifier):
         return base_loss + ewc_loss, metrics
 
     def on_task_switch(self, task_id: Optional[int]) -> None:
-        """ Executed when the task switches (to either a known or unknown task).
-        """
+        """Executed when the task switches (to either a known or unknown task)."""
         super().on_task_switch(task_id)
         if self._previous_task is None and self._n_switches == 0:
             logger.debug("Starting the first task, no EWC update.")
@@ -106,8 +108,8 @@ class RegularizedClassifier(MultiHeadClassifier):
 
 
 class ExampleRegMethod(ExampleTaskInferenceMethod):
-    """ Improved version of the ExampleMethod that uses a `RegularizedClassifier`.
-    """
+    """Improved version of the ExampleMethod that uses a `RegularizedClassifier`."""
+
     HParams: ClassVar[Type[HParams]] = RegularizedClassifier.HParams
 
     def __init__(self, hparams: HParams = None):
@@ -128,13 +130,14 @@ class ExampleRegMethod(ExampleTaskInferenceMethod):
 
 
 if __name__ == "__main__":
-    from sequoia.common import Config
-    from sequoia.settings import ClassIncrementalSetting
     # Create the Method:
     # - Manually:
     # method = ExampleRegMethod()
     # - From the command-line:
     from simple_parsing import ArgumentParser
+
+    from sequoia.common import Config
+    from sequoia.settings import ClassIncrementalSetting
 
     parser = ArgumentParser()
     ExampleRegMethod.add_argparse_args(parser)

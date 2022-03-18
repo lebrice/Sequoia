@@ -16,12 +16,13 @@ from sequoia.methods.aux_tasks.auxiliary_task import AuxiliaryTask
 from sequoia.settings import Rewards, Setting, SettingType
 from sequoia.utils.logging_utils import get_logger
 from sequoia.utils.utils import flatten_dict
+
 from .model import Model
 
 # from sequoia.utils.module_dict import ModuleDict
 
 
-logger = get_logger(__file__)
+logger = get_logger(__name__)
 HParamsType = TypeVar("HParamsType", bound="SelfSupervisedModel.HParams")
 
 
@@ -35,9 +36,8 @@ class SelfSupervisedModel(Model[SettingType]):
 
     @dataclass
     class HParams(Model.HParams):
-        """Hyperparameters of a Self-Supervised method. """
+        """Hyperparameters of a Self-Supervised method."""
 
-        # simclr: Optional[SimCLRTask.Options] = None
         # vae: Optional[VAEReconstructionTask.Options] = None
         # ae: Optional[AEReconstructionTask.Options] = None
 
@@ -54,9 +54,7 @@ class SelfSupervisedModel(Model[SettingType]):
         loss_name: str = "",
     ) -> Loss:
         # Get the output task loss (the loss of the base model)
-        loss: Loss = super().get_loss(
-            forward_pass, rewards=rewards, loss_name=loss_name
-        )
+        loss: Loss = super().get_loss(forward_pass, rewards=rewards, loss_name=loss_name)
 
         # Add the self-supervised losses from all the enabled auxiliary tasks.
         for task_name, aux_task in self.tasks.items():
@@ -77,20 +75,16 @@ class SelfSupervisedModel(Model[SettingType]):
     def add_auxiliary_task(
         self, aux_task: AuxiliaryTask, key: str = None, coefficient: float = None
     ) -> None:
-        """ Adds an auxiliary task to the self-supervised model. """
+        """Adds an auxiliary task to the self-supervised model."""
         key = aux_task.name if key is None else key
         if key in self.tasks:
-            raise RuntimeError(
-                f"There is already an auxiliary task with name {key} in the model!"
-            )
+            raise RuntimeError(f"There is already an auxiliary task with name {key} in the model!")
         self.tasks[key] = aux_task.to(self.device)
         if coefficient is not None:
             aux_task.coefficient = coefficient
         elif not aux_task.coefficient:
             warnings.warn(
-                UserWarning(
-                    f"Adding auxiliary task with name {key}, but with coefficient of 0.!"
-                )
+                UserWarning(f"Adding auxiliary task with name {key}, but with coefficient of 0.!")
             )
 
         if aux_task.coefficient:
@@ -113,8 +107,6 @@ class SelfSupervisedModel(Model[SettingType]):
         # and then 'enable' them when they are needed? (I'm thinking that maybe
         # being enable/disable auxiliary tasks when needed might be useful
         # later?)
-        # if self.hp.simclr and self.hp.simclr.coefficient:
-        #     tasks[SimCLRTask.name] = SimCLRTask(options=self.hp.simclr)
         # if self.hp.vae and self.hp.vae.coefficient:
         #     tasks[VAEReconstructionTask.name] = VAEReconstructionTask(options=self.hp.vae)
         # if self.hp.ae and self.hp.ae.coefficient:

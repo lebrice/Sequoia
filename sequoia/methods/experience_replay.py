@@ -3,19 +3,19 @@
 TODO: Refactor this to be based on the BaseMethod, possibly using an auxiliary task for
 the Replay.
 """
+from argparse import ArgumentParser, Namespace
 from collections.abc import Iterable
 from dataclasses import dataclass
-from typing import Optional, Tuple, Dict, Type, Any, List
-from argparse import ArgumentParser, Namespace
+from typing import Any, Dict, List, Optional, Tuple, Type
 
 import gym
-from gym import spaces
 import numpy as np
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
 import torchvision.models as models
 import tqdm
+from gym import spaces
 from torch import Tensor
 from torchvision.models import ResNet
 from wandb.wandb_run import Run
@@ -23,18 +23,16 @@ from wandb.wandb_run import Run
 from sequoia.methods import register_method
 from sequoia.settings import ClassIncrementalSetting
 from sequoia.settings.base import Actions, Environment, Method, Observations
-from sequoia.utils import get_logger
 from sequoia.settings.sl.continual.setting import smart_class_prediction
+from sequoia.utils import get_logger
 
-
-logger = get_logger(__file__)
+logger = get_logger(__name__)
 
 
 @register_method
 @dataclass
 class ExperienceReplayMethod(Method, target_setting=ClassIncrementalSetting):
-    """ Simple method that uses a replay buffer to reduce forgetting.
-    """
+    """Simple method that uses a replay buffer to reduce forgetting."""
 
     def __init__(
         self,
@@ -183,12 +181,10 @@ class ExperienceReplayMethod(Method, target_setting=ClassIncrementalSetting):
                 # TODO: Reload the weights from the best epoch.
                 break
 
-    def get_actions(
-        self, observations: Observations, action_space: gym.Space
-    ) -> Actions:
+    def get_actions(self, observations: Observations, action_space: gym.Space) -> Actions:
         observations = observations.to(device=self.device)
         task_labels = observations.task_labels
-        
+
         logits = self.net(observations.x)
 
         if task_labels is not None:
@@ -282,7 +278,7 @@ class ExperienceReplayMethod(Method, target_setting=ClassIncrementalSetting):
         self.buffer_capacity = new_hparams["buffer_capacity"]
 
     def setup_wandb(self, run: Run) -> None:
-        """ Called by the Setting when using Weights & Biases, after `wandb.init`.
+        """Called by the Setting when using Weights & Biases, after `wandb.init`.
 
         This method is here to provide Methods with the opportunity to log some of their
         configuration options or hyper-parameters to wandb.

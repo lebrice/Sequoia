@@ -7,31 +7,28 @@ from typing import *
 
 import gym
 import numpy as np
-import torch
 from gym import spaces
 from gym.vector.utils import batch_space
 from torch import Tensor
 from torch.utils.data import DataLoader, Dataset, IterableDataset
 from torch.utils.data.dataloader import _BaseDataLoaderIter
-import matplotlib.pyplot as plt
-from sequoia.common.gym_wrappers.batch_env.tile_images import tile_images
 
-from sequoia.common.batch import Batch
 from sequoia.common.gym_wrappers.convert_tensors import add_tensor_support
-from sequoia.common.transforms import Compose, Transforms
+from sequoia.common.gym_wrappers.utils import tile_images
 from sequoia.common.spaces import Image
-from sequoia.utils.logging_utils import get_logger
-from ..base.environment import (
+from sequoia.common.transforms import Transforms
+from sequoia.settings.base.environment import Environment
+from sequoia.settings.base.objects import (
     Actions,
     ActionType,
-    Environment,
     Observations,
     ObservationType,
     Rewards,
     RewardType,
 )
+from sequoia.utils.logging_utils import get_logger
 
-logger = get_logger(__file__)
+logger = get_logger(__name__)
 
 
 class PassiveEnvironment(
@@ -44,7 +41,7 @@ class PassiveEnvironment(
     back the observation and the reward at the same time, or as a gym
     Environment, in which case it gives the rewards and the next batch of
     observations once an action is given.
-    
+
     Normal supervised datasets such as Mnist, ImageNet, etc. fit under this
     category. Similarly to Environment, this just adds some methods on top of
     the usual PyTorch DataLoader.
@@ -57,9 +54,7 @@ class PassiveEnvironment(
     def __init__(
         self,
         dataset: Union[IterableDataset, Dataset],
-        split_batch_fn: Callable[
-            [Tuple[Any, ...]], Tuple[ObservationType, ActionType]
-        ] = None,
+        split_batch_fn: Callable[[Tuple[Any, ...]], Tuple[ObservationType, ActionType]] = None,
         observation_space: gym.Space = None,
         action_space: gym.Space = None,
         reward_space: gym.Space = None,
@@ -70,7 +65,7 @@ class PassiveEnvironment(
         **kwargs,
     ):
         """Creates the DataLoader/Environment for the given dataset.
-        
+
         Parameters
         ----------
         dataset : Union[IterableDataset, Dataset]
@@ -106,7 +101,7 @@ class PassiveEnvironment(
             after an action is received through the 'send' method. False by
             default, in which case this behaves exactly as a normal dataloader
             when being iterated on.
-            
+
             When False, the batches yielded by this dataloader will be of the form
             `Tuple[Observations, Rewards]` (as usual in SL).
             However, when set to True, the batches will be `Tuple[Observations, None]`!
@@ -115,16 +110,16 @@ class PassiveEnvironment(
 
         strict : bool, optional
             [description], by default False
-            
+
         # Examples:
         ```python
-        train_env = PassiveEnvironment(MNIST("data"), batch_size=32, num_classes=10)    
-        
+        train_env = PassiveEnvironment(MNIST("data"), batch_size=32, num_classes=10)
+
         # The usual Dataloader-style:
         for x, y in train_env:
             # train as usual
             (...)
-        
+
         # OpenAI Gym style:
         for episode in range(5):
             # NOTE: "episode" in RL is an "epoch" in SL:
@@ -172,11 +167,11 @@ class PassiveEnvironment(
             observation_space = batch_space(observation_space, self.batch_size)
             action_space = batch_space(action_space, self.batch_size)
             reward_space = batch_space(reward_space, self.batch_size)
-        
+
         self.observation_space: gym.Space = add_tensor_support(observation_space)
         self.action_space: gym.Space = add_tensor_support(action_space)
         self.reward_space: gym.Space = add_tensor_support(reward_space)
-        
+
         self.pretend_to_be_active = pretend_to_be_active
         self._strict = strict
         self._reward_queue = deque(maxlen=10)
@@ -198,8 +193,8 @@ class PassiveEnvironment(
         return self._is_closed
 
     def reset(self) -> ObservationType:
-        """ Resets the env by deleting and re-creating the dataloader iterator.
-        
+        """Resets the env by deleting and re-creating the dataloader iterator.
+
         TODO: This might be pretty expensive, since it's maybe re-creating all the
         worker processes. There might be an easier way of going about this.
 
@@ -240,7 +235,8 @@ class PassiveEnvironment(
             image_batch = tile_images(image_batch)
 
         image_batch = Transforms.channels_last_if_needed(image_batch)
-        assert image_batch.shape[-1] in {3, 4}
+        image_batch = Transforms.three_channels(image_batch)
+        assert image_batch.shape[-1] in {3, 4}, image_batch.shape
         if image_batch.dtype == np.float32:
             assert (0 <= image_batch).all() and (image_batch <= 1).all()
             image_batch = (256 * image_batch).astype(np.uint8)
@@ -258,16 +254,11 @@ class PassiveEnvironment(
                 display = None
                 # TODO: There seems to be a bit of a bug, tests sometime fail because
                 # "Can't connect to display: None" etc.
-                try:
-                    from gym.envs.classic_control.rendering import SimpleImageViewer
-                except Exception:
-                    from pyvirtualdisplay import Display
-
-                    display = Display(visible=0, size=(1366, 768))
-                    display.start()
-                    from gym.envs.classic_control.rendering import SimpleImageViewer
-                finally:
-                    self.viewer = SimpleImageViewer(display=display)
+                from gym.utils import pyglet_rendering
+                # from pyvirtualdisplay import Display
+                # display = Display(visible=0, size=(1366, 768))
+                # display.start()
+                self.viewer = pyglet_rendering.SimpleImageViewer()
 
             self.viewer.imshow(image_batch)
             return self.viewer.isopen
@@ -279,7 +270,7 @@ class PassiveEnvironment(
 
         Uses the `split_batch_fn`, if needed. Does NOT apply the self.observation
         and self.reward methods.
-        
+
         Returns
         -------
         Tuple[ObservationType, RewardType]
@@ -300,9 +291,7 @@ class PassiveEnvironment(
         # obs, reward = batch
         # return self.observation(obs), self.reward(reward)
 
-    def step(
-        self, action: ActionType
-    ) -> Tuple[ObservationType, RewardType, bool, Dict]:
+    def step(self, action: ActionType) -> Tuple[ObservationType, RewardType, bool, Dict]:
         if self._is_closed:
             raise gym.error.ClosedEnvironmentError("Can't step on a closed env.")
         if self._done is None:
@@ -334,7 +323,7 @@ class PassiveEnvironment(
         return obs, reward, self._done, info
 
     def action(self, action: ActionType) -> ActionType:
-        """ Transform the action, if needed.
+        """Transform the action, if needed.
 
         Parameters
         ----------
@@ -349,7 +338,7 @@ class PassiveEnvironment(
         return action
 
     def observation(self, observation: ObservationType) -> ObservationType:
-        """ Transform the observation, if needed.
+        """Transform the observation, if needed.
 
         Parameters
         ----------
@@ -364,7 +353,7 @@ class PassiveEnvironment(
         return observation
 
     def reward(self, reward: RewardType) -> RewardType:
-        """ Transform the reward, if needed.
+        """Transform the reward, if needed.
 
         Parameters
         ----------
@@ -383,7 +372,7 @@ class PassiveEnvironment(
 
         IDEA: We could subclass this to change whats in the 'info' dict, maybe
         add some task information?
-        
+
         Returns
         -------
         Dict
@@ -430,17 +419,13 @@ class PassiveEnvironment(
                 if self._action is None:
                     if self._strict:
                         # IDEA: yield the same observation, as long as we dont receive an action.
-                        raise RuntimeError(
-                            "Need to send an action between each observations."
-                        )
-                    logger.warning(
-                        "Didn't receive an action, rewards will be delayed!."
-                    )
+                        raise RuntimeError("Need to send an action between each observations.")
+                    logger.warning("Didn't receive an action, rewards will be delayed!.")
             else:
                 yield self._observations, self._rewards
 
     def send(self, action: Actions) -> Rewards:
-        """ Return the last latch of rewards from the dataset (which were
+        """Return the last latch of rewards from the dataset (which were
         withheld if in 'active' mode)
         """
         if self.pretend_to_be_active:

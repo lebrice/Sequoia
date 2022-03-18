@@ -1,13 +1,12 @@
-from simple_parsing import ArgumentParser
-from typing import Dict, Type, List
-from sequoia.common.config import Config
-from sequoia.settings import Setting, Results, Method
-from pathlib import Path
 from collections import defaultdict
+from pathlib import Path
+from typing import Dict, List, Type
+
 import pandas as pd
+from simple_parsing import ArgumentParser
 
-
-from sequoia.settings import SLSetting, RLSetting
+from sequoia.common.config import Config
+from sequoia.settings import Method, Results, RLSetting, Setting, SLSetting
 
 
 def demo_all_settings(
@@ -15,8 +14,8 @@ def demo_all_settings(
     datasets: List[str] = ["mnist", "fashionmnist"],
     **setting_kwargs,
 ):
-    """ Evaluates the given Method on all its applicable settings.
-    
+    """Evaluates the given Method on all its applicable settings.
+
     NOTE: Only evaluates on the mnist/fashion-mnist datasets for this demo.
     """
     # Iterate over all the applicable evaluation settings, using the default
@@ -33,9 +32,7 @@ def demo_all_settings(
                 continue
 
             if issubclass(setting_type, RLSetting):
-                print(
-                    f"Skipping {setting_type} (not considering RL settings for this demo)."
-                )
+                print(f"Skipping {setting_type} (not considering RL settings for this demo).")
                 continue
 
             # 1. Create a Method of the provided type, so we start fresh every time.
@@ -67,7 +64,10 @@ def demo_all_settings(
     latex_table_path = Path(f"examples/results/table_{method.get_name()}.tex")
     caption = f"Results for method {type(method).__name__} settings."
     result_df.to_latex(
-        buf=latex_table_path, caption=caption, na_rep="N/A", multicolumn=True,
+        buf=latex_table_path,
+        caption=caption,
+        na_rep="N/A",
+        multicolumn=True,
     )
     print(f"Saved LaTeX table with results to path {latex_table_path}")
 
@@ -128,16 +128,14 @@ def compare_results(
     print(f"Saved dataframe with results to path {csv_path}")
 
     caption = f"Comparison of different methods on their applicable settings."
-    comparison_df.to_latex(
-        latex_path, caption=caption, multicolumn=False, multirow=False
-    )
+    comparison_df.to_latex(latex_path, caption=caption, multicolumn=False, multirow=False)
     print(f"Saved LaTeX table with results to path {latex_path}")
 
 
 def make_comparison_dataframe(
     all_results: Dict[Type[Method], Dict[Type[Setting], Dict[str, Results]]]
 ) -> pd.DataFrame:
-    """ Helper function: takes in the dictionary with all the results and
+    """Helper function: takes in the dictionary with all the results and
     re-arranges it into a pandas dataframe.
     """
     # Get all the method names.
@@ -169,9 +167,7 @@ def make_comparison_dataframe(
     for method_class, setting_to_dataset_to_results in all_results.items():
         for setting, dataset_to_results in setting_to_dataset_to_results.items():
             setting_name = setting.get_name()
-            tuples.extend(
-                (setting_name, dataset) for dataset in dataset_to_results.keys()
-            )
+            tuples.extend((setting_name, dataset) for dataset in dataset_to_results.keys())
     tuples = sorted(list(set(tuples)))
     multi_index = pd.MultiIndex.from_tuples(tuples, names=["setting", "dataset"])
     single_index = pd.Index(all_method_names, name="Method")
@@ -185,4 +181,3 @@ def make_comparison_dataframe(
             for dataset, result in dataset_to_results.items():
                 df[method_name][setting_name, dataset] = result.objective
     return df
-

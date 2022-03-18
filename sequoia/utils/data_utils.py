@@ -10,17 +10,19 @@ from torchvision.datasets import CIFAR100, VisionDataset
 
 from sequoia.utils.logging_utils import get_logger
 
-logger = get_logger(__file__)
+logger = get_logger(__name__)
 
 
-def train_valid_split(train_dataset: VisionDataset, valid_fraction: float=0.2) -> Tuple[VisionDataset, VisionDataset]:
+def train_valid_split(
+    train_dataset: VisionDataset, valid_fraction: float = 0.2
+) -> Tuple[VisionDataset, VisionDataset]:
     n = len(train_dataset)
     valid_len: int = int((n * valid_fraction))
     train_len: int = n - valid_len
-    
+
     indices = np.arange(n, dtype=int)
     np.random.shuffle(indices)
-    
+
     valid_indices = indices[:valid_len]
     train_indices = indices[valid_len:]
     train = Subset(train_dataset, train_indices)
@@ -30,7 +32,7 @@ def train_valid_split(train_dataset: VisionDataset, valid_fraction: float=0.2) -
 
 
 def unbatch(dataloader: Iterable[Tuple[Tensor, Tensor]]) -> Iterable[Tuple[Tensor, Tensor]]:
-    """ Unbatches a dataloader.
+    """Unbatches a dataloader.
     NOTE: this is a generator for a single pass through the dataloader, not multiple.
     """
     for batch in dataloader:
@@ -41,7 +43,8 @@ def unbatch(dataloader: Iterable[Tuple[Tensor, Tensor]]) -> Iterable[Tuple[Tenso
 
 
 class unlabeled(Iterable[Tuple[Tensor]], Sized):
-    """ Given a DataLoader, returns an Iterable that drops the labels. """
+    """Given a DataLoader, returns an Iterable that drops the labels."""
+
     def __init__(self, labeled_dataloader: DataLoader):
         self.loader = labeled_dataloader
 
@@ -56,8 +59,8 @@ class unlabeled(Iterable[Tuple[Tensor]], Sized):
 
 
 def keep_in_memory(dataset: VisionDataset) -> None:
-    """ Converts the dataset's `data` and `targets` attributes to Tensors.
-    
+    """Converts the dataset's `data` and `targets` attributes to Tensors.
+
     This has the consequence of keeping the entire dataset in memory.
     """
 
@@ -67,19 +70,20 @@ def keep_in_memory(dataset: VisionDataset) -> None:
         dataset.targets = torch.as_tensor(dataset.targets)
 
     if isinstance(dataset, CIFAR100):
-        # TODO: Cifar100 seems to want its 'data' to a numpy ndarray. 
+        # TODO: Cifar100 seems to want its 'data' to a numpy ndarray.
         dataset.data = np.asarray(dataset.data)
 
 
 class FixChannels(nn.Module):
-    """ Transform that fixes the number of channels in input images. 
-    
+    """Transform that fixes the number of channels in input images.
+
     For instance, if the input shape is:
     [28, 28] -> [3, 28, 28] (copy the image three times)
     [1, 28, 28] -> [3, 28, 28] (same idea)
     [10, 1, 28, 28] -> [10, 3, 28, 28] (keep batch intact, do the same again.)
-    
+
     """
+
     def __call__(self, x: Tensor) -> Tensor:
         if x.ndim == 2:
             x = x.reshape([1, *x.shape])
@@ -91,9 +95,9 @@ class FixChannels(nn.Module):
         return x
 
 
-
 def get_imagenet_location() -> Path:
     from socket import gethostname
+
     hostname = gethostname()
     # For each hostname prefix, the location where the torchvision ImageNet dataset can be found.
     # TODO: Add the location for your own machine.

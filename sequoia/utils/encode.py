@@ -4,14 +4,12 @@ simple-parsing when serializing objects to json or yaml.
 import enum
 import inspect
 from pathlib import Path
-from typing import Any, List, Union, Type
+from typing import Any, List, Type, Union
 
 import numpy as np
 import torch
+from simple_parsing.helpers.serialization import encode, register_decoding_fn
 from torch import Tensor, nn, optim
-
-from simple_parsing.helpers import encode
-from simple_parsing.helpers.serialization import register_decoding_fn
 
 # Register functions for decoding Tensor and ndarray fields from json/yaml.
 register_decoding_fn(Tensor, torch.as_tensor)
@@ -25,11 +23,12 @@ register_decoding_fn(Type[optim.Optimizer], lambda v: v)
 def no_op_encode(value: Any):
     return value
 
+
 # TODO: Look deeper into how things are pickled and moved by pytorch-lightning.
 # Right now there is a warning by pytorch-lightning saying that some metrics
 # will not be included in a checkpoint because they are lists instead of Tensors.
 # This is because they got encoded with the function below when they shouldn't
-# have. 
+# have.
 # @encode.register(Tensor)
 @encode.register(np.ndarray)
 def encode_tensor(obj: Union[Tensor, np.ndarray]) -> List:

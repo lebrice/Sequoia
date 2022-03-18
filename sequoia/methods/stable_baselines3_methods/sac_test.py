@@ -1,20 +1,15 @@
-import pytest
-from sequoia.common.config import Config
-from sequoia.settings.rl import (
-    ContinualRLSetting,
-    IncrementalRLSetting,
-    TaskIncrementalRLSetting,
-)
-from sequoia.settings import Setting
-from sequoia.conftest import slow
-
-from .sac import SACMethod, SACModel
-from typing import Type
 from typing import ClassVar, Type
 
-from .ddpg import DDPGMethod, DDPGModel
-from .base import StableBaselines3Method, BaseAlgorithm
+import pytest
+
+from sequoia.common.config import Config
+from sequoia.conftest import slow
+from sequoia.settings import Setting
+from sequoia.settings.rl import ContinualRLSetting, IncrementalRLSetting, TaskIncrementalRLSetting
+
+from .base import BaseAlgorithm, StableBaselines3Method
 from .base_test import ContinuousActionSpaceMethodTests
+from .sac import SACMethod, SACModel
 
 
 @slow
@@ -39,7 +34,5 @@ class TestSAC(ContinuousActionSpaceMethodTests):
             train_steps_per_task=1_000,
             test_steps_per_task=1_000,
         )
-        results: ContinualRLSetting.Results = setting.apply(
-            method, config=Config(debug=True)
-        )
+        results: ContinualRLSetting.Results = setting.apply(method, config=Config(debug=True))
         print(results.summary())

@@ -4,44 +4,46 @@ Gives the mean squared error between a prediction Tensor `y_pred` and the
 target tensor `y`. 
 """
 
-from dataclasses import dataclass, InitVar
-from typing import Dict, Union, Any, Optional
+from dataclasses import InitVar, dataclass
 from functools import total_ordering
+from typing import Any, Dict, Optional, Union
 
 import torch
 import torch.nn.functional as functional
 from torch import Tensor
 
 from sequoia.utils.logging_utils import get_logger
-from sequoia.utils.logging_utils import cleanup
+
 from .metrics import Metrics
 
-logger = get_logger(__file__)
+logger = get_logger(__name__)
+
 
 @total_ordering
 @dataclass
 class RegressionMetrics(Metrics):
-    """TODO: Use this in the RL settings! """
-    mse: Tensor = 0.  # type: ignore
-    l1_error: Tensor = 0.  # type: ignore
+    """TODO: Use this in the RL settings!"""
 
-    x:      InitVar[Optional[Tensor]] = None
-    h_x:    InitVar[Optional[Tensor]] = None
+    mse: Tensor = 0.0  # type: ignore
+    l1_error: Tensor = 0.0  # type: ignore
+
+    x: InitVar[Optional[Tensor]] = None
+    h_x: InitVar[Optional[Tensor]] = None
     y_pred: InitVar[Optional[Tensor]] = None
-    y:      InitVar[Optional[Tensor]] = None
-    
-    def __post_init__(self,
-                      x: Tensor=None,
-                      h_x: Tensor=None,
-                      y_pred: Tensor=None,
-                      y: Tensor=None):
+    y: InitVar[Optional[Tensor]] = None
+
+    def __post_init__(
+        self, x: Tensor = None, h_x: Tensor = None, y_pred: Tensor = None, y: Tensor = None
+    ):
         super().__post_init__(x=x, h_x=h_x, y_pred=y_pred, y=y)
         if y_pred is not None and y is not None:
             if y.shape != y_pred.shape:
-                logger.warning(UserWarning(
-                    f"Shapes aren't the same! (y_pred.shape={y_pred.shape}, "
-                    f"y.shape={y.shape}"
-                ))
+                logger.warning(
+                    UserWarning(
+                        f"Shapes aren't the same! (y_pred.shape={y_pred.shape}, "
+                        f"y.shape={y.shape}"
+                    )
+                )
             else:
                 self.mse = functional.mse_loss(y_pred, y)
                 self.l1_error = functional.l1_loss(y_pred, y)
@@ -81,13 +83,13 @@ class RegressionMetrics(Metrics):
         message["mse"] = float(self.mse.item())
         message["l1_error"] = float(self.l1_error.item())
         return message
-    
+
     def to_log_dict(self, verbose=False):
         log_dict = super().to_log_dict(verbose=verbose)
         log_dict["mse"] = self.mse
         log_dict["l1_error"] = self.l1_error
         return log_dict
-    
+
     def __mul__(self, factor: Union[float, Tensor]) -> "Loss":
         # Multiplying a 'RegressionMetrics' object multiplies its 'mse'.
         return RegressionMetrics(
@@ -108,7 +110,7 @@ class RegressionMetrics(Metrics):
             mse=self.mse / coefficient,
             l1_error=self.l1_error / coefficient,
         )
-    
+
     def __lt__(self, other: Union["RegressionMetrics", Any]) -> bool:
         if isinstance(other, RegressionMetrics):
             return self.mse < other.mse

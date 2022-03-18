@@ -3,18 +3,16 @@
 
 
 from dataclasses import dataclass
-from typing import Dict, Type, Any, Tuple
-import pytest
-import doctest
-import numpy as np
+from typing import Any, Dict, List, Optional, Tuple, Type
 
-from . import batch
-from .batch import Batch
-from torch import Tensor
+import numpy as np
+import pytest
 import torch
 from torch import Tensor
-from typing import Optional, List
+
 from sequoia.utils.categorical import Categorical
+
+from .batch import Batch
 
 
 @dataclass(frozen=True)
@@ -40,7 +38,15 @@ class Rewards(Batch):
 
 @pytest.mark.parametrize(
     "batch_type, items_dict",
-    [(Observations, dict(x=torch.arange(10), task_labels=torch.arange(10) + 1,)),],
+    [
+        (
+            Observations,
+            dict(
+                x=torch.arange(10),
+                task_labels=torch.arange(10) + 1,
+            ),
+        ),
+    ],
 )
 def test_batch_behaves_like_a_dict(batch_type, items_dict):
     obj = batch_type(**items_dict)
@@ -62,18 +68,22 @@ def test_batch_behaves_like_a_dict(batch_type, items_dict):
 
 @pytest.mark.parametrize(
     "batch_type, items_dict",
-    [(Observations, dict(x=torch.arange(10), task_labels=torch.arange(10) + 1,),),],
+    [
+        (
+            Observations,
+            dict(
+                x=torch.arange(10),
+                task_labels=torch.arange(10) + 1,
+            ),
+        ),
+    ],
 )
 def test_to(batch_type: Type[Batch], items_dict: Dict[str, Tensor]):
-    """ Test that the 'to' method behaves like `torch.Tensor.to`, so that we
+    """Test that the 'to' method behaves like `torch.Tensor.to`, so that we
     can move all the items in a `Batch` between devices or dtypes.
     """
-    original_devices: Dict[str, torch.device] = {
-        k: v.device for k, v in items_dict.items()
-    }
-    original_dtypes: Dict[str, torch.dtype] = {
-        k: v.dtype for k, v in items_dict.items()
-    }
+    original_devices: Dict[str, torch.device] = {k: v.device for k, v in items_dict.items()}
+    original_dtypes: Dict[str, torch.dtype] = {k: v.dtype for k, v in items_dict.items()}
 
     obj = batch_type(**items_dict)
 
@@ -144,8 +154,7 @@ def test_to(batch_type: Type[Batch], items_dict: Dict[str, Tensor]):
 def test_tuple_indexing(
     batch_type: Type[Batch], items_dict: Dict[str, Tensor], index: Tuple[Any, ...]
 ):
-    """ Test that we can index into the object in the same style as an ndarray
-    """
+    """Test that we can index into the object in the same style as an ndarray"""
     obj = batch_type(**items_dict)
 
     keys = list(items_dict.keys())
@@ -178,8 +187,10 @@ def test_tuple_indexing(
 
 
 def test_masking():
-    """ Test indexing or changing values in the item using a mask array."""
-    bob = Observations(x=torch.arange(25).reshape([5, 5]),)
+    """Test indexing or changing values in the item using a mask array."""
+    bob = Observations(
+        x=torch.arange(25).reshape([5, 5]),
+    )
     odd_rows = np.arange(5) % 2 == 1
     bob[:, odd_rows] = False
 
@@ -202,62 +213,103 @@ def test_masking():
 
 
 def test_newaxis():
-    """ WIP: Trying out np.newaxis as a way to add an extra batch dimension. """
-    x = Observations(x=torch.arange(5), task_labels=1,)
+    """WIP: Trying out np.newaxis as a way to add an extra batch dimension."""
+    x = Observations(
+        x=torch.arange(5),
+        task_labels=1,
+    )
     # Test out different ways of 'unsqueezing' the object.
     for expanded in [x[np.newaxis], x.with_batch_dimension()]:
         assert str(expanded) == str(
             Observations(
-                x=torch.tensor([[0, 1, 2, 3, 4]], dtype=int), task_labels=np.array([1]),
+                x=torch.tensor([[0, 1, 2, 3, 4]], dtype=int),
+                task_labels=np.array([1]),
             )
         )
 
 
 def test_single_index():
-    """ observations[0] should gives the first field. """
-    obs = Observations(x=torch.arange(5), task_labels=1,)
+    """observations[0] should gives the first field."""
+    obs = Observations(
+        x=torch.arange(5),
+        task_labels=1,
+    )
     assert obs[0] is obs.x
 
 
 def test_remove_batch_dim():
-    """ Removing an extra batch dimension. """
+    """Removing an extra batch dimension."""
     bob = Observations(
-        x=torch.tensor([[0, 1, 2, 3, 4]], dtype=int), task_labels=np.array([1]),
+        x=torch.tensor([[0, 1, 2, 3, 4]], dtype=int),
+        task_labels=np.array([1]),
     )
-    expected = Observations(x=torch.arange(5), task_labels=1,)
+    expected = Observations(
+        x=torch.arange(5),
+        task_labels=1,
+    )
     for expanded in [bob.remove_batch_dimension(), bob[:, 0]]:
         assert str(expanded) == str(expected)
 
-    bob = Observations(x=torch.tensor([[0, 1, 2, 3, 4]], dtype=int), task_labels=None,)
-    expected = Observations(x=torch.arange(5), task_labels=None,)
-    for expanded in [bob.remove_batch_dimension(), bob[:, 0,]]:
+    bob = Observations(
+        x=torch.tensor([[0, 1, 2, 3, 4]], dtype=int),
+        task_labels=None,
+    )
+    expected = Observations(
+        x=torch.arange(5),
+        task_labels=None,
+    )
+    for expanded in [
+        bob.remove_batch_dimension(),
+        bob[
+            :,
+            0,
+        ],
+    ]:
         assert str(expanded) == str(expected)
 
 
 def test_remove_batch_dim_with_nested_objects():
     obj = ForwardPass(
-        observations=Observations(x=torch.arange(5).reshape([1, 5]), task_labels=None,),
+        observations=Observations(
+            x=torch.arange(5).reshape([1, 5]),
+            task_labels=None,
+        ),
         h_x=torch.arange(4).reshape([1, 4]),
-        actions=Actions(y_pred=torch.tensor(1).reshape([1,]),),
+        actions=Actions(
+            y_pred=torch.tensor(1).reshape(
+                [
+                    1,
+                ]
+            ),
+        ),
     )
     actual = obj.remove_batch_dimension()
     assert str(actual) == str(
         ForwardPass(
-            observations=Observations(x=torch.arange(5), task_labels=None,),
+            observations=Observations(
+                x=torch.arange(5),
+                task_labels=None,
+            ),
             h_x=torch.arange(4),
-            actions=Actions(y_pred=torch.tensor(1),),
+            actions=Actions(
+                y_pred=torch.tensor(1),
+            ),
         )
     )
 
 
 def test_split():
-    """ Split a batch into a list of Batch objects """
+    """Split a batch into a list of Batch objects"""
     bob = Observations(
         x=torch.tensor([[0, 1, 2, 3, 4], [5, 6, 7, 8, 9]], dtype=int),
         task_labels=np.array([0, 1]),
     )
     expected = [
-        Observations(x=torch.arange(5) + i * 5, task_labels=i,) for i in range(2)
+        Observations(
+            x=torch.arange(5) + i * 5,
+            task_labels=i,
+        )
+        for i in range(2)
     ]
     assert str(bob.split()) == str(expected)
 
@@ -300,16 +352,12 @@ def test_split():
     ],
 )
 def test_stack(items: List[Batch], expected: Batch):
-    """ Split a batch into a list of Batch objects """
+    """Split a batch into a list of Batch objects"""
     assert str(type(items[0]).stack(items)) == str(expected)
     # Same test, but with only numpy arrays as items:
-    assert str(type(items[0]).stack(map(lambda i: i.numpy(), items))) == str(
-        expected.numpy()
-    )
+    assert str(type(items[0]).stack(map(lambda i: i.numpy(), items))) == str(expected.numpy())
     # Same test, but with Tensor items:
-    assert str(type(items[0]).stack(map(lambda i: i.torch(), items))) == str(
-        expected.torch()
-    )
+    assert str(type(items[0]).stack(map(lambda i: i.torch(), items))) == str(expected.torch())
 
 
 @pytest.mark.parametrize(
@@ -318,10 +366,12 @@ def test_stack(items: List[Batch], expected: Batch):
         (
             [
                 Observations(
-                    x=torch.as_tensor([0, 1, 2, 3, 4], dtype=int), task_labels=None,
+                    x=torch.as_tensor([0, 1, 2, 3, 4], dtype=int),
+                    task_labels=None,
                 ),
                 Observations(
-                    x=torch.as_tensor([5, 6, 7, 8, 9], dtype=int), task_labels=None,
+                    x=torch.as_tensor([5, 6, 7, 8, 9], dtype=int),
+                    task_labels=None,
                 ),
             ],
             Observations(
@@ -332,10 +382,12 @@ def test_stack(items: List[Batch], expected: Batch):
         (
             [
                 Observations(
-                    x=torch.as_tensor([0, 1, 2, 3, 4], dtype=int), task_labels=None,
+                    x=torch.as_tensor([0, 1, 2, 3, 4], dtype=int),
+                    task_labels=None,
                 ),
                 Observations(
-                    x=torch.as_tensor([5, 6, 7, 8, 9], dtype=int), task_labels=1,
+                    x=torch.as_tensor([5, 6, 7, 8, 9], dtype=int),
+                    task_labels=1,
                 ),
             ],
             Observations(
@@ -346,7 +398,7 @@ def test_stack(items: List[Batch], expected: Batch):
     ],
 )
 def test_stack_with_none_values(items: List[Batch], expected: Batch):
-    """ Test that if all values are None, a single None is produced, but if only some
+    """Test that if all values are None, a single None is produced, but if only some
     values are None, then an ndarray of dtype `object` is created instead.
     """
     cls = type(items[0])
@@ -362,10 +414,12 @@ def test_stack_with_none_values(items: List[Batch], expected: Batch):
         (
             [
                 Observations(
-                    x=torch.as_tensor([0, 1, 2, 3, 4], dtype=int), task_labels=0,
+                    x=torch.as_tensor([0, 1, 2, 3, 4], dtype=int),
+                    task_labels=0,
                 ),
                 Observations(
-                    x=torch.as_tensor([5, 6, 7, 8, 9], dtype=int), task_labels=1,
+                    x=torch.as_tensor([5, 6, 7, 8, 9], dtype=int),
+                    task_labels=1,
                 ),
             ],
             Observations(
@@ -376,10 +430,12 @@ def test_stack_with_none_values(items: List[Batch], expected: Batch):
         (
             [
                 Observations(
-                    x=torch.as_tensor([0, 1, 2, 3, 4], dtype=int), task_labels=None,
+                    x=torch.as_tensor([0, 1, 2, 3, 4], dtype=int),
+                    task_labels=None,
                 ),
                 Observations(
-                    x=torch.as_tensor([5, 6, 7, 8, 9], dtype=int), task_labels=None,
+                    x=torch.as_tensor([5, 6, 7, 8, 9], dtype=int),
+                    task_labels=None,
                 ),
             ],
             Observations(
@@ -406,16 +462,12 @@ def test_stack_with_none_values(items: List[Batch], expected: Batch):
     ],
 )
 def test_concatenate(items: List[Batch], expected: Batch):
-    """ Split a batch into a list of Batch objects """
+    """Split a batch into a list of Batch objects"""
     assert str(type(items[0]).concatenate(items)) == str(expected)
     # Same test, but with only numpy arrays as items:
-    assert str(type(items[0]).concatenate(map(lambda i: i.numpy(), items))) == str(
-        expected.numpy()
-    )
+    assert str(type(items[0]).concatenate(map(lambda i: i.numpy(), items))) == str(expected.numpy())
     # Same test, but with Tensor items:
-    assert str(type(items[0]).concatenate(map(lambda i: i.torch(), items))) == str(
-        expected.torch()
-    )
+    assert str(type(items[0]).concatenate(map(lambda i: i.torch(), items))) == str(expected.torch())
 
 
 @pytest.mark.parametrize(
@@ -461,19 +513,20 @@ class ForwardPass(Batch):
 def test_nesting():
     obj = ForwardPass(
         observations=Observations(
-            x=torch.arange(10).reshape([2, 5]), task_labels=torch.arange(2, dtype=int),
+            x=torch.arange(10).reshape([2, 5]),
+            task_labels=torch.arange(2, dtype=int),
         ),
         h_x=torch.arange(8).reshape([2, 4]),
-        actions=Actions(y_pred=torch.arange(2, dtype=int),),
+        actions=Actions(
+            y_pred=torch.arange(2, dtype=int),
+        ),
     )
     assert obj.batch_size == 2
     assert obj[0, 1, 0] == obj.observations.task_labels[0]
     tensor = torch.as_tensor
     assert str(obj.slice(0)) == str(
         ForwardPass(
-            observations=Observations(
-                x=tensor([[0, 1, 2, 3, 4]]), task_labels=tensor([0])
-            ),
+            observations=Observations(x=tensor([[0, 1, 2, 3, 4]]), task_labels=tensor([0])),
             h_x=tensor([[0, 1, 2, 3]]),
             actions=Actions(y_pred=tensor([0])),
         )
@@ -482,7 +535,8 @@ def test_nesting():
 
 def test_slicing_with_one_item():
     observations = Observations(
-        x=torch.arange(10).reshape([2, 5]), task_labels=torch.arange(2, dtype=int),
+        x=torch.arange(10).reshape([2, 5]),
+        task_labels=torch.arange(2, dtype=int),
     )
     indices = torch.as_tensor([0])
     assert observations.slice(indices).shapes == {

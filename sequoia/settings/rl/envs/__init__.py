@@ -1,33 +1,37 @@
+import copy
+import json
 from abc import ABC
 from contextlib import redirect_stdout
 from io import StringIO
-from typing import List, Dict, Union, List, Type
-import json
-import gym
 from pathlib import Path
-import copy
-from sequoia.utils import get_logger
-from gym.envs.registration import registry, EnvSpec
+from typing import Dict, List, Type, Union
 
-logger = get_logger(__file__)
+import gym
+from gym.envs.registration import EnvSpec, registry
+
+from sequoia.utils import get_logger
+
+logger = get_logger(__name__)
 
 # IDEA: Modify a copy of the gym registry?
 # sequoia_registry = copy.deepcopy(registry)
 sequoia_registry = registry
 
-from .variant_spec import EnvVariantSpec
 from .classic_control import PixelObservationWrapper, register_classic_control_variants
+from .variant_spec import EnvVariantSpec
 
 register_classic_control_variants(sequoia_registry)
 
 
 ATARI_PY_INSTALLED = False
 try:
-    from gym.envs import atari
-    AtariEnv = atari.AtariEnv
+    from ale_py.gym.environment import ALGymEnv
+
+    AtariEnv = ALGymEnv
 
     ATARI_PY_INSTALLED = True
 except (gym.error.DependencyNotInstalled, ImportError):
+
     class AtariEnv(gym.Env):
         pass
 
@@ -65,8 +69,10 @@ except ImportError:
 MUJOCO_INSTALLED = False
 try:
     import mujoco_py
+
     mj_path, _ = mujoco_py.utils.discover_mujoco()
     from gym.envs.mujoco import MujocoEnv
+
     from .mujoco import (
         ContinualHalfCheetahEnv,
         ContinualHalfCheetahV2Env,
@@ -77,8 +83,9 @@ try:
         ContinualWalker2dEnv,
         ContinualWalker2dV2Env,
         ContinualWalker2dV3Env,
+        register_mujoco_variants,
     )
-    from .mujoco import register_mujoco_variants
+
     register_mujoco_variants(env_registry=sequoia_registry)
     MUJOCO_INSTALLED = True
 except (
@@ -91,16 +98,35 @@ except (
     # Create a 'dummy' class so we can safely use type hints everywhere.
     # Additionally, `isinstance(some_env, <this class>)`` will always fail when the
     # dependency isn't installed, which is good.
-    class MujocoEnv(gym.Env): pass
-    class ContinualHalfCheetahEnv(MujocoEnv): pass
-    class ContinualHalfCheetahV2Env(MujocoEnv): pass
-    class ContinualHalfCheetahV3Env(MujocoEnv): pass
-    class ContinualHopperEnv(MujocoEnv): pass
-    class ContinualHopperV2Env(MujocoEnv): pass
-    class ContinualHopperV3Env(MujocoEnv): pass
-    class ContinualWalker2dEnv(MujocoEnv): pass
-    class ContinualWalker2dV2Env(MujocoEnv): pass
-    class ContinualWalker2dV3Env(MujocoEnv): pass
+    class MujocoEnv(gym.Env):
+        pass
+
+    class ContinualHalfCheetahEnv(MujocoEnv):
+        pass
+
+    class ContinualHalfCheetahV2Env(MujocoEnv):
+        pass
+
+    class ContinualHalfCheetahV3Env(MujocoEnv):
+        pass
+
+    class ContinualHopperEnv(MujocoEnv):
+        pass
+
+    class ContinualHopperV2Env(MujocoEnv):
+        pass
+
+    class ContinualHopperV3Env(MujocoEnv):
+        pass
+
+    class ContinualWalker2dEnv(MujocoEnv):
+        pass
+
+    class ContinualWalker2dV2Env(MujocoEnv):
+        pass
+
+    class ContinualWalker2dV3Env(MujocoEnv):
+        pass
 
 
 METAWORLD_INSTALLED = False
@@ -116,7 +142,6 @@ try:
 
     # TODO: Use mujoco from metaworld? or from mujoco_py?
     from metaworld.envs.mujoco.mujoco_env import MujocoEnv as MetaWorldMujocoEnv
-
     from metaworld.envs.mujoco.sawyer_xyz.sawyer_xyz_env import SawyerXYZEnv
 
     # from metaworld.envs.mujoco.mujoco_env import MujocoEnv

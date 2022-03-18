@@ -1,5 +1,6 @@
+from .environment import ContinualSLEnvironment, ContinualSLTestEnvironment
+from .objects import Actions, Observations, ObservationSpace, Rewards
 from .setting import ContinualSLSetting
-from .objects import Observations, Actions, Rewards, ObservationSpace
-from .environment import ContinualSLTestEnvironment, ContinualSLEnvironment
+
 Environment = ContinualSLEnvironment
 TestEnvironment = ContinualSLTestEnvironment

@@ -2,7 +2,6 @@
 
 See https://stable-baselines3.readthedocs.io/en/master/guide/install.html
 """
-import warnings
 from abc import ABC
 from dataclasses import dataclass
 from typing import Any, Callable, ClassVar, Dict, List, Mapping, Optional, Type, Union
@@ -11,33 +10,19 @@ import gym
 import torch
 from gym import spaces
 from simple_parsing import choice, mutable_field
-from stable_baselines3.common.base_class import (
-    BaseAlgorithm,
-    BasePolicy,
-    DummyVecEnv,
-    GymEnv,
-    MaybeCallback,
-    Monitor,
-    VecEnv,
-    VecTransposeImage,
-    is_image_space,
-    is_wrapped,
-)
+from simple_parsing.helpers.hparams import HyperParameters, categorical, log_uniform
+from stable_baselines3.common.base_class import BaseAlgorithm, BasePolicy, MaybeCallback
+
 # from stable_baselines3.common.vec_env.obs_dict_wrapper import ObsDictWrapper
 from wandb.wandb_run import Run
 
-from sequoia.common.gym_wrappers.batch_env.batched_vector_env import VectorEnv
-from sequoia.common.gym_wrappers.utils import has_wrapper
-from simple_parsing.helpers.hparams import HyperParameters, log_uniform, categorical
-from sequoia.common.spaces import Image
 from sequoia.common.transforms.utils import is_image
 from sequoia.settings import Method, Setting
 from sequoia.settings.rl.continual import ContinualRLSetting
-from sequoia.settings.rl.wrappers import NoTypedObjectsWrapper, RemoveTaskLabelsWrapper
 from sequoia.utils.logging_utils import get_logger
 from sequoia.utils.serialization import register_decoding_fn
 
-logger = get_logger(__file__)
+logger = get_logger(__name__)
 
 # "Patch" the _wrap_env function of the BaseAlgorithm class of
 # stable_baselines, to make it recognize the VectorEnv from gym.vector as a
@@ -91,7 +76,7 @@ logger = get_logger(__file__)
 
 
 class RemoveInfoWrapper(gym.Wrapper):
-    """ Wrapper used to remove the 'info' dict, since there seems to be a bug in sb3
+    """Wrapper used to remove the 'info' dict, since there seems to be a bug in sb3
     whenever there is something in the 'info' dict.
     """
 
@@ -103,15 +88,13 @@ class RemoveInfoWrapper(gym.Wrapper):
 
 @dataclass
 class SB3BaseHParams(HyperParameters):
-    """ Hyper-parameters of a model from the `stable_baselines3` package.
+    """Hyper-parameters of a model from the `stable_baselines3` package.
 
     The command-line arguments for these are created with simple-parsing.
     """
 
     # The policy model to use (MlpPolicy, CnnPolicy, ...)
-    policy: Optional[Union[str, Type[BasePolicy]]] = choice(
-        "MlpPolicy", "CnnPolicy", default=None
-    )
+    policy: Optional[Union[str, Type[BasePolicy]]] = choice("MlpPolicy", "CnnPolicy", default=None)
     # # The base policy used by this method
     # policy_base: Type[BasePolicy]
 
@@ -150,14 +133,12 @@ class SB3BaseHParams(HyperParameters):
 
     # Wether to clear the experience buffer at the beginning of a new task.
     # NOTE: We use to_dict here so that it doesn't get passed do the Policy class.
-    clear_buffers_between_tasks: bool = categorical(
-        True, False, default=False, to_dict=False
-    )
+    clear_buffers_between_tasks: bool = categorical(True, False, default=False, to_dict=False)
 
 
 @dataclass
 class StableBaselines3Method(Method, ABC, target_setting=ContinualRLSetting):
-    """ Base class for the methods that use models from the stable_baselines3
+    """Base class for the methods that use models from the stable_baselines3
     repo.
     """
 
@@ -199,13 +180,10 @@ class StableBaselines3Method(Method, ABC, target_setting=ContinualRLSetting):
         self.model: Optional[BaseAlgorithm] = None
         # Extra wrappers to add to the train_env and valid_env before passing
         # them to the `learn` method from stable-baselines3.
-        from sequoia.common.gym_wrappers import (
-            TransformObservation,
-            TransformAction,
-            TransformReward,
-        )
         import operator
         from functools import partial
+
+        from sequoia.common.gym_wrappers import TransformObservation, TransformReward
 
         self.extra_train_wrappers: List[Callable[[gym.Env], gym.Env]] = [
             partial(TransformObservation, f=operator.itemgetter("x")),
@@ -273,7 +251,7 @@ class StableBaselines3Method(Method, ABC, target_setting=ContinualRLSetting):
         # Otherwise, we can train basically as long as we want on each task.
 
     def create_model(self, train_env: gym.Env, valid_env: gym.Env) -> BaseAlgorithm:
-        """ Create a Model given the training and validation environments. """
+        """Create a Model given the training and validation environments."""
         model_kwargs = self.hparams.to_dict()
         assert "clear_buffers_between_tasks" not in model_kwargs
         return self.Model(env=train_env, **model_kwargs)
@@ -386,7 +364,7 @@ class StableBaselines3Method(Method, ABC, target_setting=ContinualRLSetting):
         self.hparams = self.hparams.replace(**new_hparams["algo_hparams"])
 
     def setup_wandb(self, run: Run) -> None:
-        """ Called by the Setting when using Weights & Biases, after `wandb.init`.
+        """Called by the Setting when using Weights & Biases, after `wandb.init`.
 
         This method is here to provide Methods with the opportunity to log some of their
         configuration options or hyper-parameters to wandb.
@@ -402,7 +380,7 @@ class StableBaselines3Method(Method, ABC, target_setting=ContinualRLSetting):
         run.config["hparams"] = self.hparams.to_dict()
 
     def on_task_switch(self, task_id: Optional[int]) -> None:
-        """ Called when switching tasks in a CL setting.
+        """Called when switching tasks in a CL setting.
 
         If task labels are available, `task_id` will correspond to the index of
         the new task. Otherwise, if task labels aren't available, `task_id` will
@@ -414,7 +392,7 @@ class StableBaselines3Method(Method, ABC, target_setting=ContinualRLSetting):
             self.clear_buffers()
 
     def clear_buffers(self):
-        """ Clears out the experience buffer of the Policy. """
+        """Clears out the experience buffer of the Policy."""
         # I think that's the right way to do it.. not sure.
         # assert False, self.model.replay_buffer.pos
         if self.model:

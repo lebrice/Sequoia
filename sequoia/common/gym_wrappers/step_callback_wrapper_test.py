@@ -2,15 +2,16 @@ from typing import Tuple
 
 import gym
 
-from .step_callback_wrapper import (Callback, PeriodicCallback, StepCallback,
-                                    StepCallbackWrapper)
+from .step_callback_wrapper import PeriodicCallback, StepCallback, StepCallbackWrapper
 
 i: int = 0
+
 
 def increment_i(step: int, env: gym.Env, step_results: Tuple):
     global i
     print(f"Incrementing i at step {step}: ({i} -> {i+1})")
     i += 1
+
 
 def decrement_i(step: int, env: gym.Env, step_results: Tuple):
     global i
@@ -55,7 +56,6 @@ def test_periodic_callback():
     assert _next(env) == 0
     assert _next(env) == 0
     assert _next(env) == 0
-
 
     assert _next(env) == 1
     assert _next(env) == 1

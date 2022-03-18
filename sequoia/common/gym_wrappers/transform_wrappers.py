@@ -1,18 +1,22 @@
 from typing import Callable, Union
+import typing
 
 import gym
 from gym import Space, spaces
 from gym.wrappers import TransformObservation as TransformObservation_
 from gym.wrappers import TransformReward as TransformReward_
 
-from sequoia.common.gym_wrappers.convert_tensors import (add_tensor_support,
-                                                         has_tensor_support)
-from sequoia.common.transforms import Compose, Transform
+from sequoia.common.gym_wrappers.convert_tensors import add_tensor_support, has_tensor_support
+from sequoia.common.transforms.compose import Compose
+from sequoia.common.transforms.transform import Transform
+
+# if typing.TYPE_CHECKING:
+#     from sequoia.common.transforms.transform import Transform
 from sequoia.utils.logging_utils import get_logger
 
 from .utils import IterableWrapper
 
-logger = get_logger(__file__)
+logger = get_logger(__name__)
 
 
 class TransformObservation(TransformObservation_, IterableWrapper):
@@ -20,17 +24,17 @@ class TransformObservation(TransformObservation_, IterableWrapper):
         if isinstance(f, list) and not callable(f):
             f = Compose(f)
         super().__init__(env, f=f)
-        self.f: Transform
+        self.f: "Transform"
         # try:
         self.observation_space = self(self.env.observation_space)
         if has_tensor_support(self.env.observation_space):
             self.observation_space = add_tensor_support(self.observation_space)
 
         # except Exception as e:
-            # logger.warning(UserWarning(
-            #     f"Don't know how the transform {self.f} will impact the "
-            #     f"observation space! (Exception: {e})"
-            # ))
+        # logger.warning(UserWarning(
+        #     f"Don't know how the transform {self.f} will impact the "
+        #     f"observation space! (Exception: {e})"
+        # ))
 
     def __call__(self, *args, **kwargs):
         return self.f(*args, **kwargs)
@@ -65,10 +69,12 @@ class TransformReward(TransformReward_, IterableWrapper):
             self.reward_space = self.f(self.reward_space)
             logger.debug(f"New reward space after transform: {self.reward_space}")
         except Exception as e:
-            logger.warning(UserWarning(
-                f"Don't know how the transform {self.f} will impact the "
-                f"reward space! (Exception: {e})"
-            ))
+            logger.warning(
+                UserWarning(
+                    f"Don't know how the transform {self.f} will impact the "
+                    f"reward space! (Exception: {e})"
+                )
+            )
 
 
 class TransformAction(IterableWrapper):

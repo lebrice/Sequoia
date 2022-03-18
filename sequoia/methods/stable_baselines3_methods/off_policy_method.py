@@ -2,16 +2,16 @@
 """
 import math
 import warnings
-from dataclasses import dataclass
-from typing import Callable, ClassVar, Optional, Type, Union, Any
 from abc import ABC
+from dataclasses import dataclass
+from typing import Any, Callable, ClassVar, Optional, Type, Union
+
 import gym
 from gym import spaces
 from gym.spaces.utils import flatten_space
 from simple_parsing import mutable_field
-from stable_baselines3.common.off_policy_algorithm import OffPolicyAlgorithm
-from stable_baselines3.common.off_policy_algorithm import TrainFreq, TrainFrequencyUnit
 from simple_parsing.helpers.serialization import register_decoding_fn
+from stable_baselines3.common.off_policy_algorithm import OffPolicyAlgorithm, TrainFreq
 
 from sequoia.common.hparams import log_uniform, uniform
 from sequoia.settings.rl import ContinualRLSetting
@@ -19,7 +19,7 @@ from sequoia.utils.logging_utils import get_logger
 
 from .base import SB3BaseHParams, StableBaselines3Method
 
-logger = get_logger(__file__)
+logger = get_logger(__name__)
 
 
 def decode_trainfreq(v: Any):
@@ -32,11 +32,11 @@ register_decoding_fn(TrainFreq, decode_trainfreq)
 
 
 class OffPolicyModel(OffPolicyAlgorithm, ABC):
-    """ Tweaked version of the OffPolicyAlgorithm from SB3. """
+    """Tweaked version of the OffPolicyAlgorithm from SB3."""
 
     @dataclass
     class HParams(SB3BaseHParams):
-        """ Hyper-parameters common to all off-policy algos from SB3. """
+        """Hyper-parameters common to all off-policy algos from SB3."""
 
         # The learning rate, it can be a function of the current progress (from
         # 1 to 0)
@@ -87,7 +87,7 @@ class OffPolicyModel(OffPolicyAlgorithm, ABC):
 
 @dataclass
 class OffPolicyMethod(StableBaselines3Method, ABC):
-    """ ABC for a Method that uses an off-policy Algorithm from SB3. """
+    """ABC for a Method that uses an off-policy Algorithm from SB3."""
 
     # Type of model to use. This has to be overwritten in a subclass.
     Model: ClassVar[Type[OffPolicyModel]] = OffPolicyModel
@@ -127,7 +127,7 @@ class OffPolicyMethod(StableBaselines3Method, ABC):
 
         if self.hparams.buffer_size > max_buffer_length:
             calculated_size_bytes = observation_size_bytes * self.hparams.buffer_size
-            calculated_size_gb = calculated_size_bytes / 1024 ** 3
+            calculated_size_gb = calculated_size_bytes / 1024**3
             warnings.warn(
                 RuntimeWarning(
                     f"The selected buffer size ({self.hparams.buffer_size} is "
@@ -151,9 +151,7 @@ class OffPolicyMethod(StableBaselines3Method, ABC):
 
             if self.hparams.buffer_size > ten_percent_of_step_budget:
                 warnings.warn(
-                    RuntimeWarning(
-                        "Reducing max buffer size to ten percent of the step budget."
-                    )
+                    RuntimeWarning("Reducing max buffer size to ten percent of the step budget.")
                 )
                 self.hparams.buffer_size = ten_percent_of_step_budget
 
@@ -167,13 +165,12 @@ class OffPolicyMethod(StableBaselines3Method, ABC):
                     f"{ten_percent_of_step_budget} steps."
                 )
                 self.hparams.learning_starts = ten_percent_of_step_budget
-                if self.hparams.train_freq != -1 and isinstance(
-                    self.hparams.train_freq, int
-                ):
+                if self.hparams.train_freq != -1 and isinstance(self.hparams.train_freq, int):
                     # Update the model at least 2 times during each task, and at most
                     # once per step.
                     self.hparams.train_freq = min(
-                        self.hparams.train_freq, int(0.5 * ten_percent_of_step_budget),
+                        self.hparams.train_freq,
+                        int(0.5 * ten_percent_of_step_budget),
                     )
                     self.hparams.train_freq = max(self.hparams.train_freq, 1)
 
@@ -209,17 +206,14 @@ class OffPolicyMethod(StableBaselines3Method, ABC):
             if self.hparams.train_freq > setting.steps_per_phase:
                 self.hparams.n_steps = math.ceil(0.1 * setting.steps_per_phase)
                 logger.info(
-                    f"Capping the n_steps to 10% of step budget length: "
-                    f"{self.hparams.n_steps}"
+                    f"Capping the n_steps to 10% of step budget length: " f"{self.hparams.n_steps}"
                 )
 
             self.train_steps_per_task = min(
                 self.train_steps_per_task,
                 setting.steps_per_phase - self.hparams.train_freq - 1,
             )
-            logger.info(
-                f"Limitting training steps per task to {self.train_steps_per_task}"
-            )
+            logger.info(f"Limitting training steps per task to {self.train_steps_per_task}")
 
     def create_model(self, train_env: gym.Env, valid_env: gym.Env) -> OffPolicyModel:
         return self.Model(env=train_env, **self.hparams.to_dict())
@@ -231,11 +225,12 @@ class OffPolicyMethod(StableBaselines3Method, ABC):
         self, observations: ContinualRLSetting.Observations, action_space: spaces.Space
     ) -> ContinualRLSetting.Actions:
         return super().get_actions(
-            observations=observations, action_space=action_space,
+            observations=observations,
+            action_space=action_space,
         )
 
     def on_task_switch(self, task_id: Optional[int]) -> None:
-        """ Called when switching tasks in a CL setting.
+        """Called when switching tasks in a CL setting.
 
         If task labels are available, `task_id` will correspond to the index of
         the new task. Otherwise, if task labels aren't available, `task_id` will
@@ -246,7 +241,7 @@ class OffPolicyMethod(StableBaselines3Method, ABC):
         super().on_task_switch(task_id=task_id)
 
     def clear_buffers(self):
-        """ Clears out the experience buffer of the Policy. """
+        """Clears out the experience buffer of the Policy."""
         # I think that's the right way to do it.. not sure.
         if self.model:
             # TODO: These are really interesting methods!

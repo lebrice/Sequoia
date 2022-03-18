@@ -3,13 +3,12 @@
 from typing import Optional, Tuple, Union
 
 import numpy as np
+import torch
 from gym import spaces
 from gym.vector.utils import batch_space
 
-import torch
-
-from .tensor_spaces import TensorBox
 from .space import Space, T
+from .tensor_spaces import TensorBox
 
 
 def could_become_image(space: spaces.Space) -> bool:
@@ -17,13 +16,12 @@ def could_become_image(space: spaces.Space) -> bool:
         return False
     shape = space.shape
     return len(shape) == 3 and (
-        shape[0] == shape[1] and shape[2] in {1, 3} or
-        shape[1] == shape[2] and shape[0] in {1, 3}
+        shape[0] == shape[1] and shape[2] in {1, 3} or shape[1] == shape[2] and shape[0] in {1, 3}
     )
 
 
 class Image(spaces.Box, Space[T]):
-    """ Subclass of `gym.spaces.Box` for images.
+    """Subclass of `gym.spaces.Box` for images.
 
     Comes with a few useful attributes, like `h`, `w`, `c`, `channels_first`,
     `channels_last`, etc.
@@ -35,15 +33,10 @@ class Image(spaces.Box, Space[T]):
         high: Union[float, np.ndarray],
         shape: Tuple[int, ...] = None,
         dtype: np.dtype = None,
-        **kwargs
+        **kwargs,
     ):
         if dtype is None:
-            if (
-                isinstance(low, int)
-                and isinstance(high, int)
-                and low == 0
-                and high == 255
-            ):
+            if isinstance(low, int) and isinstance(high, int) and low == 0 and high == 255:
                 dtype = np.uint8
             else:
                 dtype = np.float32
@@ -124,7 +117,7 @@ class Image(spaces.Box, Space[T]):
 
 class ImageTensorSpace(Image, TensorBox):
     @classmethod
-    def from_box(cls, box_space: TensorBox, device: torch.device=None):
+    def from_box(cls, box_space: TensorBox, device: torch.device = None):
         device = device or box_space.device
         return cls(box_space.low, box_space.high, dtype=box_space.dtype, device=device)
 
@@ -161,9 +154,7 @@ def _batch_image_space(space: Image, n: int = 1) -> Union[Image, spaces.Box]:
             low, high = np.tile(space.low, repeats), np.tile(space.high, repeats)
             return spaces.Box(low=low, high=high, dtype=space.dtype)
 
-            raise RuntimeError(
-                f"can't batch an already batched image space {space}, n={n}"
-            )
+            raise RuntimeError(f"can't batch an already batched image space {space}, n={n}")
     else:
         repeats = [n, 1, 1, 1]
     low, high = np.tile(space.low, repeats), np.tile(space.high, repeats)

@@ -4,7 +4,8 @@ You can use this as a base class when creating your own models, or you can
 start from scratch, whatever you like best.
 """
 from dataclasses import dataclass
-from typing import TypeVar, Generic, ClassVar, Dict, Type, Tuple, Optional, List, Union
+from typing import ClassVar, Dict, Generic, Optional, Tuple, Type, TypeVar
+
 import numpy as np
 import torch
 from simple_parsing import choice, mutable_field
@@ -12,16 +13,14 @@ from torch import Tensor, nn, optim
 from torch.optim.optimizer import Optimizer
 from torchvision import models as tv_models
 
-from sequoia.settings import Setting, Environment
 from sequoia.common.config import Config
-from sequoia.common.loss import Loss
+from sequoia.common.hparams import categorical, log_uniform
 from sequoia.methods.aux_tasks.auxiliary_task import AuxiliaryTask
 from sequoia.methods.models.output_heads import OutputHead, PolicyHead
-from sequoia.utils.logging_utils import get_logger
-from sequoia.common.hparams import log_uniform, categorical
-from sequoia.settings import Observations, Rewards
-from sequoia.settings.assumptions.incremental import IncrementalAssumption
 from sequoia.methods.models.simple_convnet import SimpleConvNet
+from sequoia.settings import Environment, Observations, Rewards, Setting
+from sequoia.settings.assumptions.incremental import IncrementalAssumption
+from sequoia.utils.logging_utils import get_logger
 
 from .model import ForwardPass
 from .multihead_model import MultiHeadModel
@@ -30,14 +29,12 @@ from .semi_supervised_model import SemiSupervisedModel
 
 torch.autograd.set_detect_anomaly(True)
 
-logger = get_logger(__file__)
+logger = get_logger(__name__)
 SettingType = TypeVar("SettingType", bound=IncrementalAssumption)
 
 
-class BaseModel(
-    SemiSupervisedModel, MultiHeadModel, SelfSupervisedModel, Generic[SettingType]
-):
-    """ Base model LightningModule (nn.Module extended by pytorch-lightning)
+class BaseModel(SemiSupervisedModel, MultiHeadModel, SelfSupervisedModel, Generic[SettingType]):
+    """Base model LightningModule (nn.Module extended by pytorch-lightning)
 
     This model splits the learning task into a representation-learning problem
     and a downstream task (output head) applied on top of it.
@@ -48,10 +45,8 @@ class BaseModel(
     """
 
     @dataclass
-    class HParams(
-        SemiSupervisedModel.HParams, SelfSupervisedModel.HParams, MultiHeadModel.HParams
-    ):
-        """ HParams of the Model. """
+    class HParams(SemiSupervisedModel.HParams, SelfSupervisedModel.HParams, MultiHeadModel.HParams):
+        """HParams of the Model."""
 
         # NOTE: All the fields below were just copied from the BaseHParams class, just
         # to improve visibility a bit.
@@ -65,9 +60,7 @@ class BaseModel(
         }
 
         # Which optimizer to use.
-        optimizer: Type[Optimizer] = categorical(
-            available_optimizers, default=optim.Adam
-        )
+        optimizer: Type[Optimizer] = categorical(available_optimizers, default=optim.Adam)
 
         available_encoders: ClassVar[Dict[str, Type[nn.Module]]] = {
             "vgg16": tv_models.vgg16,
@@ -120,9 +113,7 @@ class BaseModel(
     def __init__(self, setting: SettingType, hparams: HParams, config: Config):
         super().__init__(setting=setting, hparams=hparams, config=config)
 
-        self.save_hyperparameters(
-            {"hparams": self.hp.to_dict(), "config": self.config.to_dict()}
-        )
+        self.save_hyperparameters({"hparams": self.hp.to_dict(), "config": self.config.to_dict()})
 
         logger.debug(f"setting of type {type(self.setting)}")
         logger.debug(f"Observation space: {self.observation_space}")
@@ -216,17 +207,16 @@ class BaseModel(
         return super().create_output_head(task_id=task_id)
 
     def output_head_type(self, setting: SettingType) -> Type[OutputHead]:
-        """ Return the type of output head we should use in a given setting.
-        """
+        """Return the type of output head we should use in a given setting."""
         # NOTE: Implementation is in `model.py`.
         return super().output_head_type(setting)
 
     @property
     def automatic_optimization(self) -> bool:
         return not isinstance(self.output_head, PolicyHead)
-    
+
     def training_step(
-        self, 
+        self,
         batch: Tuple[Observations, Optional[Rewards]],
         batch_idx: int,
         environment: Environment = None,

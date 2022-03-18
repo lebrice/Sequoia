@@ -5,15 +5,14 @@ from typing import Optional, Type
 
 import pytest
 
-
-from sequoia.conftest import slow
 from sequoia.common.config import Config
+from sequoia.conftest import slow
 from sequoia.methods import Method, get_all_methods
-from sequoia.methods.base_method import BaseMethod
-from sequoia.methods.random_baseline import RandomBaselineMethod
+from sequoia.methods.method_test import key_fn
 from sequoia.settings import Results, Setting, all_settings
 
 from .experiment import Experiment, get_method_names
+
 method_names = get_method_names()
 
 
@@ -59,7 +58,6 @@ def method_type(request, monkeypatch, set_argv_for_debug):
     return method_class
 
 
-from sequoia.methods.method_test import key_fn
 @pytest.fixture(params=sorted(all_settings, key=key_fn))
 def setting_type(request, monkeypatch, set_argv_for_debug):
     setting_class: Type[Setting] = request.param
@@ -72,7 +70,7 @@ def setting_type(request, monkeypatch, set_argv_for_debug):
 def test_experiment_from_args(
     method_type: Optional[Type[Method]], setting_type: Optional[Type[Setting]]
 ):
-    """ Test that when parsing the 'Experiment' from the command-line, the
+    """Test that when parsing the 'Experiment' from the command-line, the
     `setting` and `method` fields get set to the classes corresponding to their
     names.
     """
@@ -105,7 +103,7 @@ def test_launch_experiment_with_constructor(
 @slow
 @pytest.mark.timeout(300)
 def test_none_setting(method_type: Optional[Type[Method]], tmp_path: Path, monkeypatch):
-    """ Test that leaving the Setting unset runs on all applicable setting. """
+    """Test that leaving the Setting unset runs on all applicable setting."""
     method = method_type.get_name()
 
     for setting_type in method_type.get_applicable_settings():
@@ -124,13 +122,11 @@ def test_none_setting(method_type: Optional[Type[Method]], tmp_path: Path, monke
 @slow
 @pytest.mark.timeout(300)
 def test_none_method(setting_type: Optional[Type[Setting]]):
-    """ Test that leaving the method unset runs all applicable methods on the
+    """Test that leaving the method unset runs all applicable methods on the
     setting.
     """
     setting = setting_type.get_name()
-    all_results = Experiment.main(
-        f"--setting {setting} --debug --fast_dev_run --batch-size 1"
-    )
+    all_results = Experiment.main(f"--setting {setting} --debug --fast_dev_run --batch-size 1")
     for method_type in setting_type.get_applicable_methods():
         result = all_results[(setting_type, method_type)]
         assert result == (method_type, setting_type)

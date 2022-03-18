@@ -4,13 +4,11 @@ from typing import Callable, List, Tuple, Union
 
 import gym
 import torch
-from continuum.tasks import TaskSet
-from gym.wrappers import TransformObservation, TransformReward
-from sequoia.settings import Observations, Rewards
+from gym.wrappers import TransformReward
 from simple_parsing import list_field
 from torch import Tensor
 
-from sequoia.settings.sl.environment import PassiveEnvironment
+from sequoia.settings import Observations, Rewards
 
 
 def relabel(y: Tensor, task_classes: List[int]) -> Tensor:
@@ -28,21 +26,22 @@ class RelabelWrapper(TransformReward):
 
 @dataclass
 class RelabelTransform(Callable[[Tuple[Tensor, ...]], Tuple[Tensor, ...]]):
-    """ Transform that puts labels back into the [0, n_classes_per_task] range.
-    
+    """Transform that puts labels back into the [0, n_classes_per_task] range.
+
     For instance, if it's given a bunch of images that have labels [2, 3, 2]
     and the `task_classes = [2, 3]`, then the new labels will be
     `[0, 1, 0]`.
-    
+
     Note that the order in `task_classes` is perserved. For instance, in the
     above example, if `task_classes = [3, 2]`, then the new labels would be
     `[1, 0, 1]`.
-    
+
     IMPORTANT: This transform needs to be applied BEFORE ReorderTensor or
     SplitBatch, because it expects the batch to be (x, y, t) order
     """
+
     task_classes: List[int] = list_field()
-    
+
     def __call__(self, batch: Tuple[Tensor, ...]):
         assert isinstance(batch, (list, tuple)), batch
         if len(batch) == 2:
@@ -50,7 +49,7 @@ class RelabelTransform(Callable[[Tuple[Tensor, ...]], Tuple[Tensor, ...]]):
         if len(batch) == 1:
             return batch
         x, y, *task_labels = batch
-        
+
         # if y.max() == len(self.task_classes):
         #     # No need to relabel this batch.
         #     # @lebrice: Can we really skip relabeling in this case?
@@ -78,6 +77,7 @@ class ReorderTensors(Callable[[Tuple[Tensor, ...]], Tuple[Tensor, ...]]):
                 task_labels = extra_labels[0]
                 return (x, task_labels, y)
         assert False, batch
+
 
 @dataclass
 class DropTaskLabels(Callable[[Tuple[Tensor, ...]], Tuple[Tensor, ...]]):

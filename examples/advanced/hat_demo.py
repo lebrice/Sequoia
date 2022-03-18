@@ -12,17 +12,17 @@ from numpy import inf
 from simple_parsing import ArgumentParser
 from torch import Tensor
 
-from sequoia.methods import register_method
 from sequoia.common import Config
 from sequoia.common.spaces import Image
-from sequoia.settings import Method, Environment
+from sequoia.methods import register_method
+from sequoia.settings import Environment, Method
 from sequoia.settings.sl import TaskIncrementalSLSetting
 from sequoia.settings.sl.environment import PassiveEnvironment
 from sequoia.settings.sl.incremental import Actions, Observations, Rewards
 
 
 class Masks(NamedTuple):
-    """ Named tuple for the masked tensors created in the HATNet. """
+    """Named tuple for the masked tensors created in the HATNet."""
 
     gc1: Tensor
     gc2: Tensor
@@ -45,9 +45,7 @@ class HatNet(torch.nn.Module):
     Just like a classic PyTorch, here the different layers and components of the model are defined
     """
 
-    def __init__(
-        self, image_space: Image, n_classes_per_task: Dict[int, int], s_hat: int = 50
-    ):
+    def __init__(self, image_space: Image, n_classes_per_task: Dict[int, int], s_hat: int = 50):
         super().__init__()
 
         ncha = image_space.channels
@@ -95,9 +93,7 @@ class HatNet(torch.nn.Module):
         self.loss = torch.nn.CrossEntropyLoss()
         self.current_task: Optional[int] = 0
 
-    def forward(
-        self, observations: TaskIncrementalSLSetting.Observations
-    ) -> Tuple[Tensor, Masks]:
+    def forward(self, observations: TaskIncrementalSLSetting.Observations) -> Tuple[Tensor, Masks]:
         observations.as_list_of_tuples()
         x = observations.x
         t = observations.task_labels
@@ -146,17 +142,17 @@ class HatNet(torch.nn.Module):
         self, batch: Tuple[Observations, Optional[Rewards]], environment: Environment
     ) -> Tuple[Tensor, Dict]:
         """Shared step used for both training and validation.
-        
+
         Parameters
         ----------
         batch : Tuple[Observations, Optional[Rewards]]
             Batch containing Observations, and optional Rewards. When the Rewards are
             None, it means that we'll need to provide the Environment with actions
             before we can get the Rewards (e.g. image labels) back.
-            
+
             This happens for example when being applied in a Setting which cares about
             sample efficiency or training performance, for example.
-            
+
         environment : Environment
             The environment we're currently interacting with. Used to provide the
             rewards when they aren't already part of the batch (as mentioned above).
@@ -196,26 +192,22 @@ class HatNet(torch.nn.Module):
 def compute_conv_output_size(
     Lin: int, kernel_size: int, stride: int = 1, padding: int = 0, dilation: int = 1
 ) -> int:
-    return int(
-        np.floor(
-            (Lin + 2 * padding - dilation * (kernel_size - 1) - 1) / float(stride) + 1
-        )
-    )
+    return int(np.floor((Lin + 2 * padding - dilation * (kernel_size - 1) - 1) / float(stride) + 1))
 
 
 @register_method
 class HatDemoMethod(Method, target_setting=TaskIncrementalSLSetting):
-    """ 
-    Here we implement the method according to the characteristics and methodology of the current proposal. 
-    It should be as much as possible agnostic to the model and setting we are going to use. 
-    
-    The method proposed can be specific to a setting to make comparisons easier. 
+    """
+    Here we implement the method according to the characteristics and methodology of the current proposal.
+    It should be as much as possible agnostic to the model and setting we are going to use.
+
+    The method proposed can be specific to a setting to make comparisons easier.
     Here what we control is the model's training process, given a setting that delivers data in a certain way.
     """
 
     @dataclass
     class HParams:
-        """ Hyper-parameters of the Settings. """
+        """Hyper-parameters of the Settings."""
 
         # Learning rate of the optimizer.
         learning_rate: float = 0.001
@@ -234,7 +226,7 @@ class HatDemoMethod(Method, target_setting=TaskIncrementalSLSetting):
         self.optimizer: torch.optim.Optimizer
 
     def configure(self, setting: TaskIncrementalSLSetting):
-        """ Called before the method is applied on a setting (before training). 
+        """Called before the method is applied on a setting (before training).
 
         You can use this to instantiate your model, for instance, since this is
         where you get access to the observation & action spaces.
@@ -244,8 +236,7 @@ class HatDemoMethod(Method, target_setting=TaskIncrementalSLSetting):
             setting.increment == setting.test_increment
         ), "Assuming same number of classes per task for training and testing."
         n_classes_per_task = {
-            i: setting.num_classes_in_task(i, train=True)
-            for i in range(setting.nb_tasks)
+            i: setting.num_classes_in_task(i, train=True) for i in range(setting.nb_tasks)
         }
         image_space: Image = setting.observation_space["x"]
         self.model = HatNet(
@@ -254,14 +245,15 @@ class HatDemoMethod(Method, target_setting=TaskIncrementalSLSetting):
             s_hat=self.hparams.s_hat,
         )
         self.optimizer = torch.optim.Adam(
-            self.model.parameters(), lr=self.hparams.learning_rate,
+            self.model.parameters(),
+            lr=self.hparams.learning_rate,
         )
 
     def fit(self, train_env: PassiveEnvironment, valid_env: PassiveEnvironment):
-        """ 
-        Train loop 
+        """
+        Train loop
 
-        Different Settings can return elements from tasks in an other  way, 
+        Different Settings can return elements from tasks in an other  way,
         be it class incremental, task incremental, etc.
 
         Batch can have information about en environment, rewards, input, task labels, etc.
@@ -281,7 +273,8 @@ class HatDemoMethod(Method, target_setting=TaskIncrementalSLSetting):
                 train_pbar.set_description(f"Training Epoch {epoch}")
                 for i, batch in enumerate(train_pbar):
                     loss, metrics_dict = self.model.shared_step(
-                        batch, environment=train_env,
+                        batch,
+                        environment=train_env,
                     )
                     self.optimizer.zero_grad()
                     loss.backward()
@@ -299,7 +292,8 @@ class HatDemoMethod(Method, target_setting=TaskIncrementalSLSetting):
 
                 for i, batch in enumerate(val_pbar):
                     batch_val_loss, metrics_dict = self.model.shared_step(
-                        batch, environment=valid_env,
+                        batch,
+                        environment=valid_env,
                     )
                     epoch_val_loss += batch_val_loss
                     postfix.update(metrics_dict, val_loss=epoch_val_loss)
@@ -310,10 +304,8 @@ class HatDemoMethod(Method, target_setting=TaskIncrementalSLSetting):
                 best_val_loss = epoch_val_loss
                 best_epoch = i
 
-    def get_actions(
-        self, observations: Observations, action_space: gym.Space
-    ) -> Actions:
-        """ Get a batch of predictions (aka actions) for these observations. """
+    def get_actions(self, observations: Observations, action_space: gym.Space) -> Actions:
+        """Get a batch of predictions (aka actions) for these observations."""
         with torch.no_grad():
             logits, _ = self.model(observations)
         # Get the predicted classes

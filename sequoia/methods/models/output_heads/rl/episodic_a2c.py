@@ -2,50 +2,49 @@
 the end of the episode, rather than at each step.
 """
 
-from collections import deque
 from dataclasses import dataclass
 from typing import ClassVar, Deque, List, Optional
 
-import gym
 import numpy as np
 import torch
-from gym import Space, spaces
-from gym.spaces.utils import flatdim
-from simple_parsing import mutable_field
+from gym import spaces
 from torch import Tensor, nn
 from torch.nn import functional as F
 
 from sequoia.common import Loss
-from sequoia.common.hparams import categorical, log_uniform, uniform
+from sequoia.common.hparams import categorical, uniform
 from sequoia.common.metrics.rl_metrics import EpisodeMetrics
 from sequoia.settings import ContinualRLSetting
 from sequoia.settings.base import Rewards
 from sequoia.utils import get_logger
-from sequoia.utils.generic_functions import detach, get_slice, set_slice, stack
-from .policy_head import Categorical, PolicyHead, PolicyHeadOutput, normalize
 
-logger = get_logger(__file__)
+from .policy_head import PolicyHead, PolicyHeadOutput, normalize
 
+logger = get_logger(__name__)
 
 
 @dataclass(frozen=True)
 class A2CHeadOutput(PolicyHeadOutput):
-    """ Output produced by the A2C output head. """
+    """Output produced by the A2C output head."""
+
     # The value estimate coming from the critic.
     value: Tensor
 
+
 class EpisodicA2C(PolicyHead):
-    """ Advantage-Actor-Critic output head that produces a loss only at end of
+    """Advantage-Actor-Critic output head that produces a loss only at end of
     episode.
-    
+
     TODO: This could actually produce a loss every N steps, rather than just at
     the end of the episode.
     """
+
     name: ClassVar[str] = "episodic_a2c"
 
     @dataclass
     class HParams(PolicyHead.HParams):
-        """ Hyper-parameters of the episodic A2C output head. """
+        """Hyper-parameters of the episodic A2C output head."""
+
         # Wether to normalize the advantages for each episode.
         normalize_advantages: bool = categorical(True, False, default=False)
 
@@ -59,12 +58,14 @@ class EpisodicA2C(PolicyHead):
         # The discount factor.
         gamma: float = uniform(0.9, 0.999, default=0.99)
 
-    def __init__(self,
-                 input_space: spaces.Box,
-                 action_space: spaces.Discrete,
-                 reward_space: spaces.Box,
-                 hparams: HParams = None,
-                 name: str = "episodic_a2c"):
+    def __init__(
+        self,
+        input_space: spaces.Box,
+        action_space: spaces.Discrete,
+        reward_space: spaces.Box,
+        hparams: HParams = None,
+        name: str = "episodic_a2c",
+    ):
         super().__init__(
             input_space=input_space,
             action_space=action_space,
@@ -92,9 +93,9 @@ class EpisodicA2C(PolicyHead):
     def actor(self) -> nn.Module:
         return self.dense
 
-    def forward(self,
-                observations: ContinualRLSetting.Observations,
-                representations: Tensor) -> A2CHeadOutput:
+    def forward(
+        self, observations: ContinualRLSetting.Observations, representations: Tensor
+    ) -> A2CHeadOutput:
         actions: PolicyHeadOutput = super().forward(observations, representations)
         # TODO: Shouldn't the critic also take the actor's action as an input?
         value = self.critic(representations)
@@ -105,14 +106,14 @@ class EpisodicA2C(PolicyHead):
             y_pred=actions.y_pred,
             logits=actions.logits,
             action_dist=actions.action_dist,
-            value=value
+            value=value,
         )
         return actions
 
     def num_stored_steps(self, env_index: int) -> Optional[int]:
-        """ Returns the number of steps stored in the buffer for the given
+        """Returns the number of steps stored in the buffer for the given
         environment index.
-        
+
         If there are no buffers for the given env, returns None
         """
         if not self.actions or env_index >= len(self.actions):
@@ -136,10 +137,12 @@ class EpisodicA2C(PolicyHead):
             # For now, we only give back a loss at the end of the episode.
             # TODO: Test if giving back a loss at each step or every few steps
             # would work better!
-            logger.warning(RuntimeWarning(
-                f"Returning None as the episode loss, because only have "
-                f"{n_stored_steps} steps stored for that environment."
-            ))
+            logger.warning(
+                RuntimeWarning(
+                    f"Returning None as the episode loss, because only have "
+                    f"{n_stored_steps} steps stored for that environment."
+                )
+            )
             return None
 
         inputs: Tensor
@@ -170,7 +173,7 @@ class EpisodicA2C(PolicyHead):
         loss = Loss(self.name)
 
         # Policy gradient loss (actor loss)
-        policy_gradient_loss = - (advantages.detach() * action_log_probs).mean()
+        policy_gradient_loss = -(advantages.detach() * action_log_probs).mean()
         actor_loss = Loss("actor", policy_gradient_loss)
         loss += self.hparams.actor_loss_coef * actor_loss
 
@@ -181,7 +184,7 @@ class EpisodicA2C(PolicyHead):
         loss += self.hparams.critic_loss_coef * critic_loss
 
         # Entropy loss, to "favor exploration".
-        entropy_loss_tensor = - actions.action_dist.entropy().mean()
+        entropy_loss_tensor = -actions.action_dist.entropy().mean()
         entropy_loss = Loss("entropy", entropy_loss_tensor)
         loss += self.hparams.entropy_loss_coef * entropy_loss
         if done:

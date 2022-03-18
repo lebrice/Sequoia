@@ -21,25 +21,26 @@ sys.path.extend([".", ".."])
 from sequoia.common.config import Config
 from sequoia.common.loss import Loss
 from sequoia.methods import BaseMethod
-from sequoia.methods.trainer import TrainerConfig
-from sequoia.methods.aux_tasks import AuxiliaryTask, SimCLRTask
+from sequoia.methods.aux_tasks import AuxiliaryTask
 from sequoia.methods.models import BaseModel, ForwardPass
-from sequoia.settings import Setting, Environment, RLSetting
-from sequoia.utils import camel_case, dict_intersection, get_logger
+from sequoia.methods.trainer import TrainerConfig
+from sequoia.settings import Environment, RLSetting, Setting
+from sequoia.utils.utils import camel_case, dict_intersection
+from sequoia.utils.logging_utils import get_logger
 
-logger = get_logger(__file__)
+logger = get_logger(__name__)
 
 
 class SimpleRegularizationAuxTask(AuxiliaryTask):
-    """ Same regularization loss as in the previous examples, this time
+    """Same regularization loss as in the previous examples, this time
     implemented as an `AuxiliaryTask`, which gets added to the BaseModel,
     making it applicable to both RL and SL.
-    
+
     This adds a CL regularizaiton loss to the BaseModel.
-    
+
     The most important methods of `AuxiliaryTask` is `get_loss`, which should
     return a `Loss` for the given forward pass and resulting rewards/labels.
-    Take a look at the `AuxiliaryTask` class for more info.    
+    Take a look at the `AuxiliaryTask` class for more info.
     """
 
     name: ClassVar[str] = "simple_regularization"
@@ -73,7 +74,7 @@ class SimpleRegularizationAuxTask(AuxiliaryTask):
 
     def get_loss(self, forward_pass: ForwardPass, y: Tensor = None) -> Loss:
         """Get a `Loss` for the given forward pass and resulting rewards/labels.
-        
+
         Take a look at the `AuxiliaryTask` class for more info,
 
         NOTE: This is the same simplified version of EWC used throughout the
@@ -91,16 +92,13 @@ class SimpleRegularizationAuxTask(AuxiliaryTask):
 
         loss = 0.0
         for weight_name, (new_w, old_w) in dict_intersection(new_weights, old_weights):
-            loss += torch.dist(
-                new_w, old_w.type_as(new_w), p=self.options.distance_norm
-            )
+            loss += torch.dist(new_w, old_w.type_as(new_w), p=self.options.distance_norm)
 
         ewc_loss = Loss(name=self.name, loss=loss)
         return ewc_loss
 
     def on_task_switch(self, task_id: int) -> None:
-        """ Executed when the task switches (to either a new or known task).
-        """
+        """Executed when the task switches (to either a new or known task)."""
         if not self.enabled:
             return
         if self.previous_task is None and self.n_switches == 0:
@@ -122,8 +120,7 @@ class SimpleRegularizationAuxTask(AuxiliaryTask):
 class CustomizedBaselineModel(BaseModel):
     @dataclass
     class HParams(BaseModel.HParams):
-        """ Hyper-parameters of our customized baseline model.
-        """
+        """Hyper-parameters of our customized baseline model."""
 
         # Hyper-parameters of our simple new auxiliary task.
         simple_reg: SimpleRegularizationAuxTask.Options = field(
@@ -141,8 +138,6 @@ class CustomizedBaselineModel(BaseModel):
 
         # Here we add our new auxiliary task:
         self.add_auxiliary_task(SimpleRegularizationAuxTask(options=self.hp.simple_reg))
-        # You could also add other auxiliary tasks, for example SimCLR:
-        # self.add_auxiliary_task(SimCLRTask(coefficient=1.))
 
         # Or, add replay buffers of some sort:
         self.replay_buffer: List = []
@@ -152,11 +147,11 @@ class CustomizedBaselineModel(BaseModel):
 
 @dataclass
 class CustomMethod(BaseMethod, target_setting=Setting):
-    """ Example methods which adds regularization to the baseline in RL and SL.
-    
+    """Example methods which adds regularization to the baseline in RL and SL.
+
     This extends the `BaseMethod` by adding the simple regularization
     auxiliary task defined above to the `BaseModel`.
-    
+
     NOTE: Since this class inherits from `BaseMethod`, which targets the
     `Setting` setting, i.e. the "root" node, it is applicable to all settings,
     both in RL and SL. However, you could customize the `target_setting`
@@ -177,18 +172,18 @@ class CustomMethod(BaseMethod, target_setting=Setting):
         **kwargs,
     ):
         super().__init__(
-            hparams=hparams, config=config, trainer_options=trainer_options, **kwargs,
+            hparams=hparams,
+            config=config,
+            trainer_options=trainer_options,
+            **kwargs,
         )
 
     def create_model(self, setting: Setting) -> CustomizedBaselineModel:
-        """ Creates the Model to be used for the given `Setting`. """
-        return CustomizedBaselineModel(
-            setting=setting, hparams=self.hparams, config=self.config
-        )
+        """Creates the Model to be used for the given `Setting`."""
+        return CustomizedBaselineModel(setting=setting, hparams=self.hparams, config=self.config)
 
     def configure(self, setting: Setting):
-        """ Configure this Method before being trained / tested on this Setting.
-        """
+        """Configure this Method before being trained / tested on this Setting."""
         super().configure(setting)
 
         # For example, change the value of the coefficient of our
@@ -199,8 +194,8 @@ class CustomMethod(BaseMethod, target_setting=Setting):
             self.hparams.simple_reg.coefficient = 1.0
 
     def fit(self, train_env: Environment, valid_env: Environment):
-        """ Called by the Setting to let the Method train on a given task.
-        
+        """Called by the Setting to let the Method train on a given task.
+
         You can do whatever you want with the train and valid
         environments. As it is currently, in most `Settings`, the valid
         environment will contain data from only the current task. (See issue at
@@ -211,7 +206,7 @@ class CustomMethod(BaseMethod, target_setting=Setting):
     @classmethod
     def add_argparse_args(cls, parser: ArgumentParser):
         """Adds command-line arguments for this Method to an argument parser.
-        
+
         NOTE: This doesn't do anything differently than the base implementation,
         but it's included here just for illustration purposes.
         """
@@ -225,7 +220,7 @@ class CustomMethod(BaseMethod, target_setting=Setting):
 
     @classmethod
     def from_argparse_args(cls, args: Namespace):
-        """ Create an instance of this class from the parsed arguments. """
+        """Create an instance of this class from the parsed arguments."""
         # Retrieve the parsed arguments:
         dest = camel_case(cls.__qualname__)
         method: CustomMethod = getattr(args, dest)
@@ -235,7 +230,7 @@ class CustomMethod(BaseMethod, target_setting=Setting):
 
 
 def demo_manual():
-    """ Apply the custom method to a Setting, creating both manually in code. """
+    """Apply the custom method to a Setting, creating both manually in code."""
     # Create any Setting from the tree:
     from sequoia.settings import TaskIncrementalRLSetting, TaskIncrementalSLSetting
 
@@ -253,9 +248,7 @@ def demo_manual():
     config = Config(debug=True)
     trainer_options = TrainerConfig(max_epochs=1)
     hparams = BaseModel.HParams()
-    base_method = BaseMethod(
-        hparams=hparams, config=config, trainer_options=trainer_options
-    )
+    base_method = BaseMethod(hparams=hparams, config=config, trainer_options=trainer_options)
 
     ## Get the results of the baseline method:
     base_results = setting.apply(base_method, config=config)
@@ -264,9 +257,7 @@ def demo_manual():
     config = Config(debug=True)
     trainer_options = TrainerConfig(max_epochs=1)
     hparams = CustomizedBaselineModel.HParams()
-    new_method = CustomMethod(
-        hparams=hparams, config=config, trainer_options=trainer_options
-    )
+    new_method = CustomMethod(hparams=hparams, config=config, trainer_options=trainer_options)
 
     ## Get the results for the 'improved' method:
     new_results = setting.apply(new_method, config=config)
@@ -280,9 +271,9 @@ def demo_manual():
 
 
 def demo_command_line():
-    """ Run the same demo as above, but customizing the Setting and Method from
+    """Run the same demo as above, but customizing the Setting and Method from
     the command-line.
-    
+
     NOTE: Remember to uncomment the function call below to use this instead of
     demo_simple!
     """

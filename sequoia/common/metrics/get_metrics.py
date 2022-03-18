@@ -16,19 +16,21 @@ from .classification import ClassificationMetrics
 from .metrics import Metrics
 from .regression import RegressionMetrics
 
-logger = get_logger(__file__)
+logger = get_logger(__name__)
 
 
 def to_optional_tensor(x: Optional[Union[Tensor, np.ndarray, List]]) -> Optional[Tensor]:
-    """ Converts `x` into a Tensor if `x` is not None, else None. """
+    """Converts `x` into a Tensor if `x` is not None, else None."""
     return x if x is None else torch.as_tensor(x)
 
 
 @torch.no_grad()
-def get_metrics(y_pred: Union[Tensor, np.ndarray],
-                y: Union[Tensor, np.ndarray],
-                x: Union[Tensor, np.ndarray]=None,
-                h_x: Union[Tensor, np.ndarray]=None) -> Optional[Metrics]:
+def get_metrics(
+    y_pred: Union[Tensor, np.ndarray],
+    y: Union[Tensor, np.ndarray],
+    x: Union[Tensor, np.ndarray] = None,
+    h_x: Union[Tensor, np.ndarray] = None,
+) -> Optional[Metrics]:
     y = to_optional_tensor(y)
     y_pred = to_optional_tensor(y_pred)
     x = to_optional_tensor(x)

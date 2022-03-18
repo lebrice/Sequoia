@@ -4,23 +4,20 @@ from typing import Callable, List, Optional, Tuple, Union
 import numpy as np
 import torch
 from gym import spaces
+from torch import Tensor, nn
+
 from sequoia.common.spaces.image import Image
-from sequoia.common.transforms import Compose
 from sequoia.utils.generic_functions import singledispatchmethod
 from sequoia.utils.logging_utils import get_logger
-from torch import Tensor, nn
-from torch.nn import Flatten
 
-logger = get_logger(__file__)
-import torch
-from torch import Tensor, nn
+logger = get_logger(__name__)
 
 
 class Lambda(nn.Module):
     def __init__(self, func: Callable):
         super().__init__()
         self.func = func
-    
+
     def forward(self, x):
         return self.func(x)
 
@@ -35,12 +32,9 @@ class Reshape(nn.Module):
 
 
 class ConvBlock(nn.Module):
-    def __init__(self,
-                 in_channels: int,
-                 out_channels: int,
-                 kernel_size: int=3,
-                 padding: int=1,
-                 **kwargs):
+    def __init__(
+        self, in_channels: int, out_channels: int, kernel_size: int = 3, padding: int = 1, **kwargs
+    ):
         super().__init__()
         self.in_channels = in_channels
         self.out_channels = out_channels
@@ -55,12 +49,13 @@ class ConvBlock(nn.Module):
         self.norm = nn.BatchNorm2d(out_channels)
         self.relu = nn.ReLU()
         self.pool = nn.MaxPool2d(2)
-    
+
     def forward(self, x):
         x = self.conv(x)
         x = self.norm(x)
         x = self.relu(x)
         return self.pool(x)
+
 
 class DeConvBlock(nn.Module):
     """Block that performs:
@@ -72,14 +67,17 @@ class DeConvBlock(nn.Module):
     BatchNorm2D
     Relu (optional)
     """
-    def __init__(self,
-                 in_channels: int,
-                 out_channels: int,
-                 hidden_channels: Optional[int]=None,
-                 kernel_size: int=3,
-                 padding: int=1,
-                 last_relu: bool=True,
-                 **kwargs):
+
+    def __init__(
+        self,
+        in_channels: int,
+        out_channels: int,
+        hidden_channels: Optional[int] = None,
+        kernel_size: int = 3,
+        padding: int = 1,
+        last_relu: bool = True,
+        **kwargs,
+    ):
         self.in_channels = in_channels
         self.out_channels = out_channels
         self.hidden_channels = hidden_channels or out_channels
@@ -104,7 +102,7 @@ class DeConvBlock(nn.Module):
         )
         self.norm2 = nn.BatchNorm2d(self.hidden_channels)
         self.relu = nn.ReLU()
-    
+
     def forward(self, x):
         x = self.upsample(x)
         x = self.conv1(x)
@@ -117,16 +115,11 @@ class DeConvBlock(nn.Module):
         return x
 
 
-
-
 def n_output_features(
     in_features: int, padding: int = 1, kernel_size: int = 3, stride: int = 1
 ) -> int:
-    """ Calculates the number of output features of a conv2d layer given its parameters.
-    """
+    """Calculates the number of output features of a conv2d layer given its parameters."""
     return math.floor((in_features + 2 * padding - kernel_size) / stride) + 1
-
-
 
 
 class Conv2d(nn.Conv2d):
@@ -180,10 +173,12 @@ class MaxPool2d(nn.MaxPool2d):
     def _(self, input: Image) -> Image:
         assert input.channels_first, f"Need channels first inputs: {input}"
         # assert not self.padding, "assuming no padding for now."
-        padding = [self.padding] * 2 if isinstance(self.padding, int) else self.padding 
-        kernel_size = [self.kernel_size] * 2 if isinstance(self.kernel_size, int) else self.kernel_size 
-        stride = [self.stride] * 2 if isinstance(self.stride, int) else self.stride 
-        
+        padding = [self.padding] * 2 if isinstance(self.padding, int) else self.padding
+        kernel_size = (
+            [self.kernel_size] * 2 if isinstance(self.kernel_size, int) else self.kernel_size
+        )
+        stride = [self.stride] * 2 if isinstance(self.stride, int) else self.stride
+
         new_height = n_output_features(
             input.height,
             padding=padding[0],
@@ -208,7 +203,7 @@ class MaxPool2d(nn.MaxPool2d):
 
 
 class Sequential(nn.Sequential):
-    
+
     # NB: We can't really type check this function as the type of input
     # may change dynamically (as is tested in
     # TestScript.test_sequential_intermediary_types).  Cannot annotate
@@ -231,7 +226,8 @@ class Sequential(nn.Sequential):
                         out_space = type(space)(low=-np.inf, high=np.inf, shape=out_sample.shape)
                         space = out_space
                     else:
-                        logger.debug(f"Unable to apply module {module} on space {space}: assuming that it doesn't change the space.")
+                        logger.debug(
+                            f"Unable to apply module {module} on space {space}: assuming that it doesn't change the space."
+                        )
             return space
         return super().forward(input)
-

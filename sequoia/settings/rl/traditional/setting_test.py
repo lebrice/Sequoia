@@ -2,16 +2,13 @@
 from typing import ClassVar, Type
 
 import pytest
-from sequoia.settings import Setting
-import numpy as np
 import torch
 
-from ..incremental.setting_test import (
-    TestIncrementalRLSetting as IncrementalRLSettingTests,
-)
-from .setting import TraditionalRLSetting
-from sequoia.settings.rl.setting_test import DummyMethod
 from sequoia.settings.assumptions.incremental_results import TaskSequenceResults
+from sequoia.settings.rl.setting_test import DummyMethod
+
+from ..incremental.setting_test import TestIncrementalRLSetting as IncrementalRLSettingTests
+from .setting import TraditionalRLSetting
 
 
 class TestTraditionalRLSetting(IncrementalRLSettingTests):
@@ -32,7 +29,6 @@ class TestTraditionalRLSetting(IncrementalRLSettingTests):
         # assert setting.task_labels_at_test_time
         # assert False, method.observation_task_labels
         assert method.n_fit_calls == 1
-        import numpy as np
         import torch
 
         assert torch.unique_consecutive(

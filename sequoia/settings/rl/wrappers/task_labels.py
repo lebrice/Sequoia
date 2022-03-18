@@ -1,39 +1,18 @@
 from collections.abc import Mapping
 from dataclasses import is_dataclass, replace
 from functools import singledispatch
-from typing import (
-    Any,
-    Callable,
-    Dict,
-    List,
-    Optional,
-    Sequence,
-    Tuple,
-    Type,
-    TypeVar,
-    Union,
-)
+from typing import Any, Dict, Optional, Tuple, TypeVar, Union
 
 import gym
-import numpy as np
 from gym import Space, spaces
-from torch import Tensor
 
 from sequoia.common import Batch
 from sequoia.common.gym_wrappers import IterableWrapper, TransformObservation
 from sequoia.common.gym_wrappers.multi_task_environment import add_task_labels
 from sequoia.common.gym_wrappers.utils import IterableWrapper
 from sequoia.common.spaces import Sparse, TypedDictSpace
-from sequoia.common.spaces.named_tuple import NamedTuple, NamedTupleSpace
-from sequoia.settings.base.environment import Environment
-from sequoia.settings.base.objects import (
-    Actions,
-    ActionType,
-    Observations,
-    ObservationType,
-    Rewards,
-    RewardType,
-)
+from sequoia.common.spaces.named_tuple import NamedTupleSpace
+from sequoia.settings.base.objects import ObservationType
 
 T = TypeVar("T")
 
@@ -135,9 +114,9 @@ def hide_task_labels_in_typed_dict_space(
 
 
 class HideTaskLabelsWrapper(TransformObservation):
-    """ Hides the task labels by setting them to None, rather than removing them
+    """Hides the task labels by setting them to None, rather than removing them
     entirely.
-    
+
     This might be useful in order not to break the inheritance 'contract' when
     going from contexts where you don't have the task labels to contexts where
     you do have them.
@@ -150,7 +129,7 @@ class HideTaskLabelsWrapper(TransformObservation):
 
 @singledispatch
 def remove_task_labels(observation: Any) -> Any:
-    """ Removes the task labels from an observation / observation space. """
+    """Removes the task labels from an observation / observation space."""
     if is_dataclass(observation):
         return replace(observation, task_labels=None)
     raise NotImplementedError(
@@ -187,8 +166,7 @@ def _(observation: Dict) -> Dict:
 
 
 class RemoveTaskLabelsWrapper(TransformObservation):
-    """ Removes the task labels from the observations and the observation space.
-    """
+    """Removes the task labels from the observations and the observation space."""
 
     def __init__(self, env: gym.Env, f=remove_task_labels):
         super().__init__(env, f=f)
@@ -202,15 +180,13 @@ class RemoveTaskLabelsWrapper(TransformObservation):
 
 
 class FixedTaskLabelWrapper(IterableWrapper):
-    """ Wrapper that adds always the same given task id to the observations.
+    """Wrapper that adds always the same given task id to the observations.
 
     Used when the list of envs for each task is passed, so that each env also has the
     task id as part of their observation space and in their observations.
     """
 
-    def __init__(
-        self, env: gym.Env, task_label: Optional[int], task_label_space: gym.Space
-    ):
+    def __init__(self, env: gym.Env, task_label: Optional[int], task_label_space: gym.Space):
         super().__init__(env=env)
         self.task_label = task_label
         self.task_label_space = task_label_space

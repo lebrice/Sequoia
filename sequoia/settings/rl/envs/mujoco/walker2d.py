@@ -1,8 +1,9 @@
-from typing import ClassVar, List, Dict, Tuple
+from typing import ClassVar, Dict, List, Tuple
 
 from gym.envs.mujoco import MujocoEnv
 from gym.envs.mujoco.walker2d import Walker2dEnv as _Walker2dV2Env
 from gym.envs.mujoco.walker2d_v3 import Walker2dEnv as _Walker2dV3Env
+
 from .modified_gravity import ModifiedGravityEnv
 from .modified_mass import ModifiedMassEnv
 from .modified_size import ModifiedSizeEnv
@@ -79,9 +80,7 @@ class Walker2dGravityEnv(ModifiedGravityEnv, Walker2dV2Env):
         super().__init__(model_path=model_path, frame_skip=frame_skip, gravity=gravity)
 
 
-class ContinualWalker2dV2Env(
-    ModifiedGravityEnv, ModifiedSizeEnv, ModifiedMassEnv, Walker2dV2Env
-):
+class ContinualWalker2dV2Env(ModifiedGravityEnv, ModifiedSizeEnv, ModifiedMassEnv, Walker2dV2Env):
     def __init__(
         self,
         model_path: str = "walker2d.xml",
@@ -101,9 +100,7 @@ class ContinualWalker2dV2Env(
         )
 
 
-class ContinualWalker2dV3Env(
-    ModifiedGravityEnv, ModifiedSizeEnv, ModifiedMassEnv, Walker2dV3Env
-):
+class ContinualWalker2dV3Env(ModifiedGravityEnv, ModifiedSizeEnv, ModifiedMassEnv, Walker2dV3Env):
     # def __init__(self, model_path, frame_skip, gravity=-9.81, **kwargs):
     #     super().__init__(model_path, frame_skip, gravity=gravity, **kwargs)
     def __init__(

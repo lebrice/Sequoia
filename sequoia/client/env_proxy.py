@@ -2,19 +2,12 @@
 
 For now this simply holds the 'remote' environment in memory.
 """
-from typing import (
-    Any,
-    Dict,
-    List,
-    Optional,
-    Sequence,
-    Tuple,
-    Type,
-    Union,
-)
+from typing import Any, Dict, List, Optional, Sequence, Tuple, Type, Union
+
 import numpy as np
+from torch import Tensor
+
 from sequoia.common.metrics import Metrics
-from sequoia.common.spaces import TypedDictSpace
 from sequoia.settings import (
     Actions,
     ActionType,
@@ -26,7 +19,6 @@ from sequoia.settings import (
     RewardType,
     Setting,
 )
-from torch import Tensor
 
 MISSING = object()
 
@@ -83,9 +75,7 @@ class EnvironmentProxy(Environment[ObservationType, ActionType, RewardType]):
             actions = actions.numpy()
         actions_pkl = actions
         # TODO: Use some kind of gRPC endpoint.
-        observations_pkl, rewards_pkl, done_pkl, info_pkl = self.__environment.step(
-            actions_pkl
-        )
+        observations_pkl, rewards_pkl, done_pkl, info_pkl = self.__environment.step(actions_pkl)
         if isinstance(observations_pkl, (Observations, dict)):
             observations = self._setting_type.Observations(**observations_pkl)
         else:
@@ -108,7 +98,7 @@ class EnvironmentProxy(Environment[ObservationType, ActionType, RewardType]):
         if isinstance(actions, Actions):
             actions = actions.y_pred
         if isinstance(actions, Tensor):
-            actions = actions.numpy()
+            actions = actions.cpu().numpy()
         actions_pkl = actions
         rewards_pkl = self.__environment.send(actions_pkl)
         if isinstance(rewards_pkl, (Rewards, dict)):

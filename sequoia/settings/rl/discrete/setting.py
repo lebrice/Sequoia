@@ -1,34 +1,22 @@
-import itertools
-import math
-import warnings
-from dataclasses import InitVar, dataclass, fields
-from typing import Any, Callable, ClassVar, Dict, List, Optional, Union, Type
+from dataclasses import dataclass
+from typing import Any, Callable, ClassVar, Dict, Optional, Type, Union
 
-import gym
-import numpy as np
-from sequoia.common.gym_wrappers import IterableWrapper
-from sequoia.common.gym_wrappers.batch_env.tile_images import tile_images
-from sequoia.common.gym_wrappers.utils import is_monsterkong_env
-from sequoia.common.metrics.rl_metrics import EpisodeMetrics
-from sequoia.settings.assumptions.context_discreteness import DiscreteContextAssumption
-from sequoia.settings.assumptions.incremental import TaskResults, TaskSequenceResults
-from sequoia.settings.rl.envs import MUJOCO_INSTALLED
-from sequoia.utils.logging_utils import get_logger
-from sequoia.utils.utils import dict_union, pairwise
+from gym.envs.registration import EnvSpec, registry
 from simple_parsing import field
 from simple_parsing.helpers import choice
 
-from ..continual.setting import (
-    ContinualRLSetting,
-    ContinualRLTestEnvironment,
-    supported_envs as _parent_supported_envs,
-)
-from .tasks import DiscreteTask, TaskSchedule, is_supported, make_discrete_task
-from .tasks import registry, EnvSpec
-from .test_environment import DiscreteTaskAgnosticRLTestEnvironment, TestEnvironment
+from sequoia.common.gym_wrappers.utils import is_monsterkong_env
+from sequoia.settings.assumptions.context_discreteness import DiscreteContextAssumption
+from sequoia.settings.rl.continual.tasks import TaskSchedule, registry
+from sequoia.utils.logging_utils import get_logger
+from sequoia.utils.utils import dict_union
 
-from sequoia.settings.rl.envs import MONSTERKONG_INSTALLED
-logger = get_logger(__file__)
+from ..continual.setting import ContinualRLSetting
+from ..continual.setting import supported_envs as _parent_supported_envs
+from .tasks import DiscreteTask, is_supported, make_discrete_task
+from .test_environment import DiscreteTaskAgnosticRLTestEnvironment
+
+logger = get_logger(__name__)
 
 supported_envs: Dict[str, EnvSpec] = dict_union(
     _parent_supported_envs,
@@ -41,25 +29,20 @@ supported_envs: Dict[str, EnvSpec] = dict_union(
 available_datasets: Dict[str, str] = {env_id: env_id for env_id in supported_envs}
 
 from .results import DiscreteTaskAgnosticRLResults
-from sequoia.settings.base import Results
-
 
 
 @dataclass
 class DiscreteTaskAgnosticRLSetting(DiscreteContextAssumption, ContinualRLSetting):
-    """ Continual Reinforcement Learning Setting where there are clear task boundaries,
+    """Continual Reinforcement Learning Setting where there are clear task boundaries,
     but where the task information isn't available.
     """
+
     # TODO: Update the type or results that we get for this Setting.
     Results: ClassVar[Type[Results]] = DiscreteTaskAgnosticRLResults
-    
-    
-    
+
     # The type wrapper used to wrap the test environment, and which produces the
     # results.
-    TestEnvironment: ClassVar[
-        Type[TestEnvironment]
-    ] = DiscreteTaskAgnosticRLTestEnvironment
+    TestEnvironment: ClassVar[Type[TestEnvironment]] = DiscreteTaskAgnosticRLTestEnvironment
 
     # The function used to create the tasks for the chosen env.
     _task_sampling_function: ClassVar[Callable[..., DiscreteTask]] = make_discrete_task

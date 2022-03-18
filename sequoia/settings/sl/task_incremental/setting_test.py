@@ -1,40 +1,29 @@
 import itertools
 import math
-from dataclasses import dataclass
 from typing import *
 
-import matplotlib.pyplot as plt
-import numpy as np
 import pytest
-import torch
-import torch.multiprocessing as mp
-from torch import Tensor
-from torch.utils.data import DataLoader, IterableDataset
-from torchvision.transforms import Compose, ToTensor
 
-from continuum.datasets import MNIST
-from simple_parsing import ArgumentParser, mutable_field
 from sequoia.common.config import Config
-from sequoia.utils.logging_utils import get_logger, log_calls
 from sequoia.settings.assumptions.incremental_test import OtherDummyMethod
-from .setting import TaskIncrementalSLSetting
-from ..incremental.setting_test import (
-    TestIncrementalSLSetting as IncrementalSLSettingTests,
-)
+from sequoia.utils.logging_utils import get_logger
 
-logger = get_logger(__file__)
-from sequoia.settings import Setting
+from ..incremental.setting_test import TestIncrementalSLSetting as IncrementalSLSettingTests
+from .setting import TaskIncrementalSLSetting
+
+logger = get_logger(__name__)
 
 
 class TestTaskIncrementalSLSetting(IncrementalSLSettingTests):
     Setting: ClassVar[Type[Setting]] = TaskIncrementalSLSetting
     fast_dev_run_kwargs: ClassVar[Dict[str, Any]] = dict(
-        dataset="mnist", batch_size=64,
+        dataset="mnist",
+        batch_size=64,
     )
 
 
 def check_only_right_classes_present(setting: TaskIncrementalSLSetting):
-    """ Checks that only the classes within each task are present.
+    """Checks that only the classes within each task are present.
 
     TODO: This should be refactored to be based more on the reward space.
     """
@@ -48,9 +37,7 @@ def check_only_right_classes_present(setting: TaskIncrementalSLSetting):
         # get the classes in the current task:
         task_classes = setting.task_classes(i, train=True)
 
-        for j, (observations, rewards) in enumerate(
-            itertools.islice(train_loader, 100)
-        ):
+        for j, (observations, rewards) in enumerate(itertools.islice(train_loader, 100)):
             x = observations.x
             t = observations.task_labels
 
@@ -74,9 +61,7 @@ def check_only_right_classes_present(setting: TaskIncrementalSLSetting):
         train_loader.close()
 
         valid_loader = setting.val_dataloader(batch_size=batch_size)
-        for j, (observations, rewards) in enumerate(
-            itertools.islice(valid_loader, 100)
-        ):
+        for j, (observations, rewards) in enumerate(itertools.islice(valid_loader, 100)):
             x = observations.x
             t = observations.task_labels
 
@@ -157,8 +142,7 @@ def test_task_incremental_mnist_setup_reversed_class_order():
     )
     assert setting.task_labels_at_train_time and setting.task_labels_at_test_time
     assert (
-        setting.known_task_boundaries_at_train_time
-        and setting.known_task_boundaries_at_test_time
+        setting.known_task_boundaries_at_train_time and setting.known_task_boundaries_at_test_time
     )
     setting.prepare_data(data_dir="data")
     setting.setup()
@@ -166,7 +150,11 @@ def test_task_incremental_mnist_setup_reversed_class_order():
 
 
 def test_class_incremental_mnist_setup_with_nb_tasks():
-    setting = TaskIncrementalSLSetting(dataset="mnist", nb_tasks=2, num_workers=0,)
+    setting = TaskIncrementalSLSetting(
+        dataset="mnist",
+        nb_tasks=2,
+        num_workers=0,
+    )
     assert setting.increment == 5
     setting.prepare_data(data_dir="data")
     setting.setup()
@@ -177,7 +165,7 @@ def test_class_incremental_mnist_setup_with_nb_tasks():
 
 
 def test_action_space_always_matches_obs_batch_size(config: Config):
-    """ Make sure that the batch size in the observations always matches the action
+    """Make sure that the batch size in the observations always matches the action
     space provided to the `get_actions` method.
 
     ALSO:
@@ -186,6 +174,7 @@ def test_action_space_always_matches_obs_batch_size(config: Config):
     - The total number of observations match the dataset size.
     """
     nb_tasks = 5
+    # TODO: The `drop_last` argument seems to not be used correctly by the dataloaders / test loop.
     batch_size = 128
 
     # HUH why are we doing this here?
@@ -195,6 +184,7 @@ def test_action_space_always_matches_obs_batch_size(config: Config):
         batch_size=batch_size,
         num_workers=4,
         monitor_training_performance=True,
+        drop_last=False,
     )
 
     # 10_000 examples in the test dataset of mnist.
@@ -206,4 +196,7 @@ def test_action_space_always_matches_obs_batch_size(config: Config):
     # Multiply by nb_tasks because the test loop is ran after each training task.
     assert sum(method.batch_sizes) == total_samples * nb_tasks
     assert len(method.batch_sizes) == math.ceil(total_samples / batch_size) * nb_tasks
-    assert set(method.batch_sizes) == {batch_size, total_samples % batch_size}
+    if total_samples % batch_size == 0:
+        assert set(method.batch_sizes) == {batch_size}
+    else:
+        assert set(method.batch_sizes) == {batch_size, total_samples % batch_size}

@@ -1,20 +1,21 @@
-
-from sequoia.common.metrics.rl_metrics import EpisodeMetrics
-from sequoia.conftest import DummyEnvironment
-import pytest
-from .measure_performance import MeasureRLPerformanceWrapper
+import itertools
+from functools import partial
 from itertools import accumulate
+
+import numpy as np
+import pytest
+from gym.vector import SyncVectorEnv
+
 # from sequoia.settings.rl.continual import ContinualRLSetting
 from sequoia.common.gym_wrappers import EnvDataset
-from gym.vector import SyncVectorEnv
-import numpy as np
-from functools import partial
-import itertools
+from sequoia.common.metrics.rl_metrics import EpisodeMetrics
+from sequoia.conftest import DummyEnvironment
+
+from .measure_performance import MeasureRLPerformanceWrapper
 
 
 def test_measure_RL_performance_basics():
     env = DummyEnvironment(start=0, target=5, max_value=10)
-    
 
     # env = TypedObjectsWrapper(env, observations_type=ContinualRLSetting.Observations, actions_type=ContinualRLSetting.Actions, rewards_type=ContinualRLSetting.Rewards)
 
@@ -41,7 +42,9 @@ def test_measure_RL_performance_basics():
     from itertools import accumulate
 
     expected_metrics = {}
-    for episode_steps, cumul_step, episode_reward in zip(all_episode_steps, accumulate(all_episode_steps), all_episode_rewards):
+    for episode_steps, cumul_step, episode_reward in zip(
+        all_episode_steps, accumulate(all_episode_steps), all_episode_rewards
+    ):
         expected_metrics[cumul_step] = EpisodeMetrics(
             n_samples=1,
             mean_episode_reward=episode_reward,
@@ -54,6 +57,7 @@ def test_measure_RL_performance_basics():
 def test_measure_RL_performance_iteration():
     env = DummyEnvironment(start=0, target=5, max_value=10)
     from gym.wrappers import TimeLimit
+
     max_episode_steps = 50
     env = EnvDataset(env)
     env = TimeLimit(env, max_episode_steps=max_episode_steps)
@@ -81,7 +85,9 @@ def test_measure_RL_performance_iteration():
         all_episode_rewards.append(episode_reward)
 
     expected_metrics = {}
-    for episode_steps, cumul_step, episode_reward in zip(all_episode_steps, accumulate(all_episode_steps), all_episode_rewards):
+    for episode_steps, cumul_step, episode_reward in zip(
+        all_episode_steps, accumulate(all_episode_steps), all_episode_rewards
+    ):
         expected_metrics[cumul_step] = EpisodeMetrics(
             n_samples=1,
             mean_episode_reward=episode_reward,
@@ -98,10 +104,14 @@ def test_measure_RL_performance_batched_env():
     batch_size = 3
     start = [i for i in range(batch_size)]
     target = 5
-    env = EnvDataset(SyncVectorEnv([
-        partial(DummyEnvironment, start=start[i], target=target, max_value=target * 2)
-        for i in range(batch_size)
-    ]))
+    env = EnvDataset(
+        SyncVectorEnv(
+            [
+                partial(DummyEnvironment, start=start[i], target=target, max_value=target * 2)
+                for i in range(batch_size)
+            ]
+        )
+    )
     # env = TypedObjectsWrapper(env, observations_type=ContinualRLSetting.Observations, actions_type=ContinualRLSetting.Actions, rewards_type=ContinualRLSetting.Rewards)
 
     env = MeasureRLPerformanceWrapper(env)
@@ -117,6 +127,7 @@ def test_measure_RL_performance_batched_env():
         # print(obs, reward, done, info)
     assert step == 99
     from collections import defaultdict
+
     from sequoia.common.metrics import Metrics
 
     expected_metrics = defaultdict(Metrics)
@@ -125,7 +136,7 @@ def test_measure_RL_performance_batched_env():
             if i and i % target == 0:
                 expected_metrics[i] += EpisodeMetrics(
                     n_samples=1,
-                    mean_episode_reward=10., # ? FIXME: Actually understand this condition
+                    mean_episode_reward=10.0,  # ? FIXME: Actually understand this condition
                     mean_episode_length=target,
                 )
 

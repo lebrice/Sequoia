@@ -3,25 +3,25 @@ import json
 import warnings
 from dataclasses import dataclass
 from io import StringIO
-from pathlib import Path
 from typing import ClassVar, Dict, Generic, List, Optional, Union
 
 import matplotlib.pyplot as plt
 import numpy as np
-import wandb
 from gym.utils import colorize
-from sequoia.common.metrics import Metrics
-from sequoia.settings.base.results import Results
 from simple_parsing.helpers import list_field
 from simple_parsing.helpers.serialization import encode
 
-from .iid_results import MetricType, TaskResults
+import wandb
+from sequoia.common.metrics import Metrics
+from sequoia.settings.base.results import Results
+
 from .discrete_results import TaskSequenceResults
+from .iid_results import MetricType, TaskResults
 
 
 @dataclass
 class IncrementalResults(Results, Generic[MetricType]):
-    """ Results for a whole train loop (transfer matrix).
+    """Results for a whole train loop (transfer matrix).
 
     This class is basically just a 2d list of TaskResults objects, with some convenience
     methods and properties.
@@ -52,8 +52,7 @@ class IncrementalResults(Results, Generic[MetricType]):
     @property
     def transfer_matrix(self) -> List[List[TaskResults]]:
         return [
-            task_sequence_result.task_results for task_sequence_result in 
-            self.task_sequence_results
+            task_sequence_result.task_results for task_sequence_result in self.task_sequence_results
         ]
 
     @property
@@ -62,7 +61,7 @@ class IncrementalResults(Results, Generic[MetricType]):
         in each cell.
 
         NOTE: This is different from `transfer_matrix` since it returns the matrix of
-        `TaskResults` objects (which are themselves lists of Metrics) 
+        `TaskResults` objects (which are themselves lists of Metrics)
 
         Returns
         -------
@@ -93,7 +92,7 @@ class IncrementalResults(Results, Generic[MetricType]):
 
     @property
     def cl_score(self) -> float:
-        """ CL Score, as a weigted sum of three objectives:
+        """CL Score, as a weigted sum of three objectives:
         - The average final performance over all tasks
         - The average 'online' performance over all tasks
         - Runtime
@@ -140,24 +139,20 @@ class IncrementalResults(Results, Generic[MetricType]):
             return 1.0
         if max_runtime_hours <= runtime_hours:
             return 0.0
-        return 1 - (
-            (runtime_hours - min_runtime_hours)
-            / (max_runtime_hours - min_runtime_hours)
-        )
+        return 1 - ((runtime_hours - min_runtime_hours) / (max_runtime_hours - min_runtime_hours))
 
     def _online_performance_score(self) -> float:
         """Function that takes the 'objective' of the Metrics from the average online
         performance, and returns a normalized float score between 0 and 1.
         """
         objectives: List[float] = [
-            task_online_metric.objective
-            for task_online_metric in self.online_performance_metrics
+            task_online_metric.objective for task_online_metric in self.online_performance_metrics
         ]
         return self._objective_scaling_factor * np.mean(objectives)
         # return self._objective_scaling_factor * self.average_online_performance.objective
 
     def _final_performance_score(self) -> float:
-        """ Function that takes the 'objective' of the Metrics from the average
+        """Function that takes the 'objective' of the Metrics from the average
         final performance, and returns a normalized float score between 0 and 1.
         """
         objectives: List[float] = [
@@ -177,9 +172,9 @@ class IncrementalResults(Results, Generic[MetricType]):
 
     @property
     def online_performance(self) -> List[Dict[int, MetricType]]:
-        """ Returns the online training performance for each task. i.e. the diagonal of
+        """Returns the online training performance for each task. i.e. the diagonal of
         the transfer matrix.
-        
+
         In SL, this is only recorded over the first epoch.
 
         Returns
@@ -222,16 +217,12 @@ class IncrementalResults(Results, Generic[MetricType]):
         # TODO: This assumes that the metrics were stored in the right index for their
         # corresponding task.
         for task_id, task_sequence_result in enumerate(self.task_sequence_results):
-            log_dict[f"Task {task_id}"] = task_sequence_result.to_log_dict(
-                verbose=verbose
-            )
+            log_dict[f"Task {task_id}"] = task_sequence_result.to_log_dict(verbose=verbose)
 
         if self._online_training_performance:
             log_dict["Online Performance"] = {
                 f"Task {task_id}": task_online_metrics.to_log_dict(verbose=verbose)
-                for task_id, task_online_metrics in enumerate(
-                    self.online_performance_metrics
-                )
+                for task_id, task_online_metrics in enumerate(self.online_performance_metrics)
             }
 
         log_dict.update(
@@ -247,7 +238,7 @@ class IncrementalResults(Results, Generic[MetricType]):
     def summary(self, verbose: bool = False):
         s = StringIO()
         log_dict = self.to_log_dict(verbose=verbose)
-        log_dict_json = json.dumps(log_dict, indent="\t", default=encode) 
+        log_dict_json = json.dumps(log_dict, indent="\t", default=encode)
         print(log_dict_json, file=s)
         s.seek(0)
         return s.read()

@@ -1,7 +1,8 @@
-from gym.envs.mujoco import MujocoEnv
-import numpy as np
-from typing import Union, List, Dict, ClassVar, TypeVar, Mapping
 from functools import partial
+from typing import ClassVar, Dict, List, TypeVar, Union
+
+import numpy as np
+from gym.envs.mujoco import MujocoEnv
 
 V = TypeVar("V")
 
@@ -33,8 +34,7 @@ class ModifiedMassEnv(MujocoEnv):
         )
         self.body_name_to_mass_scale = body_name_to_mass_scale or {}
         self.default_masses_dict: Dict[str, float] = {
-            body_name: self.model.body_mass[i]
-            for i, body_name in enumerate(self.model.body_names)
+            body_name: self.model.body_mass[i] for i, body_name in enumerate(self.model.body_names)
         }
         self.default_masses: np.ndarray = np.copy(self.model.body_mass)
 
@@ -60,7 +60,6 @@ class ModifiedMassEnv(MujocoEnv):
 
         TODO: Not sure if this is entirely correct
         """
-        pass
         # self.model._compute_subtree()
         # self.model.forward()
 

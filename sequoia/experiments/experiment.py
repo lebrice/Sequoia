@@ -1,55 +1,36 @@
 """ Module used for launching an Experiment (applying a Method to one or more
 Settings).
 """
-import json
 import os
 import shlex
 import sys
-from collections import defaultdict
-from dataclasses import InitVar, dataclass
-from functools import partial
-from inspect import isabstract, isclass
+from dataclasses import dataclass
+from inspect import isclass
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple, Type, TypeVar, Union
+from typing import Any, Dict, List, Optional, Tuple, Type, Union
 
-import sequoia.methods
-from simple_parsing import (
-    ArgumentParser,
-    ConflictResolution,
-    choice,
-    field,
-    mutable_field,
-    subparsers,
-)
+from simple_parsing import ArgumentParser, choice, mutable_field
 
 from sequoia.common.config import Config, WandbConfig
 from sequoia.methods import Method, get_all_methods
-from sequoia.settings import (
-    Results,
-    Setting,
-    SettingType,
-    all_settings,
-)
-from sequoia.settings.sl.incremental import IncrementalSLResults
+from sequoia.settings import Results, Setting, all_settings
 from sequoia.settings.presets import setting_presets
 from sequoia.utils import Parseable, Serializable, get_logger
 from sequoia.utils.logging_utils import get_logger
 
-logger = get_logger(__file__)
+logger = get_logger(__name__)
 
 source_dir = Path(os.path.dirname(__file__))
 
 
 def get_method_names() -> Dict[str, Type[Method]]:
     all_methods = get_all_methods()
-    return {
-        method.get_full_name(): method for method in all_methods
-    }
+    return {method.get_full_name(): method for method in all_methods}
 
 
 @dataclass
 class Experiment(Parseable, Serializable):
-    """ Applies a Method to an experimental Setting to obtain Results.
+    """Applies a Method to an experimental Setting to obtain Results.
 
     When the `setting` is not set, this will apply the chosen method on all of
     its "applicable" settings. (i.e. all subclasses of its target setting).
@@ -115,8 +96,7 @@ class Experiment(Parseable, Serializable):
             # config file.
             # TODO: IDEA: Do the same thing for loading the Method?
             logger.info(
-                f"Will load the options for the setting from the file "
-                f"at path {self.benchmark}."
+                f"Will load the options for the setting from the file " f"at path {self.benchmark}."
             )
             drop_extras = True
             if self.setting is None:
@@ -141,9 +121,7 @@ class Experiment(Parseable, Serializable):
                 # dependency, since when no arguments are passed, the default RL setting
                 # is created (cartpole with pixel observations), which requires a render
                 # wrapper to be added (which itself uses pyglet, which uses OpenGL).
-                logger.warning(
-                    RuntimeWarning(f"Unable to check for unused args: {exc}")
-                )
+                logger.warning(RuntimeWarning(f"Unable to check for unused args: {exc}"))
                 # In this case, we just pretend that no arguments would have been used.
                 unused_args = sys.argv[1:]
 
@@ -162,9 +140,7 @@ class Experiment(Parseable, Serializable):
             assert isclass(self.setting) and issubclass(self.setting, Setting)
             # Actually load the setting from the file.
             # TODO: Why isn't this using `load_benchmark`?
-            self.setting = self.setting.load(
-                path=self.benchmark, drop_extra_fields=drop_extras
-            )
+            self.setting = self.setting.load(path=self.benchmark, drop_extra_fields=drop_extras)
             self.setting.wandb = self.wandb
 
             if self.method is None:
@@ -176,8 +152,7 @@ class Experiment(Parseable, Serializable):
         if self.setting is not None and self.method is not None:
             if not self.method.is_applicable(self.setting):
                 raise RuntimeError(
-                    f"Method {self.method} isn't applicable to "
-                    f"setting {self.setting}!"
+                    f"Method {self.method} isn't applicable to " f"setting {self.setting}!"
                 )
 
         assert (
@@ -199,18 +174,18 @@ class Experiment(Parseable, Serializable):
         argv: Union[str, List[str]] = None,
         strict_args: bool = False,
     ) -> Results:
-        """ Launches an experiment, applying `method` onto `setting`
+        """Launches an experiment, applying `method` onto `setting`
         and returning the corresponding results.
-        
+
         This assumes that both `setting` and `method` are not None.
         This always returns a single `Results` object.
-        
+
         If either `setting` or `method` are classes, then instances of these
         classes from the command-line arguments `argv`.
-        
+
         If `strict_args` is True and there are leftover arguments (not consumed
         by either the Setting or the Method), a RuntimeError is raised.
-        
+
         This then returns the result of `setting.apply(method)`.
 
         Parameters
@@ -226,10 +201,12 @@ class Experiment(Parseable, Serializable):
         Returns
         -------
         Results
-            
+
         """
         assert setting is not None and method is not None
-        assert isinstance(setting, Setting), f"TODO: Fix this, need to pass a wandb config to the Setting from the experiment!"
+        assert isinstance(
+            setting, Setting
+        ), f"TODO: Fix this, need to pass a wandb config to the Setting from the experiment!"
         if not (isinstance(setting, Setting) and isinstance(method, Method)):
             setting, method = parse_setting_and_method_instances(
                 setting=setting, method=method, argv=argv, strict_args=strict_args
@@ -242,18 +219,20 @@ class Experiment(Parseable, Serializable):
         return setting.apply(method, config=config)
 
     def launch(
-        self, argv: Union[str, List[str]] = None, strict_args: bool = False,
+        self,
+        argv: Union[str, List[str]] = None,
+        strict_args: bool = False,
     ) -> Results:
-        """ Launches the experiment, applying `self.method` onto `self.setting`
+        """Launches the experiment, applying `self.method` onto `self.setting`
         and returning the corresponding results.
-        
+
         This differs from `main` in that this assumes that both `self.setting`
         and `self.method` are not None, and so this always returns a single
         `Results` object.
-        
+
         NOTE: Internally, this is equivalent to calling `run_experiment`,
         passing in the `setting`, `method` and `config` arguments from `self`.
-        
+
         Parameters
         ----------
         argv : Union[str, List[str]], optional
@@ -287,10 +266,11 @@ class Experiment(Parseable, Serializable):
 
         return self.setting.apply(self.method, config=self.config)
 
-
     @classmethod
     def main(
-        cls, argv: Union[str, List[str]] = None, strict_args: bool = False,
+        cls,
+        argv: Union[str, List[str]] = None,
+        strict_args: bool = False,
     ) -> Union[Results, Tuple[Dict, Any], List[Tuple[Dict, Results]]]:
         """Launches one or more experiments from the command-line.
 
@@ -339,9 +319,7 @@ class Experiment(Parseable, Serializable):
 
         # TODO: Test out this other case. Haven't used it in a while.
         # TODO: Move this to something like a BatchExperiment?
-        all_results = launch_batch_of_runs(
-            setting=setting, method=method, argv=argv
-        )
+        all_results = launch_batch_of_runs(setting=setting, method=method, argv=argv)
         return all_results
 
 
@@ -398,9 +376,7 @@ def launch_batch_of_runs(
     arguments_of_each_run: List[Dict] = []
     results_of_each_run: List[Result] = []
     # Create one 'job' per setting-method combination:
-    for setting_type, method_type, run_config in zip(
-        setting_types, method_types, run_configs
-    ):
+    for setting_type, method_type, run_config in zip(setting_types, method_types, run_configs):
         # NOTE: Some methods might use all the values in `argv`, and some
         # might not, so we set `strict=False`.
         arguments_of_each_run.append(
@@ -462,7 +438,8 @@ def parse_setting_and_method_instances(
 
 
 def get_class_with_name(
-    class_name: str, all_classes: Union[List[Type[Setting]], List[Type[Method]]],
+    class_name: str,
+    all_classes: Union[List[Type[Setting]], List[Type[Method]]],
 ) -> Union[Type[Method], Type[Setting]]:
     potential_classes = [c for c in all_classes if c.get_name() == class_name]
     # if target_class:
@@ -490,7 +467,7 @@ def check_has_descendants(potential_classes: List[Type[Method]]) -> List[bool]:
     """
 
     def _has_descendant(method: Type[Method]) -> bool:
-        """ For a given method, check if it has any descendants within
+        """For a given method, check if it has any descendants within
         the list of potential methods.
         """
         return any(
@@ -502,12 +479,20 @@ def check_has_descendants(potential_classes: List[Type[Method]]) -> List[bool]:
 
 
 def main():
-    logger.debug("Registered Settings: \n" + "\n".join(
-        f"- {setting.get_name()}: {setting} ({setting.get_path_to_source_file()})" for setting in all_settings
-    ))
-    logger.debug("Registered Methods: \n" + "\n".join(
-        f"- {method.get_name()}: {method} ({method.get_path_to_source_file()})" for method in get_all_methods()
-    ))
+    logger.debug(
+        "Registered Settings: \n"
+        + "\n".join(
+            f"- {setting.get_name()}: {setting} ({setting.get_path_to_source_file()})"
+            for setting in all_settings
+        )
+    )
+    logger.debug(
+        "Registered Methods: \n"
+        + "\n".join(
+            f"- {method.get_name()}: {method} ({method.get_path_to_source_file()})"
+            for method in get_all_methods()
+        )
+    )
 
     Experiment.main()
     exit(0)

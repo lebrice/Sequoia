@@ -18,16 +18,16 @@ from sequoia.methods import register_method
 from sequoia.methods.aux_tasks.ewc import EWCTask
 from sequoia.methods.base_method import BaseMethod, BaseModel
 from sequoia.methods.trainer import TrainerConfig
-from sequoia.settings import Setting, TaskIncrementalRLSetting
+from sequoia.settings import Setting, TaskIncrementalRLSetting, IncrementalSLSetting
 from sequoia.settings.assumptions.incremental import IncrementalAssumption
 
 
 class EwcModel(BaseModel):
-    """ Modified version of the BaseModel, which adds the EWC auxiliary task. """
+    """Modified version of the BaseModel, which adds the EWC auxiliary task."""
 
     @dataclass
     class HParams(BaseModel.HParams):
-        """ Hyper-parameters of the `EwcModel`. """
+        """Hyper-parameters of the `EwcModel`."""
 
         # Hyper-parameters related to the EWC auxiliary task.
         ewc: EWCTask.Options = mutable_field(EWCTask.Options)
@@ -43,8 +43,8 @@ class EwcModel(BaseModel):
 
 @register_method
 @dataclass
-class EwcMethod(BaseMethod, target_setting=IncrementalAssumption):
-    """ Subclass of the BaseMethod, which adds the EWCTask to the `BaseModel`.
+class EwcMethod(BaseMethod, target_setting=IncrementalSLSetting):
+    """Subclass of the BaseMethod, which adds the EWCTask to the `BaseModel`.
 
     This Method is applicable to any CL setting (RL or SL) where there are clear task
     boundaries, regardless of if the task labels are given or not.
@@ -59,12 +59,10 @@ class EwcMethod(BaseMethod, target_setting=IncrementalAssumption):
         trainer_options: TrainerConfig = None,
         **kwargs,
     ):
-        super().__init__(
-            hparams=hparams, config=config, trainer_options=trainer_options, **kwargs
-        )
+        super().__init__(hparams=hparams, config=config, trainer_options=trainer_options, **kwargs)
 
     def configure(self, setting: IncrementalAssumption):
-        """ Called before the method is applied on a setting (before training).
+        """Called before the method is applied on a setting (before training).
 
         You can use this to instantiate your model, for instance, since this is
         where you get access to the observation & action spaces.
@@ -108,8 +106,7 @@ class EwcMethod(BaseMethod, target_setting=IncrementalAssumption):
 
 
 def demo():
-    """ Runs the EwcMethod on a simple setting, just to check that it works fine.
-    """
+    """Runs the EwcMethod on a simple setting, just to check that it works fine."""
 
     # Adding arguments for each group directly:
     parser = ArgumentParser(description=__doc__)

@@ -1,7 +1,7 @@
 import dataclasses
 import enum
-import inspect
 import functools
+import inspect
 import math
 import random
 from typing import Any, ClassVar, Dict, NamedTuple, Optional, Type
@@ -11,6 +11,7 @@ import numpy as np
 import pytest
 from gym import spaces
 from gym.envs.classic_control import CartPoleEnv
+
 from sequoia.common.config import Config
 from sequoia.common.gym_wrappers import RenderEnvWrapper
 from sequoia.common.spaces import Image, Sparse
@@ -22,7 +23,6 @@ from sequoia.conftest import (
     slow,
     xfail_param,
 )
-from sequoia.settings.base import Setting
 from sequoia.methods.random_baseline import RandomBaselineMethod
 from sequoia.settings.assumptions.incremental_test import OtherDummyMethod
 from sequoia.settings.rl import TaskIncrementalRLSetting
@@ -600,7 +600,7 @@ def test_action_space_always_matches_obs_batch_size_in_RL(config: Config):
         batch_size=batch_size,
         train_max_steps=200,
         test_max_steps=200,
-        num_workers=4,  # Intentionally wrong
+        num_workers=0,
         # monitor_training_performance=True, # This is still a TODO in RL.
     )
     total_samples = len(setting.test_dataloader())
@@ -854,8 +854,17 @@ episodes = lambda v: Period(value=v, type=PeriodTypeEnum.EPISODES)
 
 train_task_schedule = {
     steps(10): "CartPole-v0",
-    episodes(1000): "Breakout-v0",
+    episodes(1000): "ALE/Breakout-v5",
 }
+
+from gym.wrappers import TimeLimit
+
+
+def make_random_cartpole_env(gravity_scale: float):
+    env = gym.make("CartPole-v1")
+    env = TimeLimit(env, max_episode_steps=50)
+    env.unwrapped.gravity *= gravity_scale
+    return env
 
 
 class TestPassingEnvsForEachTask:
@@ -864,25 +873,20 @@ class TestPassingEnvsForEachTask:
     """
 
     def test_raises_warning_when_envs_have_different_obs_spaces(self):
-        task_envs = ["CartPole-v0", "Pendulum-v0"]
+        task_envs = ["CartPole-v0", "Pendulum-v1"]
         with pytest.warns(RuntimeWarning, match="doesn't have the same observation space"):
             setting = IncrementalRLSetting(train_envs=task_envs)
             setting.train_dataloader()
 
-    def test_passing_envs_for_each_task(self):
+    def test_passing_env_fns_for_each_task(self):
         nb_tasks = 3
-        gravities = [random.random() * 10 for _ in range(nb_tasks)]
-
-        def make_random_cartpole_env(task_id):
-            def _env_fn() -> CartPoleEnv:
-                env = gym.make("CartPole-v0")
-                env.gravity = gravities[task_id]
-                return env
-
-            return _env_fn
+        gravity_scales = [0.5 + random.random() for _ in range(nb_tasks)]
 
         # task_envs = ["CartPole-v0", "CartPole-v1"]
-        task_envs = [make_random_cartpole_env(i) for i in range(nb_tasks)]
+        task_envs = [
+            functools.partial(make_random_cartpole_env, gravity_scales[i]) for i in range(nb_tasks)
+        ]
+        base_env = make_random_cartpole_env(gravity_scale=1.0)
 
         setting = IncrementalRLSetting(train_envs=task_envs)
         assert setting.nb_tasks == nb_tasks
@@ -901,12 +905,12 @@ class TestPassingEnvsForEachTask:
         setting.current_task_id = 0
 
         train_env = setting.train_dataloader()
-        assert train_env.gravity == gravities[0]
+        assert train_env.gravity == base_env.gravity * gravity_scales[0]
 
         setting.current_task_id = 1
 
         train_env = setting.train_dataloader()
-        assert train_env.gravity == gravities[1]
+        assert train_env.gravity == base_env.gravity * gravity_scales[1]
 
         assert isinstance(train_env.unwrapped, CartPoleEnv)
 
@@ -918,20 +922,68 @@ class TestPassingEnvsForEachTask:
             # dedicated `SparseDiscrete`, `SparseBox` etc spaces so that we eventually
             # get to use `space.n` on a Sparse space.
             assert train_env.observation_space.task_labels == spaces.Discrete(setting.nb_tasks)
-            assert (
-                setting.observation_space.task_labels.n == train_env.observation_space.task_labels.n
+            sparsity = 0.0 if setting.task_labels_at_test_time else 0.5
+            assert setting.observation_space.task_labels == Sparse(
+                spaces.Discrete(setting.nb_tasks),
+                sparsity=sparsity,
+            )
+
+    def test_passing_env_for_each_task(self):
+        nb_tasks = 3
+        gravity_scales = [0.5 + random.random() for _ in range(nb_tasks)]
+
+        # task_envs = ["CartPole-v0", "CartPole-v1"]
+        task_envs = [make_random_cartpole_env(gravity_scales[i]) for i in range(nb_tasks)]
+        base_env = make_random_cartpole_env(1.0)
+        setting = IncrementalRLSetting(train_envs=task_envs)
+        assert setting.nb_tasks == nb_tasks
+
+        # TODO: Using 'no-op' task schedules, rather than empty ones.
+        # This fixes a bug with the creation of the test environment.
+        assert not any(setting.train_task_schedule.values())
+        assert not any(setting.val_task_schedule.values())
+        assert not any(setting.test_task_schedule.values())
+        # assert not setting.train_task_schedule
+        # assert not setting.val_task_schedule
+        # assert not setting.test_task_schedule
+
+        # assert len(setting.train_task_schedule.keys()) == 2
+
+        setting.current_task_id = 0
+
+        train_env = setting.train_dataloader()
+        assert train_env.gravity == base_env.gravity * gravity_scales[0]
+
+        setting.current_task_id = 1
+
+        train_env = setting.train_dataloader()
+        assert train_env.gravity == base_env.gravity * gravity_scales[1]
+
+        assert isinstance(train_env.unwrapped, CartPoleEnv)
+
+        # Not sure, do we want to add a 'observation_spaces`, `action_spaces` and
+        # `reward_spaces` properties?
+        assert setting.observation_space.x == train_env.observation_space.x
+        if setting.task_labels_at_train_time:
+            # TODO: Either add a `__getattr__` proxy on the Sparse space, or create
+            # dedicated `SparseDiscrete`, `SparseBox` etc spaces so that we eventually
+            # get to use `space.n` on a Sparse space.
+            assert train_env.observation_space.task_labels == spaces.Discrete(setting.nb_tasks)
+            sparsity = 0.0 if setting.task_labels_at_test_time else 0.5
+            assert setting.observation_space.task_labels == Sparse(
+                spaces.Discrete(setting.nb_tasks), sparsity=sparsity
             )
 
     def test_command_line(self):
         # TODO: If someone passes the same env ids from the command-line, then shouldn't
         # we somehow vary the tasks by changing the level or something?
 
-        setting = IncrementalRLSetting.from_args(argv="--train_envs CartPole-v0 Pendulum-v0")
-        assert setting.train_envs == ["CartPole-v0", "Pendulum-v0"]
+        setting = IncrementalRLSetting.from_args(argv="--train_envs CartPole-v0 Pendulum-v1")
+        assert setting.train_envs == ["CartPole-v0", "Pendulum-v1"]
         # TODO: Not using this:
 
     def test_raises_warning_when_envs_have_different_obs_spaces(self):
-        task_envs = ["CartPole-v0", "Pendulum-v0"]
+        task_envs = ["CartPole-v1", "Pendulum-v1"]
         with pytest.warns(RuntimeWarning, match="doesn't have the same observation space"):
             setting = IncrementalRLSetting(train_envs=task_envs)
             setting.train_dataloader()
@@ -940,15 +992,6 @@ class TestPassingEnvsForEachTask:
         nb_tasks = 3
         gravities = [random.random() * 10 for _ in range(nb_tasks)]
         from gym.wrappers import TimeLimit
-
-        def make_random_cartpole_env(task_id):
-            def _env_fn() -> CartPoleEnv:
-                env = gym.make("CartPole-v0")
-                env = TimeLimit(env, max_episode_steps=50)
-                env.gravity = gravities[task_id]
-                return env
-
-            return _env_fn
 
         # task_envs = ["CartPole-v0", "CartPole-v1"]
         task_envs = [make_random_cartpole_env(i) for i in range(nb_tasks)]

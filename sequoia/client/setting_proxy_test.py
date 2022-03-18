@@ -1,25 +1,34 @@
 """TODO: Tests for the SettingProxy.
 
 """
-from typing import Type
-
-from typing import ClassVar
 from functools import partial
+from typing import ClassVar, Type
+
 import numpy as np
 import pytest
 from gym import spaces
-from sequoia.common.spaces import Image, Sparse, TypedDictSpace
+
+from sequoia.common.metrics.rl_metrics import EpisodeMetrics
+from sequoia.common.spaces import Image, Sparse
 from sequoia.common.transforms import Transforms
+from sequoia.conftest import slow
 from sequoia.methods.base_method import BaseMethod
+from sequoia.methods.method_test import key_fn
 from sequoia.methods.random_baseline import RandomBaselineMethod
 from sequoia.settings import Setting, all_settings
 from sequoia.settings.rl import IncrementalRLSetting, TaskIncrementalRLSetting
+from sequoia.settings.rl.continual.setting import ContinualRLSetting
+from sequoia.settings.rl.continual.setting_test import (
+    TestContinualRLSetting as ContinualRLSettingTests,
+)
 from sequoia.settings.sl import ClassIncrementalSetting, DomainIncrementalSLSetting
-from sequoia.conftest import slow
-from sequoia.common.metrics.rl_metrics import EpisodeMetrics
+from sequoia.settings.sl.continual.setting import ContinualSLSetting
+from sequoia.settings.sl.continual.setting_test import (
+    TestContinualSLSetting as ContinualSLSettingTests,
+)
 
 from .setting_proxy import SettingProxy
-from sequoia.methods.method_test import key_fn
+
 
 @pytest.mark.parametrize("setting_type", sorted(all_settings, key=key_fn))
 def test_spaces_match(setting_type: Type[Setting]):
@@ -44,18 +53,8 @@ def test_transforms_get_propagated():
         assert setting.train_dataloader().reset().x.shape == (3, 32, 32)
 
 
-from sequoia.settings.sl.continual.setting import ContinualSLSetting
-from sequoia.settings.sl.continual.setting_test import TestContinualSLSetting as ContinualSLSettingTests
-
-
 class TestContinualSLSettingProxy(ContinualSLSettingTests):
     Setting: ClassVar[Type[Setting]] = partial(SettingProxy, ContinualSLSetting)
-
-
-from sequoia.settings.rl.continual.setting import ContinualRLSetting
-from sequoia.settings.rl.continual.setting_test import TestContinualRLSetting as ContinualRLSettingTests
-
-
 
 
 class TestContinualRLSettingProxy(ContinualRLSettingTests):
@@ -110,7 +109,7 @@ def test_random_baseline_SL_track():
 @slow
 @pytest.mark.timeout(300)
 def test_baseline_SL_track(config):
-    """ Applies the BaseMethod on something ressembling the SL track of the
+    """Applies the BaseMethod on something ressembling the SL track of the
     competition.
     """
     method = BaseMethod(max_epochs=1)
@@ -135,7 +134,10 @@ def test_baseline_SL_track(config):
 
 
 def test_rl_track_setting_is_correct():
-    setting = SettingProxy(IncrementalRLSetting, "rl_track",)
+    setting = SettingProxy(
+        IncrementalRLSetting,
+        "rl_track",
+    )
     assert setting.nb_tasks == 8
     assert setting.dataset == "MetaMonsterKong-v0"
     assert setting.observation_space == spaces.Dict(
@@ -157,13 +159,15 @@ def test_rl_track_setting_is_correct():
 
     train_env = setting.train_dataloader()
     assert train_env.observation_space == spaces.Dict(
-        x=Image(0, 1, (3, 64, 64), dtype=np.float32), task_labels=spaces.Discrete(8),
+        x=Image(0, 1, (3, 64, 64), dtype=np.float32),
+        task_labels=spaces.Discrete(8),
     )
     assert train_env.reset() in train_env.observation_space
 
     valid_env = setting.val_dataloader()
     assert valid_env.observation_space == spaces.Dict(
-        x=Image(0, 1, (3, 64, 64), dtype=np.float32), task_labels=spaces.Discrete(8),
+        x=Image(0, 1, (3, 64, 64), dtype=np.float32),
+        task_labels=spaces.Discrete(8),
     )
 
     # IDEA: Prevent submissions from calling the test_dataloader method or accessing the
@@ -178,11 +182,15 @@ def test_rl_track_setting_is_correct():
 
 
 def test_sl_track_setting_is_correct():
-    setting = SettingProxy(ClassIncrementalSetting, "sl_track",)
+    setting = SettingProxy(
+        ClassIncrementalSetting,
+        "sl_track",
+    )
     assert setting.nb_tasks == 12
     assert setting.dataset == "synbols"
     assert setting.observation_space == spaces.Dict(
-        x=Image(0, 1, (3, 32, 32), dtype=np.float32), task_labels=spaces.Discrete(12),
+        x=Image(0, 1, (3, 32, 32), dtype=np.float32),
+        task_labels=spaces.Discrete(12),
     )
     assert setting.n_classes_per_task == 4
     assert setting.action_space == spaces.Discrete(48)

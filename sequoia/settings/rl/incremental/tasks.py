@@ -3,26 +3,28 @@ ContinualRL
 """
 import operator
 import warnings
-from functools import singledispatch, partial
-from typing import Any, Callable, Dict, List, Optional, Union
+from functools import partial, singledispatch
+from typing import Callable, List
+
 import gym
-from gym.envs.registration import registry, EnvRegistry, EnvSpec
 import numpy as np
+
 from sequoia.settings.rl.envs import (
     METAWORLD_INSTALLED,
-    MONSTERKONG_INSTALLED,
     MTENV_INSTALLED,
-    MUJOCO_INSTALLED,
-    MetaMonsterKongEnv,
     MetaWorldEnv,
     MetaWorldMujocoEnv,
     MTEnv,
     SawyerXYZEnv,
 )
 
-from ..discrete.tasks import ContinuousTask, DiscreteTask
-from ..discrete.tasks import _is_supported
-from ..discrete.tasks import make_discrete_task, sequoia_registry, task_sampling_function
+from ..discrete.tasks import (
+    DiscreteTask,
+    _is_supported,
+    make_discrete_task,
+    sequoia_registry,
+    task_sampling_function,
+)
 
 IncrementalTask = DiscreteTask
 
@@ -30,9 +32,14 @@ IncrementalTask = DiscreteTask
 @task_sampling_function(env_registry=sequoia_registry, based_on=make_discrete_task)
 @singledispatch
 def make_incremental_task(
-    env: gym.Env, *, step: int, change_steps: List[int], seed: int = None, **kwargs,
+    env: gym.Env,
+    *,
+    step: int,
+    change_steps: List[int],
+    seed: int = None,
+    **kwargs,
 ) -> IncrementalTask:
-    """ Generic function used by Sequoia's `IncrementalRLSetting` (and its
+    """Generic function used by Sequoia's `IncrementalRLSetting` (and its
     descendants) to create a "task" that will be applied to an environment like `env`.
 
     To add support for a new type of environment, simply register a handler function:
@@ -42,9 +49,8 @@ def make_incremental_task(
         return {"my_attribute": random.random()}
     ```
     """
-    raise NotImplementedError(
-        f"Don't know how to create an (incremental) task for env {env}"
-    )
+    raise NotImplementedError(f"Don't know how to create an (incremental) task for env {env}")
+
 
 is_supported = partial(_is_supported, _make_task_function=make_incremental_task)
 
@@ -65,9 +71,13 @@ if MTENV_INSTALLED:
 
     @make_incremental_task.register
     def make_task_for_mtenv_env(
-        env: MTEnv, step: int, change_steps: List[int], seed: int = None, **kwargs,
+        env: MTEnv,
+        step: int,
+        change_steps: List[int],
+        seed: int = None,
+        **kwargs,
     ) -> Callable[[MTEnv], None]:
-        """ Samples a task for an env from MTEnv.
+        """Samples a task for an env from MTEnv.
 
         The Task in this case will be a callable that will call the env's
         `set_task_state` method, passing in an integer (`task`).
@@ -148,13 +158,9 @@ if METAWORLD_INSTALLED:
             if found:
                 break
         if not found:
-            raise NotImplementedError(
-                f"Can't find a benchmark with env class {type(env)}!"
-            )
+            raise NotImplementedError(f"Can't find a benchmark with env class {type(env)}!")
         # `benchmark` is here the right benchmark to use to create the tasks.
-        training_tasks = [
-            task for task in benchmark.train_tasks if task.env_name == env_name
-        ]
+        training_tasks = [task for task in benchmark.train_tasks if task.env_name == env_name]
 
         tasks = training_tasks.copy()
         if seed is not None:

@@ -23,21 +23,20 @@ import glob
 import inspect
 import os
 import warnings
+from functools import lru_cache
 from importlib import import_module
-from os.path import basename, dirname, isfile, join
+from os.path import abspath, basename, dirname, isfile, join
 from pathlib import Path
-from typing import List, Type
-from os.path import abspath
+from typing import Dict, List, Type
 
 import pkg_resources
 from pkg_resources import EntryPoint
-from typing import Dict
 from setuptools import find_packages
-from functools import lru_cache
 
 from sequoia.settings.base import Method
 from sequoia.utils.logging_utils import get_logger
-logger = get_logger(__file__)
+
+logger = get_logger(__name__)
 
 
 AbstractMethod = Method
@@ -57,13 +56,18 @@ class MyMethod(Method, target_setting=ContinualRLSetting):
 """
 
 
-def register_method(method_class: Type[Method] = None, *, name: str = None, family: str = None) -> Type[Method]:
-    """ Decorator around a method class, which is used to register the method.
+def register_method(
+    method_class: Type[Method] = None, *, name: str = None, family: str = None
+) -> Type[Method]:
+    """Decorator around a method class, which is used to register the method.
 
     Can set the name of the method as well as the family when they are passed, and also
     adds the Method to the list of registered methods.
     """
-    def _register_method(method_class: Type[Method] = None, *, name: str = None, family: str = None) -> Type[Method]:
+
+    def _register_method(
+        method_class: Type[Method] = None, *, name: str = None, family: str = None
+    ) -> Type[Method]:
         if name is not None:
             method_class.name = name
         if family is not None:
@@ -71,8 +75,7 @@ def register_method(method_class: Type[Method] = None, *, name: str = None, fami
 
         if not issubclass(method_class, Method):
             raise TypeError(
-                "The `register_method` decorator should only be used on subclasses of "
-                "`Method`."
+                "The `register_method` decorator should only be used on subclasses of " "`Method`."
             )
 
         if method_class not in _registered_methods:
@@ -93,9 +96,17 @@ def register_method(method_class: Type[Method] = None, *, name: str = None, fami
     return wrap(method_class)
 
 
+from .base_method import BaseMethod, BaseModel
+from .ewc_method import EwcMethod
+from .experience_replay import ExperienceReplayMethod
+from .hat import HatMethod
+from .pnn import PnnMethod
+from .random_baseline import RandomBaselineMethod
+
+
 @lru_cache(1)
 def get_external_methods() -> Dict[str, Type[Method]]:
-    """ Returns a dictionary of the Methods defined outside of Sequoia.
+    """Returns a dictionary of the Methods defined outside of Sequoia.
 
     Packages outside of Sequoia can register methods by putting a `Method` entry-point
     in their setup.py, like so:
@@ -146,15 +157,9 @@ def get_external_methods() -> Dict[str, Type[Method]]:
     return methods
 
 
-from sequoia.methods.random_baseline import RandomBaselineMethod
-from sequoia.methods.base_method import BaseMethod, BaseModel
 # Keeping a pointer to the old name, just to help with backward-compatibility a bit.
 BaselineMethod = BaseMethod
 
-from sequoia.methods.pnn import PnnMethod
-from sequoia.methods.experience_replay import ExperienceReplayMethod
-from sequoia.methods.hat import HatMethod
-from sequoia.methods.ewc_method import EwcMethod
 
 # TODO: Eventually these could become external repos, with their own tests / etc, based
 # on a 'cookiecutter' repo of some sort. This would make it easier to maintain and to
@@ -166,22 +171,34 @@ from sequoia.methods.ewc_method import EwcMethod
 # Setting := fn(dataset, **kwargs) -> Callable[[Method], Results]
 
 
+AVALANCHE_INSTALLED = False
 try:
-    from sequoia.methods.avalanche import *
+    from avalanche.training.strategies import BaseStrategy  # type: ignore
+
+    AVALANCHE_INSTALLED = True
 except ImportError:
     pass
 
+if AVALANCHE_INSTALLED:
+    from sequoia.methods.avalanche_methods import *
+
+
+SB3_INSTALLED = False
 try:
-    from sequoia.methods.stable_baselines3_methods import *
+    import stable_baselines3
+
+    SB3_INSTALLED = True
 except ImportError:
     pass
+
+if SB3_INSTALLED:
+    from sequoia.methods.stable_baselines3_methods import *
 
 
 try:
     from sequoia.methods.pl_bolts_methods import *
 except ImportError:
     pass
-
 
 
 def add_external_methods(all_methods: List[Type[Method]]) -> List[Type[Method]]:
@@ -197,6 +214,6 @@ def get_all_methods() -> List[Type[Method]]:
     # methods = Method.__subclasses__()
     # This includes all registered methods, e.g. not any base classes.
     methods = _registered_methods
-    methods = add_external_methods(methods)  # This won't.
+    methods = add_external_methods(methods)
     methods = list(set(methods))
     return list(sorted(methods, key=lambda method: method.get_full_name()))

@@ -3,7 +3,6 @@
 Then maybe after we can make something more general that also works for RL.
 """
 import warnings
-from abc import ABC
 from collections import defaultdict
 
 """ Wrapper that gets applied onto the environment in order to measure the online
@@ -12,21 +11,18 @@ training performance.
 TODO: Move this somewhere more appropriate. There's also the RL version of the wrapper
 here.
 """
-from typing import Any, Dict, Generic, Iterator, List, Optional, Sequence, Tuple, Union
+from typing import Dict, Iterator, Optional, Tuple
 
 import numpy as np
-import wandb
 from gym.utils import colorize
-from gym.vector import VectorEnv
+from torch import Tensor
+
+import wandb
 from sequoia.common.gym_wrappers.measure_performance import MeasurePerformanceWrapper
-from sequoia.common.gym_wrappers.utils import EnvType, IterableWrapper
-from sequoia.common.metrics import ClassificationMetrics, Metrics, MetricsType
-from sequoia.common.metrics.rl_metrics import EpisodeMetrics
-from sequoia.settings.base import Actions, Environment, Observations, Rewards
+from sequoia.common.metrics import ClassificationMetrics, Metrics
+from sequoia.settings.base import Actions, Observations, Rewards
 from sequoia.settings.sl.environment import PassiveEnvironment
 from sequoia.utils.utils import add_prefix
-from torch import Tensor
-from sequoia.common.gym_wrappers.batch_env.tile_images import tile_images
 
 
 class MeasureSLPerformanceWrapper(
@@ -129,9 +125,7 @@ class MeasureSLPerformanceWrapper(
 
     def get_metrics(self, action: Actions, reward: Rewards) -> Metrics:
         assert action.y_pred.shape == reward.y.shape, (action.shapes, reward.shapes)
-        metric = ClassificationMetrics(
-            y_pred=action.y_pred, y=reward.y, num_classes=self.n_classes
-        )
+        metric = ClassificationMetrics(y_pred=action.y_pred, y=reward.y, num_classes=self.n_classes)
 
         if wandb.run:
             log_dict = metric.to_log_dict()
@@ -160,4 +154,3 @@ class MeasureSLPerformanceWrapper(
             else:
                 yield obs, rew
         self.__epochs += 1
-

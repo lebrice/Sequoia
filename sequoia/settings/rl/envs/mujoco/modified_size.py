@@ -4,9 +4,10 @@ import os
 import tempfile
 import xml.etree.ElementTree as ET
 from copy import deepcopy
+from logging import getLogger as get_logger
 from pathlib import Path
 from typing import ClassVar, Dict, List
-from logging import getLogger as get_logger
+
 from gym.envs.mujoco import MujocoEnv
 
 logger = get_logger(__name__)
@@ -99,9 +100,7 @@ class ModifiedSizeEnv(MujocoEnv):
             self.tree = change_size_in_xml(self.default_tree, **body_name_to_size_scale)
             # create new xml
             # IDEA: Create an XML file with a unique name somewhere, and then write the
-            hash_str = hashlib.md5(
-                (str(self) + str(body_name_to_size_scale)).encode()
-            ).hexdigest()
+            hash_str = hashlib.md5((str(self) + str(body_name_to_size_scale)).encode()).hexdigest()
             temp_dir = Path(tempfile.gettempdir())
             new_xml_path = temp_dir / f"{hash_str}.xml"
             if not new_xml_path.parent.exists():

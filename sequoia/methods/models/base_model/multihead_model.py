@@ -1,35 +1,33 @@
-from dataclasses import dataclass
-from typing import Any, Dict, List, Optional, Sequence, Tuple, TypeVar, Union
+from dataclasses import dataclass, replace
+from typing import Dict, List, Optional, Sequence, Tuple, TypeVar, Union
 
 import numpy as np
 import torch
+import torch.nn.functional as F
 from torch import Tensor, nn
 
-from dataclasses import replace
 from sequoia.common import Batch, Config, Loss
 from sequoia.settings import Actions, Environment, Observations, Rewards
 from sequoia.settings.assumptions.incremental import IncrementalAssumption
-from sequoia.settings.assumptions.continual import ContinualAssumption
-from sequoia.utils.generic_functions import concatenate, get_slice
+from sequoia.utils.generic_functions import concatenate, get_slice, stack
 from sequoia.utils.logging_utils import get_logger
-from sequoia.utils.generic_functions import stack
-import torch.nn.functional as F
+
 from ..forward_pass import ForwardPass
 from ..output_heads import OutputHead
-
 from .model import Model, SettingType
 
-logger = get_logger(__file__)
+logger = get_logger(__name__)
 
 
 class MultiHeadModel(Model[SettingType]):
-    """ Mixin that adds multi-head prediction to the Model when task labels are
+    """Mixin that adds multi-head prediction to the Model when task labels are
     available.
     """
+
     @dataclass
     class HParams(Model.HParams):
-        """ Hyperparameters specific to a multi-head model.
-        """
+        """Hyperparameters specific to a multi-head model."""
+
         # Wether to create one output head per task.
         multihead: Optional[bool] = None
 
@@ -52,7 +50,7 @@ class MultiHeadModel(Model[SettingType]):
 
         if setting.task_labels_at_train_time:
             # NOTE: Not sure if this could cause an issue when setting is a SettingProxy
-            starting_task_id = 0 #setting.current_task_id
+            starting_task_id = 0  # setting.current_task_id
         else:
             starting_task_id = None
         self.output_heads[str(starting_task_id)] = self.output_head
@@ -60,8 +58,8 @@ class MultiHeadModel(Model[SettingType]):
     def output_head_loss(
         self, forward_pass: ForwardPass, actions: Actions, rewards: Rewards
     ) -> Loss:
-        """ TODO: Need to then re-split stuff (undo the work we did in forward) to get a
-            loss per output head?
+        """TODO: Need to then re-split stuff (undo the work we did in forward) to get a
+        loss per output head?
         """
         # Asks each output head for its contribution to the loss.
         observations: IncrementalAssumption.Observations = forward_pass.observations
@@ -91,7 +89,9 @@ class MultiHeadModel(Model[SettingType]):
         # Default behaviour: use the (only) output head.
         if not self.hp.multihead:
             return self.output_head.get_loss(
-                forward_pass, actions=actions, rewards=rewards,
+                forward_pass,
+                actions=actions,
+                rewards=rewards,
             )
 
         # The sum of all the losses from all the output heads.
@@ -156,9 +156,7 @@ class MultiHeadModel(Model[SettingType]):
                 # FIXME: If we modify that entry in-place, then even after this method
                 # returns, the change will persist.. Therefore we just save the indices
                 # that we altered, and reset them before returning.
-                done_set_to_false_temporarily_indices.append(
-                    env_index_in_previous_batch
-                )
+                done_set_to_false_temporarily_indices.append(env_index_in_previous_batch)
             else:
                 raise NotImplementedError(
                     "TODO: The BaseModel doesn't yet support having multiple "
@@ -178,9 +176,7 @@ class MultiHeadModel(Model[SettingType]):
 
             self.setup_for_task(task_id)
             # task_output_head = self.output_heads[str(task_id)]
-            total_loss += super().output_head_loss(
-                forward_pass, actions=actions, rewards=rewards
-            )
+            total_loss += super().output_head_loss(forward_pass, actions=actions, rewards=rewards)
             # total_loss += self.output_head.get_loss(
             #     forward_pass, actions=actions, rewards=rewards,
             # )
@@ -309,9 +305,7 @@ class MultiHeadModel(Model[SettingType]):
             # For now, we're just gonna pretend it's not a problem, I guess?
             strict = False
 
-        missing_keys, unexpected_keys = super().load_state_dict(
-            state_dict=state_dict, strict=False
-        )
+        missing_keys, unexpected_keys = super().load_state_dict(state_dict=state_dict, strict=False)
 
         # TODO: Double-check that this makes sense and works properly.
         if self.hp.multihead and unexpected_keys:
@@ -323,20 +317,19 @@ class MultiHeadModel(Model[SettingType]):
                 # output heads if they aren't already created, and then try to
                 # load the state_dict again.
                 new_output_head.load_state_dict(
-                    {k: state_dict[k] for k in unexpected_keys}, strict=False,
+                    {k: state_dict[k] for k in unexpected_keys},
+                    strict=False,
                 )
                 key = str(i)
                 self.output_heads[key] = new_output_head.to(self.device)
 
         if missing_keys or unexpected_keys:
-            logger.debug(
-                f"Missing keys: {missing_keys}, unexpected keys: {unexpected_keys}"
-            )
+            logger.debug(f"Missing keys: {missing_keys}, unexpected keys: {unexpected_keys}")
 
         return missing_keys, unexpected_keys
 
     def get_or_create_output_head(self, task_id: int) -> nn.Module:
-        """ Retrieves or creates a new output head for the given task index.
+        """Retrieves or creates a new output head for the given task index.
 
         Also stores it in the `output_heads`, and adds its parameters to the
         optimizer.
@@ -479,8 +472,7 @@ class MultiHeadModel(Model[SettingType]):
         return merged_outputs
 
     def task_inference_forward_pass(self, observations: Observations) -> Tensor:
-        """ Forward pass with a simple form of task inference.
-        """
+        """Forward pass with a simple form of task inference."""
         # We don't have access to task labels (`task_labels` is None).
         # --> Perform a simple kind of task inference:
         # 1. Perform a forward pass with each task's output head;
@@ -555,9 +547,7 @@ class MultiHeadModel(Model[SettingType]):
         # chosen_output_head_per_item: [0]
 
         # Create a bool tensor to select items associated with the chosen output head.
-        selected_mask = F.one_hot(chosen_output_head_per_item, T).to(
-            dtype=bool, device=self.device
-        )
+        selected_mask = F.one_hot(chosen_output_head_per_item, T).to(dtype=bool, device=self.device)
         assert selected_mask.shape == (B, T)
         # Select the logits using the mask:
         selected_forward_pass = stacked_forward_pass[selected_mask]
@@ -565,10 +555,7 @@ class MultiHeadModel(Model[SettingType]):
         return selected_forward_pass
 
 
-from functools import singledispatch
-from typing import Any, Dict, Tuple, TypeVar
-
-from sequoia.utils import NamedTuple
+from typing import Dict, Tuple, TypeVar
 
 Dataclass = TypeVar("Dataclass", bound=Batch)
 
@@ -597,7 +584,6 @@ def get_task_indices(
         return {}
 
     output_type = np.asarray
-    from functools import partial
 
     assert isinstance(task_labels, (np.ndarray, Tensor))
 
@@ -628,7 +614,7 @@ def get_task_indices(
 def cleanup_task_labels(
     task_labels: Optional[Sequence[Optional[int]]],
 ) -> Optional[np.ndarray]:
-    """ 'cleans up' the task labels, by returning either None or an integer numpy array.
+    """'cleans up' the task labels, by returning either None or an integer numpy array.
 
     TODO: Not clear why we really have to do this in the first place. The point is, if
     we wanted to allow only a fraction of task labels for instance, then we have to deal
@@ -670,4 +656,3 @@ def cleanup_task_labels(
         task_labels = task_labels.astype(int)
     assert task_labels is None or isinstance(task_labels, np.ndarray)
     return task_labels
-

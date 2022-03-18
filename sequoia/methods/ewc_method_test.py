@@ -5,23 +5,19 @@ from typing import ClassVar, Type
 
 import numpy as np
 import pytest
+from torch import Tensor
+
 from sequoia.common import Loss
 from sequoia.common.config import Config
 from sequoia.conftest import slow
-from sequoia.methods import Method
 from sequoia.methods.trainer import TrainerConfig
-from sequoia.settings.rl import (
-    IncrementalRLSetting,
-    TaskIncrementalRLSetting,
-    TraditionalRLSetting,
-)
+from sequoia.settings.rl import IncrementalRLSetting, TaskIncrementalRLSetting, TraditionalRLSetting
 from sequoia.settings.sl import (
     ClassIncrementalSetting,
     MultiTaskSLSetting,
     TaskIncrementalSLSetting,
     TraditionalSLSetting,
 )
-from torch import Tensor
 
 from .base_method_test import TestBaseMethod as BaseMethodTests
 from .ewc_method import EwcMethod, EwcModel
@@ -33,8 +29,7 @@ class TestEWCMethod(BaseMethodTests):
     @classmethod
     @pytest.fixture
     def method(cls, config: Config, trainer_options: TrainerConfig) -> EwcMethod:
-        """ Fixture that returns the Method instance to use when testing/debugging.
-        """
+        """Fixture that returns the Method instance to use when testing/debugging."""
         trainer_options.max_epochs = 1
         return cls.Method(trainer_options=trainer_options, config=config)
 
@@ -42,16 +37,12 @@ class TestEWCMethod(BaseMethodTests):
     @pytest.mark.timeout(300)
     def test_task_incremental_mnist(self, monkeypatch):
         # TODO: Change this to use the 'short task incremental setting'.
-        setting = TaskIncrementalSLSetting(
-            dataset="mnist", monitor_training_performance=True
-        )
+        setting = TaskIncrementalSLSetting(dataset="mnist", monitor_training_performance=True)
         total_ewc_losses_per_task = np.zeros(setting.nb_tasks)
 
         _training_step = EwcModel.training_step
 
-        def wrapped_training_step(
-            self: EwcModel, batch, batch_idx: int, *args, **kwargs
-        ):
+        def wrapped_training_step(self: EwcModel, batch, batch_idx: int, *args, **kwargs):
             step_results = _training_step(self, batch, batch_idx=batch_idx, *args, **kwargs)
             loss_object: Loss = step_results["loss_object"]
             if "ewc" in loss_object.losses:
@@ -69,9 +60,7 @@ class TestEWCMethod(BaseMethodTests):
         at_all_points_in_time = []
 
         def wrapped_fit(self, train_env, valid_env):
-            print(
-                f"starting task {self.model.current_task}: {total_ewc_losses_per_task}"
-            )
+            print(f"starting task {self.model.current_task}: {total_ewc_losses_per_task}")
             total_ewc_losses_per_task[:] = 0
             _fit(self, train_env, valid_env)
             at_all_points_in_time.append(total_ewc_losses_per_task.copy())
@@ -110,7 +99,7 @@ class TestEWCMethod(BaseMethodTests):
         ],
     )
     def test_raises_warning_when_applied_to_non_cl_setting(self, non_cl_setting_fn):
-        """ When applied onto a non-CL setting like IID or Multi-Task SL (or RL), the
+        """When applied onto a non-CL setting like IID or Multi-Task SL (or RL), the
         EWCMethod should raise a warning, and disable the auxiliary task.
         """
         method = EwcMethod()

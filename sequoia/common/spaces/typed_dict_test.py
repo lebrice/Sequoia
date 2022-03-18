@@ -137,6 +137,7 @@ def test_batch_objets_considered_valid_samples():
     from dataclasses import dataclass
 
     import numpy as np
+
     from sequoia.common.batch import Batch
 
     @dataclass(frozen=True)
@@ -274,6 +275,7 @@ def test_vector_env():
 from typing import Optional
 
 from numpy.typing import ArrayLike
+
 from sequoia.common.batch import Batch
 
 
@@ -284,7 +286,9 @@ def test_object_with_extra_keys_fits():
         t: ArrayLike
         done: Optional[ArrayLike] = None
 
-    space = TypedDictSpace(x=spaces.Box(0, 10, (10,), dtype=np.float64), t=spaces.Box(0, 1, (1,), dtype=np.int32))
+    space = TypedDictSpace(
+        x=spaces.Box(0, 10, (10,), dtype=np.float64), t=spaces.Box(0, 1, (1,), dtype=np.int32)
+    )
 
     obs = Observation(
         x=np.arange(10, dtype=np.float64),

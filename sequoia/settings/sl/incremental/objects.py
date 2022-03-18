@@ -5,16 +5,18 @@ This is just meant as a cleaner way to import the Observations/Actions/Rewards.
 from dataclasses import dataclass
 from typing import Optional, TypeVar
 
-from sequoia.settings.assumptions.incremental import IncrementalAssumption
-from sequoia.settings.sl.discrete.setting import DiscreteTaskAgnosticSLSetting
 from torch import Tensor
+
+from sequoia.settings.sl.discrete.setting import DiscreteTaskAgnosticSLSetting
 
 # from sequoia.settings.sl.continual.objects import Observations, Actions, Rewards
 # from sequoia.settings.assumptions.context_visibility
 
+
 @dataclass(frozen=True)
 class IncrementalSLObservations(DiscreteTaskAgnosticSLSetting.Observations):
-    """ Incremental Observations, in a supervised context. """
+    """Incremental Observations, in a supervised context."""
+
     x: Tensor
     task_labels: Optional[Tensor] = None
 
@@ -22,13 +24,11 @@ class IncrementalSLObservations(DiscreteTaskAgnosticSLSetting.Observations):
 @dataclass(frozen=True)
 class IncrementalSLActions(DiscreteTaskAgnosticSLSetting.Actions):
     """Incremental Actions, in a supervised (passive) context."""
-    pass
 
 
 @dataclass(frozen=True)
 class IncrementalSLRewards(DiscreteTaskAgnosticSLSetting.Rewards):
     """Incremental Rewards, in a supervised context."""
-    pass
 
 
 Observations = IncrementalSLObservations

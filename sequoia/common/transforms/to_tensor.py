@@ -7,27 +7,25 @@ using `ToTensor` from torchvision.
 from collections.abc import Mapping
 from dataclasses import dataclass
 from functools import singledispatch
-from typing import Callable, Dict, Sequence, Tuple, TypeVar, Union, overload
+from typing import Dict, Sequence, Tuple, Union
 
 import gym
 import numpy as np
 import torch
-from gym import Space, spaces
+from gym import spaces
 from PIL.Image import Image
 from torch import Tensor
 from torchvision.transforms import ToTensor as ToTensor_
 from torchvision.transforms import functional as F
 
-from sequoia.common.gym_wrappers.convert_tensors import (add_tensor_support,
-                                                         has_tensor_support)
-from sequoia.common.spaces import NamedTuple, NamedTupleSpace, TypedDictSpace
-from sequoia.utils import singledispatchmethod
-from sequoia.utils.generic_functions import to_tensor
+from sequoia.common.gym_wrappers.convert_tensors import add_tensor_support
+from sequoia.common.spaces import NamedTupleSpace, TypedDictSpace
 from sequoia.utils.logging_utils import get_logger
 
-from .transform import Img, Transform
 from .channels import channels_first_if_needed
-logger = get_logger(__file__)
+from .transform import Img, Transform
+
+logger = get_logger(__name__)
 
 
 def copy_if_negative_strides(image: Img) -> Img:
@@ -70,19 +68,21 @@ def image_to_tensor(image: Union[Img, Sequence[Img], gym.Space]) -> Union[Tensor
     """
     raise NotImplementedError(f"Don't know how to convert {image} to a Tensor.")
 
+
 # @image_to_tensor.register
 # def _(image: Tensor) -> Tensor:
 #     return channels_first_if_needed(image)
+
 
 @image_to_tensor.register(Tensor)
 @image_to_tensor.register(np.ndarray)
 @image_to_tensor.register(Image)
 def _(image: Union[Image, np.ndarray]) -> Tensor:
-    """ Converts a PIL Image, or np.uint8 ndarray to a Tensor. Also reshapes it
+    """Converts a PIL Image, or np.uint8 ndarray to a Tensor. Also reshapes it
     to channels_first format (because ToTensor from torchvision does it also).
-    """    
-    from .channels import (channels_first_if_needed, channels_last_if_needed,
-                           has_channels_first, has_channels_last)
+    """
+    from .channels import channels_first_if_needed
+
     image = copy_if_negative_strides(image)
 
     if len(image.shape) == 2:
@@ -98,11 +98,8 @@ def _(image: Union[Image, np.ndarray]) -> Tensor:
             image = image.float().div(255)
         return image
 
-
     if len(image.shape) == 4:
-        return channels_first_if_needed(
-            torch.stack(list(map(image_to_tensor, image)))
-        )
+        return channels_first_if_needed(torch.stack(list(map(image_to_tensor, image))))
 
     if not isinstance(image, Tensor):
         image = F.to_tensor(image)
@@ -116,9 +113,10 @@ def _list_of_images_to_tensor(image: Sequence[Img]) -> Tensor:
 
 @image_to_tensor.register(tuple)
 def _to_tensor_effect_on_image_shape(image: Tuple[int, ...]) -> Tuple[int, ...]:
-    """ Give the output shape given the input shape of an image. """
-    if len(image) == 3:        
+    """Give the output shape given the input shape of an image."""
+    if len(image) == 3:
         from .channels import channels_first_if_needed
+
         return channels_first_if_needed(image)
     return image
 
@@ -128,7 +126,9 @@ def _(image: spaces.Box) -> spaces.Box:
     if image.dtype == np.uint8:
         # images get their bounds changed to [0. 1.] and their shape changed to
         # channels_first.
-        image = type(image)(low=0., high=1., shape=channels_first_if_needed(image.shape), dtype=np.float32)
+        image = type(image)(
+            low=0.0, high=1.0, shape=channels_first_if_needed(image.shape), dtype=np.float32
+        )
     # TODO: it sometimes happens that the `image` space has already been
     # through 'to_tensor`, not sure what to do in that case.
     # elif not has_tensor_support(image):
@@ -143,36 +143,44 @@ def _(image: spaces.Box) -> spaces.Box:
 @image_to_tensor.register(NamedTupleSpace)
 def _(space: Dict, device: torch.device = None) -> Dict:
     from .resize import is_image
-    return type(space)(**{
-        key: image_to_tensor(value) if is_image(value) else value 
-        for key, value in space.items()
-    }, dtype=space.dtype)
+
+    return type(space)(
+        **{
+            key: image_to_tensor(value) if is_image(value) else value
+            for key, value in space.items()
+        },
+        dtype=space.dtype,
+    )
 
 
 @image_to_tensor.register(Mapping)
 @image_to_tensor.register(spaces.Dict)
 def _space_with_images_to_tensor(space: Dict, device: torch.device = None) -> Dict:
     from .resize import is_image
-    return type(space)(**{
-        key: image_to_tensor(value) if is_image(value) else value 
-        for key, value in space.items()
-    })
+
+    return type(space)(
+        **{
+            key: image_to_tensor(value) if is_image(value) else value
+            for key, value in space.items()
+        }
+    )
 
 
 @image_to_tensor.register(TypedDictSpace)
-def _space_with_images_to_tensor(space: TypedDictSpace, device: torch.device = None) -> TypedDictSpace:
+def _space_with_images_to_tensor(
+    space: TypedDictSpace, device: torch.device = None
+) -> TypedDictSpace:
     from .resize import is_image
-    return type(space)({
-        key: image_to_tensor(value) if is_image(value) else value 
-        for key, value in space.items()
-    }, dtype=space.dtype)
 
-
+    return type(space)(
+        {key: image_to_tensor(value) if is_image(value) else value for key, value in space.items()},
+        dtype=space.dtype,
+    )
 
 
 # @image_to_tensor.register(Image)
 # def to_tensor(image: Union[Img, Sequence[Img]]) -> Tensor:
-    
+
 #     tensor: Tensor
 #     if isinstance(image, Tensor):
 #         return channels_first(image)
@@ -205,14 +213,14 @@ class ToTensor(ToTensor_, Transform):
         """
         Args:
             image (PIL Image or numpy.ndarray): Image to be converted to tensor.
-        
+
         Returns:
             Tensor: Converted image.
-        
+
         NOTE: torchvision's ToTensor transform assumes that whatever it is given
         is always in channels_last format (as is usually the case with PIL
         images) and always returns images with the channels *first*!
-        
+
             Converts a PIL Image or numpy.ndarray (H x W x C) in the range
             [0, 255] to a torch.FloatTensor of shape (C x H x W) in the range
             [0.0, 1.0] if the PIL Image belongs to one of the modes (L, LA, P,
@@ -237,4 +245,3 @@ class ToTensor(ToTensor_, Transform):
     #         shape=cls.shape_change(input_space.shape),
     #         dtype=np.float32,
     #     )
-        

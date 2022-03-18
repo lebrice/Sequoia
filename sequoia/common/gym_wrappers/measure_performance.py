@@ -4,15 +4,14 @@ measure the online training performance.
 The concrete versions of this wrapper are located.
 """
 from abc import ABC
-from sequoia.common.gym_wrappers.utils import IterableWrapper, EnvType
+from typing import Dict, Generic, List, Optional
+
+from sequoia.common.gym_wrappers.utils import EnvType, IterableWrapper
 from sequoia.common.metrics import MetricsType
 from sequoia.settings.base import Environment
-from typing import Generic, Dict, List, Optional
 
 
-class MeasurePerformanceWrapper(
-    IterableWrapper[EnvType], Generic[EnvType, MetricsType], ABC
-):
+class MeasurePerformanceWrapper(IterableWrapper[EnvType], Generic[EnvType, MetricsType], ABC):
     def __init__(self, env: Environment):
         super().__init__(env)
         self._metrics: Dict[int, MetricsType] = {}
@@ -39,4 +38,3 @@ class MeasurePerformanceWrapper(
         if not self._metrics:
             return None
         return sum(self._metrics.values())
-

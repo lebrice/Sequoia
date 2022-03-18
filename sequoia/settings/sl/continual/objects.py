@@ -1,15 +1,18 @@
 from dataclasses import dataclass
-from sequoia.settings.sl import SLSetting
-from torch import Tensor
-from typing import TypeVar, Optional
-from sequoia.settings.assumptions.continual import ContinualAssumption
-from sequoia.common.spaces import Image, Sparse, TypedDictSpace, ImageTensorSpace
+from typing import Optional, TypeVar
+
 from gym import spaces
+from torch import Tensor
+
+from sequoia.common.spaces import ImageTensorSpace, Sparse, TypedDictSpace
+from sequoia.settings.assumptions.continual import ContinualAssumption
+from sequoia.settings.sl.setting import SLSetting
 
 
 @dataclass(frozen=True)
 class Observations(SLSetting.Observations, ContinualAssumption.Observations):
-    """ Observations from a Continual Supervised Learning environment. """
+    """Observations from a Continual Supervised Learning environment."""
+
     x: Tensor
     task_labels: Optional[Tensor] = None
 
@@ -17,8 +20,10 @@ class Observations(SLSetting.Observations, ContinualAssumption.Observations):
 ObservationType = TypeVar("ObservationType", bound=Observations)
 import torch
 
+
 class ObservationSpace(TypedDictSpace[ObservationType]):
-    """ Observation space of a Continual SL Setting. """
+    """Observation space of a Continual SL Setting."""
+
     # The sample space: this is a gym.spaces.Box subclass with added properties for
     # images, such as `channels`, `h`, `w`, `is_channels_first`, etc.
     # This space will return Tensors.
@@ -34,28 +39,28 @@ class ObservationSpace(TypedDictSpace[ObservationType]):
 
 @dataclass(frozen=True)
 class Actions(SLSetting.Actions):
-    """ Actions to be sent to a Continual Supervised Learning environment. """
+    """Actions to be sent to a Continual Supervised Learning environment."""
+
     y_pred: Tensor
 
 
-
-
 class ActionSpace(TypedDictSpace):
-    """ Action space of a Continual SL Setting. """
+    """Action space of a Continual SL Setting."""
+
     y_pred: spaces.Space
 
 
 @dataclass(frozen=True)
 class Rewards(SLSetting.Rewards):
-    """ Rewards obtained from a Continual Supervised Learning environment. """
+    """Rewards obtained from a Continual Supervised Learning environment."""
+
     y: Tensor
 
 
 class RewardSpace(TypedDictSpace):
-    """ Reward space of a Continual SL Setting. """
+    """Reward space of a Continual SL Setting."""
+
     y: spaces.Space
-
-
 
 
 ActionType = TypeVar("ActionType", bound=Actions)

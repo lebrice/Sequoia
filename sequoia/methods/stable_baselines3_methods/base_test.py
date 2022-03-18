@@ -1,9 +1,7 @@
 from inspect import Parameter, Signature, getsourcefile, signature
-from pathlib import Path
 from typing import ClassVar, Dict, Type
 
 import pytest
-from stable_baselines3 import A2C, DDPG, DQN, PPO, SAC, TD3
 from stable_baselines3.common.off_policy_algorithm import OffPolicyAlgorithm
 from stable_baselines3.common.on_policy_algorithm import OnPolicyAlgorithm
 
@@ -11,29 +9,9 @@ from sequoia.common.config import Config
 from sequoia.conftest import monsterkong_required
 from sequoia.methods.method_test import MethodTests
 from sequoia.settings.base import Results
-from sequoia.settings.rl import (
-    ContinualRLSetting,
-    DiscreteTaskAgnosticRLSetting,
-    IncrementalRLSetting,
-    MultiTaskRLSetting,
-    RLSetting,
-    TaskIncrementalRLSetting,
-    TraditionalRLSetting,
-)
+from sequoia.settings.rl import DiscreteTaskAgnosticRLSetting, IncrementalRLSetting, RLSetting
 
-
-from . import (
-    A2CMethod,
-    DDPGMethod,
-    DQNMethod,
-    OffPolicyMethod,
-    OnPolicyMethod,
-    PPOMethod,
-    SACMethod,
-    TD3Method,
-)
 from .base import BaseAlgorithm, StableBaselines3Method
-from .off_policy_method import OffPolicyMethod, OffPolicyModel
 
 # @pytest.mark.parametrize(
 #     "MethodType, AlgoType",
@@ -69,12 +47,11 @@ class StableBaselines3MethodTests(MethodTests):
         setting.setup()
         assert setting.train_max_steps == 2_000
         assert setting.test_max_steps == 2_000
-        method = self.Method(
-            hparams=self.Model.HParams(clear_buffers_between_tasks=clear_buffers)
-        )
+        method = self.Method(hparams=self.Model.HParams(clear_buffers_between_tasks=clear_buffers))
         method.configure(setting)
         method.fit(
-            train_env=setting.train_dataloader(), valid_env=setting.val_dataloader(),
+            train_env=setting.train_dataloader(),
+            valid_env=setting.val_dataloader(),
         )
         assert method.hparams.clear_buffers_between_tasks == clear_buffers
 
@@ -86,17 +63,14 @@ class StableBaselines3MethodTests(MethodTests):
         if clear_buffers:
             assert get_current_length_of_replay_buffer(method.model) == 0
         else:
-            assert (
-                get_current_length_of_replay_buffer(method.model)
-                == length_before_task_switch
-            )
+            assert get_current_length_of_replay_buffer(method.model) == length_before_task_switch
 
-    def test_hparams_have_same_defaults_as_in_sb3(self,):
+    def test_hparams_have_same_defaults_as_in_sb3(
+        self,
+    ):
         hparams = self.Model.HParams()
         AlgoType = [
-            cls
-            for cls in self.Model.mro()
-            if cls.__module__.startswith("stable_baselines3")
+            cls for cls in self.Model.mro() if cls.__module__.startswith("stable_baselines3")
         ][0]
         sig: Signature = signature(AlgoType.__init__)
 
@@ -132,8 +106,7 @@ class StableBaselines3MethodTests(MethodTests):
     @classmethod
     @pytest.fixture
     def method(cls, config: Config) -> StableBaselines3Method:
-        """ Fixture that returns the Method instance to use when testing/debugging.
-        """
+        """Fixture that returns the Method instance to use when testing/debugging."""
         return cls.Method(**cls.debug_kwargs)
 
     def validate_results(
@@ -169,19 +142,18 @@ class DiscreteActionSpaceMethodTests(StableBaselines3MethodTests):
             train_steps_per_task=1_000,
             test_steps_per_task=1_000,
         )
-        results: IncrementalRLSetting.Results = setting.apply(
-            method, config=Config(debug=True)
-        )
+        results: IncrementalRLSetting.Results = setting.apply(method, config=Config(debug=True))
         print(results.summary())
 
 
 from functools import singledispatch
+
 from stable_baselines3.common.buffers import RolloutBuffer
 
 
 @singledispatch
 def get_current_length_of_replay_buffer(algo: BaseAlgorithm) -> int:
-    """ Returns the current length of the replay buffer of the given Algorithm. """
+    """Returns the current length of the replay buffer of the given Algorithm."""
     raise NotImplementedError(algo)
 
 

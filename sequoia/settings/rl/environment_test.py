@@ -1,23 +1,20 @@
-import multiprocessing as mp
 from typing import Generator
 
 from torch import Tensor
+from torchvision.datasets import MNIST
 
 from sequoia.utils.logging_utils import log_calls
 
 from .environment import ActiveEnvironment
-import numpy as np
-from torchvision.datasets import MNIST
-from sequoia.common.transforms import Transforms, Compose
-from sequoia.conftest import DummyEnvironment
 
 
 class ActiveMnistEnvironment(ActiveEnvironment[Tensor, Tensor, Tensor]):
-    """ An Mnist environment which will keep showing the same class until a
+    """An Mnist environment which will keep showing the same class until a
     correct prediction is made, and then switch to another class.
-    
+
     Which will keep giving the same class until the right prediction is made.
     """
+
     def __init__(self, start_class: int = 0, **kwargs):
         self.current_class: int = 0
         dataset = MNIST("data")
@@ -60,8 +57,7 @@ class ActiveMnistEnvironment(ActiveEnvironment[Tensor, Tensor, Tensor]):
 
 
 def test_active_mnist_environment():
-    """Test the active mnist env, which will keep giving the same class until the right prediction is made.
-    """
+    """Test the active mnist env, which will keep giving the same class until the right prediction is made."""
     env = ActiveMnistEnvironment()
     # So in this test, the env will only give samples of class 0, until a correct
     # prediction is made, then it will switch to giving samples of class 1, etc.
@@ -78,7 +74,7 @@ def test_active_mnist_environment():
         assert y_pred == y_true
         if i == 9:
             break
-    
+
     # current class should be 0 as last prediction was 9 and correct.
     _current_class = 0
 
@@ -91,7 +87,7 @@ def test_active_mnist_environment():
 
         if i > 2:
             break
-    
+
     x = next(env)
     y_pred = 0
     y_true = env.send(y_pred)

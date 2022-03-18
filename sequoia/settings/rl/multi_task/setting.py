@@ -1,24 +1,28 @@
 """ 'Classical' RL setting.
 """
 from dataclasses import dataclass
-from typing import List, Callable
+from typing import Callable, List
+
 import gym
+
+from sequoia.utils.logging_utils import get_logger
+from sequoia.utils.utils import constant
+
 from ..task_incremental import TaskIncrementalRLSetting
 from ..traditional import TraditionalRLSetting
-from sequoia.utils.utils import constant
-from sequoia.utils.logging_utils import get_logger
 
-logger = get_logger(__file__)
+logger = get_logger(__name__)
 
 
 @dataclass
 class MultiTaskRLSetting(TaskIncrementalRLSetting, TraditionalRLSetting):
-    """ Reinforcement Learning setting where the environment alternates between a set
+    """Reinforcement Learning setting where the environment alternates between a set
     of tasks sampled uniformly.
 
     Implemented as a TaskIncrementalRLSetting, but where the tasks are randomly sampled
     during training.
     """
+
     # TODO: Move this into a new Assumption about the context non-stationarity.
     stationary_context: bool = constant(True)
 
@@ -36,7 +40,7 @@ class MultiTaskRLSetting(TaskIncrementalRLSetting, TraditionalRLSetting):
 
     def create_train_wrappers(self) -> List[Callable[[gym.Env], gym.Env]]:
         return super().create_train_wrappers()
-    
+
     def create_test_wrappers(self) -> List[Callable[[gym.Env], gym.Env]]:
         """Get the list of wrappers to add to a single test environment.
 

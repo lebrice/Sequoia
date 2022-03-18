@@ -3,34 +3,29 @@
 import multiprocessing as mp
 import warnings
 from functools import partial
-from typing import (Callable, Dict, Iterable, List, Optional, Tuple, Type,
-                    TypeVar, Union)
+from typing import Callable, Dict, Iterable, List, Optional, Tuple, Type, TypeVar, Union
 
 import gym
 from gym import Wrapper
-from gym.envs.classic_control import CartPoleEnv
-from gym.vector import VectorEnv
+from gym.vector import AsyncVectorEnv, SyncVectorEnv, VectorEnv
 
-from sequoia.common.gym_wrappers import ConvertToFromTensors
-from sequoia.common.gym_wrappers.batch_env import (AsyncVectorEnv,
-                                                   BatchedVectorEnv,
-                                                   SyncVectorEnv)
-from sequoia.common.spaces import Sparse
 from sequoia.utils.logging_utils import get_logger
 
-logger = get_logger(__file__)
+logger = get_logger(__name__)
 
 W = TypeVar("W", bound=Union[gym.Env, gym.Wrapper])
 
 WrapperAndKwargs = Tuple[Type[gym.Wrapper], Dict]
 
 
-def make_batched_env(base_env: Union[str, Callable],
-                     batch_size: int = 10,
-                     wrappers: Iterable[Union[Type[Wrapper], WrapperAndKwargs]] = None,
-                     shared_memory: bool = True,
-                     num_workers: Optional[int] = None,
-                     **kwargs) -> VectorEnv:
+def make_batched_env(
+    base_env: Union[str, Callable],
+    batch_size: int = 10,
+    wrappers: Iterable[Union[Type[Wrapper], WrapperAndKwargs]] = None,
+    shared_memory: bool = True,
+    num_workers: Optional[int] = None,
+    **kwargs,
+) -> VectorEnv:
     """Create a vectorized environment from multiple copies of an environment.
 
     NOTE: This function does pretty much the same as `gym.vector.make`, but with
@@ -47,8 +42,8 @@ def make_batched_env(base_env: Union[str, Callable],
         from the registry.
 
     batch_size : int
-        Number of copies of the environment (as well as batch size). 
-    
+        Number of copies of the environment (as well as batch size).
+
     num_workers : Optional[int]
         Number of workers to use. When `None` (default), uses as many workers as
         there are CPUs on this machine. When 0, the returned environment will be
@@ -59,7 +54,7 @@ def make_batched_env(base_env: Union[str, Callable],
     wrappers : Callable or Iterable of Callables (default: `None`)
         If not `None`, then apply the wrappers to each internal environment
         during creation.
-    
+
     **kwargs : Dict
         Keyword arguments to be passed to `gym.make` when `base_env` is an id.
 
@@ -74,14 +69,14 @@ def make_batched_env(base_env: Union[str, Callable],
     >>> env = gym.vector.make('CartPole-v1', 3)
     >>> env.seed([123, 456, 789])
     >>> env.reset()
-    array([[ 0.02078762, -0.01301236, -0.0209893 , -0.03935255],
-           [ 0.03271029, -0.01839286,  0.00746923,  0.0193136 ],
-           [ 0.01767251,  0.00792448,  0.02225722, -0.03434491]],
+    array([[ 0.01823519, -0.0446179 , -0.02796401, -0.03156282],
+           [-0.00303268, -0.00523447, -0.03759432,  0.025485  ],
+           [-0.04084033, -0.0285856 ,  0.01318461, -0.03327109]],
           dtype=float32)
     """
     # Get the default wrappers, if needed.
     wrappers = wrappers or []
-    
+
     base_env_factory: Callable[[], gym.Env]
     if isinstance(base_env, str):
         base_env_factory = partial(gym.make, base_env)
@@ -89,8 +84,7 @@ def make_batched_env(base_env: Union[str, Callable],
         base_env_factory = base_env
     else:
         raise NotImplementedError(
-            f"Unsupported base env: {base_env}. Must be "
-            f"either a string or a callable for now."
+            f"Unsupported base env: {base_env}. Must be " f"either a string or a callable for now."
         )
 
     def pre_batch_env_factory():
@@ -104,7 +98,7 @@ def make_batched_env(base_env: Union[str, Callable],
 
     if batch_size is None:
         return pre_batch_env_factory()
-    
+
     env_fns = [pre_batch_env_factory for _ in range(batch_size)]
 
     if num_workers is None:
@@ -115,23 +109,23 @@ def make_batched_env(base_env: Union[str, Callable],
 
     if num_workers == 0:
         if batch_size > 1:
-            warnings.warn(UserWarning(
-                f"Running {batch_size} environments in series, which might be "
-                f"slow. Consider setting the `num_workers` argument, perhaps to "
-                f"the number of CPUs on your machine."
-            ))
+            warnings.warn(
+                UserWarning(
+                    f"Running {batch_size} environments in series, which might be "
+                    f"slow. Consider setting the `num_workers` argument, perhaps to "
+                    f"the number of CPUs on your machine."
+                )
+            )
         return SyncVectorEnv(env_fns)
-    
+
     if num_workers == batch_size:
         return AsyncVectorEnv(env_fns, shared_memory=shared_memory)
-    
-    return BatchedVectorEnv(env_fns, shared_memory=shared_memory, n_workers=num_workers)
 
-   
+    raise RuntimeError(f"Need num_workers to match batch_size for now.")
+    return AsyncVectorEnv(env_fns, shared_memory=shared_memory, n_workers=num_workers)
 
 
-def wrap(env: gym.Env,
-         wrappers: Iterable[Union[Type[Wrapper], WrapperAndKwargs]]) -> Wrapper:
+def wrap(env: gym.Env, wrappers: Iterable[Union[Type[Wrapper], WrapperAndKwargs]]) -> Wrapper:
     wrappers = list(wrappers)
     # Convert the list of wrapper types or (wrapper_type, kwargs) tuples into
     # a list of callables that we can apply successively to the env.
@@ -140,10 +134,11 @@ def wrap(env: gym.Env,
         env = wrapper_fn(env)
     return env
 
-def _make_wrapper_fns(wrappers_and_args: Iterable[Union[Type[Wrapper],
-                                                        Tuple[Type[Wrapper], Dict]]]
-                     ) -> List[Callable[[Wrapper], Wrapper]]:
-    """ Given a list of either wrapper classes or (wrapper, kwargs) tuples,
+
+def _make_wrapper_fns(
+    wrappers_and_args: Iterable[Union[Type[Wrapper], Tuple[Type[Wrapper], Dict]]]
+) -> List[Callable[[Wrapper], Wrapper]]:
+    """Given a list of either wrapper classes or (wrapper, kwargs) tuples,
     returns a list of callables, each of which just takes an env and wraps
     it using the wrapper and the kwargs, if present.
     """
@@ -153,7 +148,7 @@ def _make_wrapper_fns(wrappers_and_args: Iterable[Union[Type[Wrapper],
         if isinstance(wrapper_and_args, (tuple, list)):
             # List element was a tuple with (wrapper, (args?), kwargs).
             wrapper, *args, kwargs = wrapper_and_args
-            logger.debug(f"Wrapper: {wrapper}, args: {args}, kwargs: {kwargs}") 
+            logger.debug(f"Wrapper: {wrapper}, args: {args}, kwargs: {kwargs}")
             wrapper_fn = partial(wrapper, *args, **kwargs)
         else:
             # list element is a type of Wrapper or some kind of callable.

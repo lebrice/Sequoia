@@ -26,9 +26,10 @@ of which adds additional functionality:
     
 The `BaseModel` is then formed by inheriting from each of these mixins.
 """
+from .base_model import BaseModel
+
 # TODO: Maybe the naming of these could be a bit better: Model seems more 'general' than BaseModel.
 from .model import Model, available_encoders, available_optimizers
 from .multihead_model import MultiHeadModel
 from .self_supervised_model import SelfSupervisedModel
 from .semi_supervised_model import SemiSupervisedModel
-from .base_model import BaseModel

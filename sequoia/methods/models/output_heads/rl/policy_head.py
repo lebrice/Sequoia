@@ -26,47 +26,35 @@ maximum length of the 'episode buffer' to 1, and consider all
 observations as final, i.e., when episode length == 1
 """
 
-import dataclasses
-import itertools
-from abc import ABC, abstractmethod
-from collections import deque, namedtuple
+from collections import deque
 from dataclasses import dataclass
-from typing import (Any, ClassVar, Deque, Dict, Iterable, List,
-                    MutableSequence, NamedTuple, Optional, Sequence, Tuple,
-                    TypeVar, Union)
+from typing import ClassVar, Deque, List, Optional, Sequence, Tuple, TypeVar, Union
 
-import gym
 import numpy as np
 import torch
-from gym import Space, spaces
+from gym import spaces
 from gym.spaces.utils import flatdim
-from gym.vector.utils.numpy_utils import concatenate, create_empty_array
 from simple_parsing import list_field
-from torch import LongTensor, Tensor, nn
-from torch.distributions import Distribution
-from torch.optim.optimizer import Optimizer
+from torch import Tensor
 
-from sequoia.common import Loss, Metrics
-from sequoia.common.layers import Lambda
+from sequoia.common import Loss
 from sequoia.common.metrics.rl_metrics import EpisodeMetrics, GradientUsageMetric
 from sequoia.methods.models.forward_pass import ForwardPass
 from sequoia.settings.rl.continual import ContinualRLSetting
-from sequoia.settings.base.objects import Actions, Observations, Rewards
 from sequoia.utils.categorical import Categorical
-from sequoia.utils.generic_functions import detach, get_slice, set_slice, stack, move
+from sequoia.utils.generic_functions import stack
 from sequoia.utils.logging_utils import get_logger
-from sequoia.utils.utils import flag, prod
+from sequoia.utils.utils import flag
+
 from ..classification_head import ClassificationHead, ClassificationOutput
-from ..output_head import OutputHead
 
-logger = get_logger(__file__)
+logger = get_logger(__name__)
 T = TypeVar("T")
-
 
 
 @dataclass(frozen=True)
 class PolicyHeadOutput(ClassificationOutput):
-    """ WIP: Adds the action pdf to ClassificationOutput. """
+    """WIP: Adds the action pdf to ClassificationOutput."""
 
     # The distribution over the actions, either as a single
     # (batched) distribution or as a list of distributions, one for each
@@ -75,12 +63,12 @@ class PolicyHeadOutput(ClassificationOutput):
 
     @property
     def y_pred_prob(self) -> Tensor:
-        """ returns the probabilities for the chosen actions/predictions. """
+        """returns the probabilities for the chosen actions/predictions."""
         return self.action_dist.probs(self.y_pred)
 
     @property
     def y_pred_log_prob(self) -> Tensor:
-        """ returns the log probabilities for the chosen actions/predictions. """
+        """returns the log probabilities for the chosen actions/predictions."""
         return self.action_dist.log_prob(self.y_pred)
 
     @property
@@ -90,7 +78,6 @@ class PolicyHeadOutput(ClassificationOutput):
     @property
     def action_prob(self) -> Tensor:
         return self.y_pred_log_prob
-
 
 
 ## NOTE: Since the gym VectorEnvs actually auto-reset the individual
@@ -105,7 +92,7 @@ class PolicyHeadOutput(ClassificationOutput):
 
 
 class PolicyHead(ClassificationHead):
-    """ [WIP] Output head for RL settings.
+    """[WIP] Output head for RL settings.
 
     Uses the REINFORCE algorithm to calculate its loss.
 
@@ -114,6 +101,7 @@ class PolicyHead(ClassificationHead):
     - The buffers are common to training/validation/testing atm..
 
     """
+
     name: ClassVar[str] = "policy"
 
     @dataclass
@@ -145,15 +133,23 @@ class PolicyHead(ClassificationHead):
         # intermediate graphs.
         accumulate_losses_before_backward: bool = flag(True)
 
-    def __init__(self,
-                 input_space: spaces.Space,
-                 action_space: spaces.Discrete,
-                 reward_space: spaces.Box,
-                 hparams: "PolicyHead.HParams" = None,
-                 name: str = "policy"):
-        assert isinstance(input_space, spaces.Box), f"Only support Tensor (box) input space. (got {input_space})."
-        assert isinstance(action_space, spaces.Discrete), f"Only support discrete action space (got {action_space})."
-        assert isinstance(reward_space, spaces.Box), f"Reward space should be a Box (scalar rewards) (got {reward_space})."
+    def __init__(
+        self,
+        input_space: spaces.Space,
+        action_space: spaces.Discrete,
+        reward_space: spaces.Box,
+        hparams: "PolicyHead.HParams" = None,
+        name: str = "policy",
+    ):
+        assert isinstance(
+            input_space, spaces.Box
+        ), f"Only support Tensor (box) input space. (got {input_space})."
+        assert isinstance(
+            action_space, spaces.Discrete
+        ), f"Only support discrete action space (got {action_space})."
+        assert isinstance(
+            reward_space, spaces.Box
+        ), f"Reward space should be a Box (scalar rewards) (got {reward_space})."
         super().__init__(
             input_space=input_space,
             action_space=action_space,
@@ -161,7 +157,7 @@ class PolicyHead(ClassificationHead):
             hparams=hparams,
             name=name,
         )
-        logger.debug("New Output head with hparams: " + self.hparams.dumps_json(indent='\t'))
+        logger.debug("New Output head with hparams: " + self.hparams.dumps_json(indent="\t"))
         self.hparams: PolicyHead.HParams
         # Type hints for the spaces;
         self.input_space: spaces.Box
@@ -193,7 +189,7 @@ class PolicyHead(ClassificationHead):
         self.device: Optional[Union[str, torch.device]] = None
 
     def create_buffers(self):
-        """ Creates the buffers to hold the items from each env. """
+        """Creates the buffers to hold the items from each env."""
         logger.debug(f"Creating buffers (batch size={self.batch_size})")
         logger.debug(f"Maximum buffer length: {self.hparams.max_episode_window_length}")
 
@@ -204,8 +200,10 @@ class PolicyHead(ClassificationHead):
         self.num_steps_in_episode = np.zeros(self.batch_size, dtype=int)
         self.num_episodes_since_update = np.zeros(self.batch_size, dtype=int)
 
-    def forward(self, observations: ContinualRLSetting.Observations, representations: Tensor) -> PolicyHeadOutput:
-        """ Forward pass of a Policy head.
+    def forward(
+        self, observations: ContinualRLSetting.Observations, representations: Tensor
+    ) -> PolicyHeadOutput:
+        """Forward pass of a Policy head.
 
         TODO: Do we actually need the observations here? It is here so we have
         access to the 'done' from the env, but do we really need it here? or
@@ -237,19 +235,19 @@ class PolicyHead(ClassificationHead):
 
     T = TypeVar("T")
 
-    def to(self: T,
-           device: Optional[Union[int, torch.device]] = None,
-           **kwargs) -> T:
+    def to(self: T, device: Optional[Union[int, torch.device]] = None, **kwargs) -> T:
         result = super().to(device=device, **kwargs)
         if device is not None:
             result.device = torch.device(device)
         return result
 
-    def get_loss(self,
-                 forward_pass: ForwardPass,
-                 actions: PolicyHeadOutput,
-                 rewards: ContinualRLSetting.Rewards) -> Loss:
-        """ Given the forward pass, the actions produced by this output head and
+    def get_loss(
+        self,
+        forward_pass: ForwardPass,
+        actions: PolicyHeadOutput,
+        rewards: ContinualRLSetting.Rewards,
+    ) -> Loss:
+        """Given the forward pass, the actions produced by this output head and
         the corresponding rewards for the current step, get a Loss to use for
         training.
 
@@ -362,7 +360,7 @@ class PolicyHead(ClassificationHead):
             return self.loss.detach()
 
         # TODO: Why is self.loss non-zero here?
-        if self.loss.loss != 0.:
+        if self.loss.loss != 0.0:
             # BUG: This is a weird edge-case, where at least one env produced
             # a loss, but that loss doesn't require grad.
             # This should only happen if the model isn't in training mode, for
@@ -377,9 +375,7 @@ class PolicyHead(ClassificationHead):
         self.num_steps_in_episode[env_index] = 0
         self.clear_buffers(env_index)
 
-    def get_episode_loss(self,
-                         env_index: int,
-                         done: bool) -> Optional[Loss]:
+    def get_episode_loss(self, env_index: int, done: bool) -> Optional[Loss]:
         """Calculate a loss to train with, given the last (up to
         max_episode_window_length) observations/actions/rewards of the current
         episode in the environment at the given index in the batch.
@@ -401,8 +397,9 @@ class PolicyHead(ClassificationHead):
             return None
 
         if len(self.actions[env_index]) == 0:
-            logger.error(f"Weird, asked to get episode loss, but there is "
-                         f"nothing in the buffer?")
+            logger.error(
+                f"Weird, asked to get episode loss, but there is " f"nothing in the buffer?"
+            )
             return None
 
         inputs, actions, rewards = self.stack_buffers(env_index)
@@ -435,7 +432,7 @@ class PolicyHead(ClassificationHead):
         return loss
 
     def get_gradient_usage_metrics(self, env_index: int) -> GradientUsageMetric:
-        """ Returns a Metrics object that describes how many of the actions
+        """Returns a Metrics object that describes how many of the actions
         from an episode that are used to calculate a loss still have their
         graphs, versus ones that don't have them (due to being created before
         the last model update, and therefore having been detached.)
@@ -453,13 +450,15 @@ class PolicyHead(ClassificationHead):
 
     @staticmethod
     def get_returns(rewards: Union[Tensor, List[Tensor]], gamma: float) -> Tensor:
-        """ Calculates the returns, as the sum of discounted future rewards at
+        """Calculates the returns, as the sum of discounted future rewards at
         each step.
         """
         return discounted_sum_of_future_rewards(rewards, gamma=gamma)
 
     @staticmethod
-    def policy_gradient(rewards: List[float], log_probs: Union[Tensor, List[Tensor]], gamma: float=0.95):
+    def policy_gradient(
+        rewards: List[float], log_probs: Union[Tensor, List[Tensor]], gamma: float = 0.95
+    ):
         """Implementation of the REINFORCE algorithm.
 
         Adapted from https://medium.com/@thechrisyoon/deriving-policy-gradients-and-implementing-reinforce-f887949bd63
@@ -493,7 +492,9 @@ class PolicyHead(ClassificationHead):
         if hasattr(self, "_training") and value != self._training:
             before = "train" if self._training else "test"
             after = "train" if value else "test"
-            logger.debug(f"Clearing buffers, since we're transitioning between from {before}->{after}")
+            logger.debug(
+                f"Clearing buffers, since we're transitioning between from {before}->{after}"
+            )
             self.clear_all_buffers()
             self.batch_size = None
             self.num_episodes_since_update[:] = 0
@@ -513,8 +514,7 @@ class PolicyHead(ClassificationHead):
         self.batch_size = None
 
     def clear_buffers(self, env_index: int) -> None:
-        """ Clear the buffers associated with the environment at env_index.
-        """
+        """Clear the buffers associated with the environment at env_index."""
         self.representations[env_index].clear()
         self.actions[env_index].clear()
         self.rewards[env_index].clear()
@@ -528,7 +528,7 @@ class PolicyHead(ClassificationHead):
             self.detach_buffers(env_index)
 
     def detach_buffers(self, env_index: int) -> None:
-        """ Detach all the tensors in the buffers for a given environment.
+        """Detach all the tensors in the buffers for a given environment.
 
         We have to do this when we update the model while an episode in one of
         the enviroment isn't done.
@@ -558,8 +558,7 @@ class PolicyHead(ClassificationHead):
         return [self._make_buffer() for _ in range(self.batch_size)]
 
     def stack_buffers(self, env_index: int):
-        """ Stack the observations/actions/rewards for this env and return them.
-        """
+        """Stack the observations/actions/rewards for this env and return them."""
         # episode_observations = tuple(self.observations[env_index])
         episode_representations = tuple(self.representations[env_index])
         episode_actions = tuple(self.actions[env_index])
@@ -584,9 +583,8 @@ class PolicyHead(ClassificationHead):
         return stacked_inputs, stacked_actions, stacked_rewards
 
 
-
 def discounted_sum_of_future_rewards(rewards: Union[Tensor, List[Tensor]], gamma: float) -> Tensor:
-    """ Calculates the returns, as the sum of discounted future rewards at
+    """Calculates the returns, as the sum of discounted future rewards at
     each step.
     """
     T = len(rewards)
@@ -599,12 +597,14 @@ def discounted_sum_of_future_rewards(rewards: Union[Tensor, List[Tensor]], gamma
     # more info.
     gamma_matrix = make_gamma_matrix(gamma, T, device=reward_matrix.device)
     # Multiplying by the gamma coefficients gives the discounted rewards.
-    discounted_rewards = (reward_matrix * gamma_matrix)
+    discounted_rewards = reward_matrix * gamma_matrix
     # Summing up over time gives the return at each step.
     return discounted_rewards.sum(-1)
 
 
-def vanilla_policy_gradient(rewards: Sequence[float], log_probs: Union[Tensor, List[Tensor]], gamma: float=0.95):
+def vanilla_policy_gradient(
+    rewards: Sequence[float], log_probs: Union[Tensor, List[Tensor]], gamma: float = 0.95
+):
     """Implementation of the REINFORCE algorithm.
 
     Adapted from https://medium.com/@thechrisyoon/deriving-policy-gradients-and-implementing-reinforce-f887949bd63
@@ -634,9 +634,8 @@ def vanilla_policy_gradient(rewards: Sequence[float], log_probs: Union[Tensor, L
     returns = PolicyHead.get_returns(reward_tensor, gamma=gamma)
     # Need both tensors to be 1-dimensional for the dot-product below.
     action_log_probs = action_log_probs.reshape(returns.shape)
-    policy_gradient = - action_log_probs.dot(returns)
+    policy_gradient = -action_log_probs.dot(returns)
     return policy_gradient
-
 
 
 # @torch.jit.script
@@ -656,13 +655,17 @@ def make_gamma_matrix(gamma: float, T: int, device=None) -> Tensor:
     gamma_matrix[rows, cols] = all_gammas[cols - rows]
     return gamma_matrix.to(device) if device else gamma_matrix
 
+
 def normalize(x: Tensor):
     return (x - x.mean()) / (x.std() + 1e-9)
 
+
 T = TypeVar("T")
+
 
 def tuple_of_lists(list_of_tuples: List[Tuple[T, ...]]) -> Tuple[List[T], ...]:
     return tuple(map(list, zip(*list_of_tuples)))
+
 
 def list_of_tuples(tuple_of_lists: Tuple[List[T], ...]) -> List[Tuple[T, ...]]:
     return list(zip(*tuple_of_lists))

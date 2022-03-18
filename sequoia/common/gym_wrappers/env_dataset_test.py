@@ -1,11 +1,10 @@
 from functools import partial
 from typing import ClassVar, Type
+
 import gym
 import numpy as np
 import pytest
-import torch
 from gym import spaces
-from gym.spaces import Discrete
 
 from sequoia.common.transforms import Transforms
 from sequoia.conftest import DummyEnvironment, atari_py_required
@@ -83,9 +82,7 @@ class TestEnvDataset:
         # in this case.
         assert observation == 4
 
-    def test_raise_error_when_missing_action(
-        self, dummy_env_fn: Type[DummyEnvironment]
-    ):
+    def test_raise_error_when_missing_action(self, dummy_env_fn: Type[DummyEnvironment]):
         env = dummy_env_fn()
         with self.EnvDataset(env) as env:
             env.reset()
@@ -95,9 +92,7 @@ class TestEnvDataset:
                 for i, observation in zip(range(5), env):
                     pass
 
-    def test_doesnt_raise_error_when_action_sent(
-        self, dummy_env_fn: Type[DummyEnvironment]
-    ):
+    def test_doesnt_raise_error_when_action_sent(self, dummy_env_fn: Type[DummyEnvironment]):
         env = dummy_env_fn()
         with self.EnvDataset(env) as env:
             env.reset()
@@ -109,7 +104,10 @@ class TestEnvDataset:
 
     def test_max_episodes(self):
         max_episodes = 3
-        env = self.EnvDataset(env=gym.make("CartPole-v0"), max_episodes=max_episodes,)
+        env = self.EnvDataset(
+            env=gym.make("CartPole-v0"),
+            max_episodes=max_episodes,
+        )
         env.seed(123)
         for episode in range(max_episodes):
             # This makes use of the fact that given this seed, the episode should only
@@ -119,9 +117,7 @@ class TestEnvDataset:
                 action = 0
                 reward = env.send(action)
                 if i >= 50:
-                    assert (
-                        False
-                    ), "The episode should never be longer than about 10 steps!"
+                    assert False, "The episode should never be longer than about 10 steps!"
 
         with pytest.raises(gym.error.ClosedEnvironmentError):
             for i, observation in enumerate(env):
@@ -131,7 +127,10 @@ class TestEnvDataset:
     def test_max_steps(self):
         epochs = 3
         max_steps = 5
-        env = self.EnvDataset(env=gym.make("CartPole-v0"), max_steps=max_steps,)
+        env = self.EnvDataset(
+            env=gym.make("CartPole-v0"),
+            max_steps=max_steps,
+        )
         all_rewards = []
         all_observations = []
         with env:
@@ -143,7 +142,7 @@ class TestEnvDataset:
                 rewards = env.send(env.action_space.sample())
                 all_rewards.append(rewards)
             assert len(all_rewards) == max_steps
-            
+
             with pytest.raises(gym.error.ClosedEnvironmentError):
                 env.reset()
 
@@ -160,7 +159,8 @@ class TestEnvDataset:
         n_episodes = 4
         max_steps_per_episode = 5
         env = self.EnvDataset(
-            env=gym.make("CartPole-v0"), max_steps_per_episode=max_steps_per_episode,
+            env=gym.make("CartPole-v0"),
+            max_steps_per_episode=max_steps_per_episode,
         )
         all_observations = []
         with env:
@@ -179,6 +179,7 @@ class TestEnvDataset:
         self, env_name: str, batch_size: int
     ):
         from functools import partial
+
         from gym.vector import SyncVectorEnv
 
         env = SyncVectorEnv([partial(gym.make, env_name) for i in range(batch_size)])
@@ -189,20 +190,18 @@ class TestEnvDataset:
 
     @atari_py_required
     def test_observation_wrapper_applies_to_yielded_objects(self):
-        """ Test that when an TransformObservation wrapper (or any wrapper that
+        """Test that when an TransformObservation wrapper (or any wrapper that
         changes the Observations) is applied on the env, the observations that are
         yielded by the GymDataLoader are also transformed, in the same way as those
         returned by step() or reset().
         """
-        env_name = "Breakout-v0"
+        env_name = "ALE/Breakout-v5"
         batch_size = 10
         num_workers = 4
         max_steps_per_episode = 100
         wrapper = partial(TransformObservation, f=Transforms.channels_first)
 
-        vector_env = make_batched_env(
-            env_name, batch_size=batch_size, num_workers=num_workers
-        )
+        vector_env = make_batched_env(env_name, batch_size=batch_size, num_workers=num_workers)
         env = self.EnvDataset(vector_env, max_steps_per_episode=max_steps_per_episode)
 
         assert env.observation_space == spaces.Box(0, 255, (10, 210, 160, 3), np.uint8)
@@ -247,20 +246,17 @@ class TestEnvDataset:
 
         env.close()
 
-
     @atari_py_required
     def test_iteration_with_more_than_one_wrapper(self):
-        """ Same as above, but with more than one wrapper applied on top of the
+        """Same as above, but with more than one wrapper applied on top of the
         EnvDataset.
         """
-        env_name = "Breakout-v0"
+        env_name = "ALE/Breakout-v5"
         batch_size = 10
         num_workers = 4
         max_steps_per_episode = 100
 
-        vector_env = make_batched_env(
-            env_name, batch_size=batch_size, num_workers=num_workers
-        )
+        vector_env = make_batched_env(env_name, batch_size=batch_size, num_workers=num_workers)
         env = self.EnvDataset(vector_env, max_steps_per_episode=max_steps_per_episode)
 
         assert env.observation_space == spaces.Box(0, 255, (10, 210, 160, 3), np.uint8)

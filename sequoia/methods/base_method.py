@@ -8,17 +8,13 @@ methods.
 TODO: Add a wrapper to limit the 'epoch' length in RL, and then use an early-stopping
 callback to also perform validation like in SL.
 """
-import json
-import operator
 import warnings
-from dataclasses import dataclass, is_dataclass, fields
+from dataclasses import dataclass, fields, is_dataclass
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Mapping, Optional, Tuple, Type, Union
 
 import gym
-import numpy as np
 import torch
-import wandb
 from pytorch_lightning import Callback, Trainer
 from pytorch_lightning.callbacks.early_stopping import EarlyStopping
 from simple_parsing import mutable_field
@@ -26,31 +22,30 @@ from wandb.wandb_run import Run
 
 from sequoia.common import Config
 from sequoia.common.spaces import Image
+from sequoia.methods import register_method
 from sequoia.settings import RLSetting, SLSetting
-from sequoia.settings.rl.continual import ContinualRLSetting
 from sequoia.settings.assumptions.incremental import IncrementalAssumption
 from sequoia.settings.base import Method
 from sequoia.settings.base.environment import Environment
 from sequoia.settings.base.objects import Actions, Observations, Rewards
 from sequoia.settings.base.results import Results
 from sequoia.settings.base.setting import Setting, SettingType
-from sequoia.utils import Parseable, Serializable, compute_identity, get_logger
-from sequoia.methods import register_method
-from sequoia.settings.sl.continual import ContinualSLSetting
+from sequoia.settings.rl.continual import ContinualRLSetting
+from sequoia.utils.logging_utils import get_logger
+from sequoia.utils.parseable import Parseable
+from sequoia.utils.serialization import Serializable
+from sequoia.utils.utils import compute_identity
 
-from .models import BaseModel, ForwardPass
+from .models import BaseModel
 from .trainer import Trainer, TrainerConfig
 
-logger = get_logger(__file__)
+logger = get_logger(__name__)
 
-from sequoia.common.gym_wrappers.utils import IterableWrapper, has_wrapper
-from sequoia.settings.rl.continual.environment import GymDataLoader
-
-
+# TODO: Set the target setting back to Setting once we fix the PL + RL issues.
 @register_method
 @dataclass
-class BaseMethod(Method, Serializable, Parseable, target_setting=Setting):
-    """ Versatile Base method which targets all settings.
+class BaseMethod(Method, Serializable, Parseable, target_setting=SLSetting):
+    """Versatile Base method which targets all settings.
 
     Uses pytorch-lightning's Trainer for training and LightningModule as model.
 
@@ -76,7 +71,7 @@ class BaseMethod(Method, Serializable, Parseable, target_setting=Setting):
         trainer_options: TrainerConfig = None,
         **kwargs,
     ):
-        """ Creates a new BaseMethod, using the provided configuration options.
+        """Creates a new BaseMethod, using the provided configuration options.
 
         Parameters
         ----------
@@ -123,9 +118,7 @@ class BaseMethod(Method, Serializable, Parseable, target_setting=Setting):
                 f"using keyword arguments {kwargs} to populate the corresponding "
                 f"values in the hparams, config and trainer_options."
             )
-            self.hparams = hparams or hparam_type.from_dict(
-                kwargs, drop_extra_fields=True
-            )
+            self.hparams = hparams or hparam_type.from_dict(kwargs, drop_extra_fields=True)
             self.config = config or Config.from_dict(kwargs, drop_extra_fields=True)
             self.trainer_options = trainer_options or TrainerConfig.from_dict(
                 kwargs, drop_extra_fields=True
@@ -136,9 +129,7 @@ class BaseMethod(Method, Serializable, Parseable, target_setting=Setting):
             # well from the argv that were used to create the Method.
             # Option 3: Parse them from the command-line.
             # assert not kwargs, "Don't pass any extra kwargs to the constructor!"
-            self.hparams = hparams or hparam_type.from_args(
-                self._argv, strict=False
-            )
+            self.hparams = hparams or hparam_type.from_args(self._argv, strict=False)
             self.config = config or Config.from_args(self._argv, strict=False)
             self.trainer_options = trainer_options or TrainerConfig.from_args(
                 self._argv, strict=False
@@ -165,7 +156,7 @@ class BaseMethod(Method, Serializable, Parseable, target_setting=Setting):
 
         self.additional_train_wrappers: List[Callable] = []
         self.additional_valid_wrappers: List[Callable] = []
-        
+
         self.setting: Setting
 
     def configure(self, setting: SettingType) -> None:
@@ -207,9 +198,7 @@ class BaseMethod(Method, Serializable, Parseable, target_setting=Setting):
             ), "method.config has been modified, and so has setting.config!"
             setting.config = self.config
         elif setting.config:
-            assert (
-                setting.config != Config()
-            ), "Weird, both configs have default values.."
+            assert setting.config != Config(), "Weird, both configs have default values.."
             self.config = setting.config
 
         setting_name: str = setting.get_name()
@@ -295,24 +284,24 @@ class BaseMethod(Method, Serializable, Parseable, target_setting=Setting):
         # TODO: Figure out if there is a smarter way to reset the state of the Trainer,
         # rather than just creating a new one every time.
         self.trainer = self.create_trainer(self.setting)
-        
+
         # NOTE: It doesn't seem sufficient to just do this, since for instance the
         # early-stopping callback would prevent training on future tasks, since they
         # have higher validation loss:
         # self.trainer.current_epoch = 0
 
         success = self.trainer.fit(
-            model=self.model, train_dataloader=train_env, val_dataloaders=valid_env,
+            model=self.model,
+            train_dataloader=train_env,
+            val_dataloaders=valid_env,
         )
         # BUG: After `fit`, it seems like the output head of the model is on the CPU?
         self.model.to(self.config.device)
 
         return success
 
-    def get_actions(
-        self, observations: Observations, action_space: gym.Space
-    ) -> Actions:
-        """ Get a batch of predictions (actions) for a batch of observations.
+    def get_actions(self, observations: Observations, action_space: gym.Space) -> Actions:
+        """Get a batch of predictions (actions) for a batch of observations.
 
         This gets called by the Setting during the test loop.
 
@@ -364,14 +353,16 @@ class BaseMethod(Method, Serializable, Parseable, target_setting=Setting):
             Trainer: the Trainer object.
         """
         # We use this here to create loggers!
-        # No need to use this, we can use 
+        # No need to use this, we can use
         callbacks = self.configure_callbacks(setting)
         loggers = []
         if setting.wandb and setting.wandb.project:
             wandb_logger = setting.wandb.make_logger()
             loggers.append(wandb_logger)
         trainer = self.trainer_options.make_trainer(
-            config=self.config, callbacks=callbacks, loggers=loggers,
+            config=self.config,
+            callbacks=callbacks,
+            loggers=loggers,
         )
         return trainer
 
@@ -404,12 +395,8 @@ class BaseMethod(Method, Serializable, Parseable, target_setting=Setting):
 
             d = flatten_dict(setting_dict)
             experiment_id = compute_identity(size=5, **d)
-        assert isinstance(
-            setting.dataset, str
-        ), "assuming that dataset is a str for now."
-        return (
-            f"{self.get_name()}-{setting.get_name()}_{setting.dataset}_{experiment_id}"
-        )
+        assert isinstance(setting.dataset, str), "assuming that dataset is a str for now."
+        return f"{self.get_name()}-{setting.get_name()}_{setting.dataset}_{experiment_id}"
 
     def get_search_space(self, setting: Setting) -> Mapping[str, Union[str, Dict]]:
         """Returns the search space to use for HPO in the given Setting.
@@ -435,7 +422,7 @@ class BaseMethod(Method, Serializable, Parseable, target_setting=Setting):
 
         It is required that this method be implemented if you want to perform HPO sweeps
         with Orion.
-        
+
         Parameters
         ----------
         new_hparams : Dict[str, Any]
@@ -461,9 +448,9 @@ class BaseMethod(Method, Serializable, Parseable, target_setting=Setting):
     ) -> Tuple[BaseModel.HParams, float]:
         # Setting max epochs to 1, just to keep runs somewhat short.
         # NOTE: Now we're actually going to have the max_epochs as a tunable
-        # hyper-parameter, so we're not hard-setting this value anymore. 
+        # hyper-parameter, so we're not hard-setting this value anymore.
         # self.trainer_options.max_epochs = 1
-        
+
         # Call 'configure', so that we create `self.model` at least once, which will
         # update the hparams.output_head field to be of the right type. This is
         # necessary in order for the `get_orion_space` to retrieve all the hparams
@@ -476,17 +463,17 @@ class BaseMethod(Method, Serializable, Parseable, target_setting=Setting):
             experiment_id=experiment_id,
             database_path=database_path,
             max_runs=max_runs,
-            debug = debug or self.config.debug,
+            debug=debug or self.config.debug,
             hpo_algorithm=hpo_algorithm,
         )
 
     def receive_results(self, setting: Setting, results: Results):
-        """ Receives the results of an experiment, where `self` was applied to Setting
+        """Receives the results of an experiment, where `self` was applied to Setting
         `setting`, which produced results `results`.
         """
         super().receive_results(setting, results=results)
 
-    def configure_callbacks(self, setting: SettingType=None) -> List[Callback]:
+    def configure_callbacks(self, setting: SettingType = None) -> List[Callback]:
         """Create the PytorchLightning Callbacks for this Setting.
 
         These callbacks will get added to the Trainer in `create_trainer`.
@@ -511,9 +498,7 @@ class BaseMethod(Method, Serializable, Parseable, target_setting=Setting):
             # SaveVaeSamplesCallback(),
         ]
 
-    def apply_all(
-        self, argv: Union[str, List[str]] = None
-    ) -> Dict[Type[Setting], Results]:
+    def apply_all(self, argv: Union[str, List[str]] = None) -> Dict[Type[Setting], Results]:
         """(WIP): Runs this Method on all its applicable settings.
 
         Returns
@@ -537,9 +522,7 @@ class BaseMethod(Method, Serializable, Parseable, target_setting=Setting):
         )
         return all_results
 
-    def __init_subclass__(
-        cls, target_setting: Type[SettingType] = Setting, **kwargs
-    ) -> None:
+    def __init_subclass__(cls, target_setting: Type[SettingType] = Setting, **kwargs) -> None:
         """Called when creating a new subclass of Method.
 
         Args:
@@ -562,7 +545,7 @@ class BaseMethod(Method, Serializable, Parseable, target_setting=Setting):
 
     def on_task_switch(self, task_id: Optional[int]) -> None:
         """Called when switching between tasks.
-        
+
         Args:
             task_id (int, optional): the id of the new task. When None, we are
             basically being informed that there is a task boundary, but without
@@ -571,7 +554,7 @@ class BaseMethod(Method, Serializable, Parseable, target_setting=Setting):
         self.model.on_task_switch(task_id)
 
     def setup_wandb(self, run: Run) -> None:
-        """ Called by the Setting when using Weights & Biases, after `wandb.init`.
+        """Called by the Setting when using Weights & Biases, after `wandb.init`.
 
         This method is here to provide Methods with the opportunity to log some of their
         configuration options or hyper-parameters to wandb.
@@ -589,4 +572,3 @@ class BaseMethod(Method, Serializable, Parseable, target_setting=Setting):
         # Need to check wether this causes any issues.
         # run.config["hparams"] = self.hparams.to_dict()
         # run.config["trainer_config"] = self.trainer_options
-

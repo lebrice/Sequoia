@@ -11,18 +11,17 @@ import gym
 import torch
 from torch import Tensor
 
+from examples.basic.quick_demo import DemoMethod, MyModel
 from sequoia.settings import DomainIncrementalSLSetting
 from sequoia.settings.sl.incremental.objects import Observations, Rewards
-from sequoia.utils import dict_intersection
+from sequoia.utils.utils import dict_intersection
 from sequoia.utils.logging_utils import get_logger
 
-from examples.basic.quick_demo import DemoMethod, MyModel
-
-logger = get_logger(__file__)
+logger = get_logger(__name__)
 
 
 class MyImprovedModel(MyModel):
-    """ Adds an ewc-like penalty to the demo model. """
+    """Adds an ewc-like penalty to the demo model."""
 
     def __init__(
         self,
@@ -33,7 +32,9 @@ class MyImprovedModel(MyModel):
         ewc_p_norm: int = 2,
     ):
         super().__init__(
-            observation_space, action_space, reward_space,
+            observation_space,
+            action_space,
+            reward_space,
         )
         self.ewc_coefficient = ewc_coefficient
         self.ewc_p_norm = ewc_p_norm
@@ -50,8 +51,7 @@ class MyImprovedModel(MyModel):
         return base_loss + ewc_loss, metrics
 
     def on_task_switch(self, task_id: int) -> None:
-        """ Executed when the task switches (to either a known or unknown task).
-        """
+        """Executed when the task switches (to either a known or unknown task)."""
         if self._previous_task is None and self._n_switches == 0:
             logger.debug("Starting the first task, no EWC update.")
         elif task_id is None or task_id != self._previous_task:
@@ -88,15 +88,14 @@ class MyImprovedModel(MyModel):
 
 
 class ImprovedDemoMethod(DemoMethod):
-    """ Improved version of the demo method, that adds an ewc-like regularizer.
-    """
+    """Improved version of the demo method, that adds an ewc-like regularizer."""
 
     # Name of this method:
     name: ClassVar[str] = "demo_ewc"
 
     @dataclass
     class HParams(DemoMethod.HParams):
-        """ Hyperparameters of this new improved method. (Adds ewc params)."""
+        """Hyperparameters of this new improved method. (Adds ewc params)."""
 
         # Coefficient of the ewc-like loss.
         ewc_coefficient: float = 1.0
@@ -116,7 +115,8 @@ class ImprovedDemoMethod(DemoMethod):
             ewc_p_norm=self.hparams.ewc_p_norm,
         )
         self.optimizer = torch.optim.Adam(
-            self.model.parameters(), lr=self.hparams.learning_rate,
+            self.model.parameters(),
+            lr=self.hparams.learning_rate,
         )
 
     def on_task_switch(self, task_id: Optional[int]):
@@ -124,12 +124,10 @@ class ImprovedDemoMethod(DemoMethod):
 
 
 def demo_ewc():
-    """ Demo: Comparing two methods on the same setting: """
+    """Demo: Comparing two methods on the same setting:"""
 
     ## 1. Create the Setting (same as in quick_demo.py)
-    setting = DomainIncrementalSLSetting(
-        dataset="fashionmnist", nb_tasks=5, batch_size=64
-    )
+    setting = DomainIncrementalSLSetting(dataset="fashionmnist", nb_tasks=5, batch_size=64)
     # setting = DomainIncrementalSLSetting.from_args()
 
     # 2.1: Get the results for the base method
@@ -155,7 +153,9 @@ if __name__ == "__main__":
     from sequoia.settings import DomainIncrementalSLSetting
 
     ## 1. Create the Setting (same as in quick_demo.py)
-    setting = DomainIncrementalSLSetting(dataset="fashionmnist", nb_tasks=5, monitor_training_performance=True)
+    setting = DomainIncrementalSLSetting(
+        dataset="fashionmnist", nb_tasks=5, monitor_training_performance=True
+    )
     # setting = DomainIncrementalSLSetting.from_args()
 
     # Get the results for the base method:
@@ -182,9 +182,14 @@ if __name__ == "__main__":
 
     base_results = demo_all_settings(DemoMethod, datasets=["mnist", "fashionmnist"])
     improved_results = demo_all_settings(
-        ImprovedDemoMethod, datasets=["mnist", "fashionmnist"], monitor_training_performance=True,
+        ImprovedDemoMethod,
+        datasets=["mnist", "fashionmnist"],
+        monitor_training_performance=True,
     )
 
     compare_results(
-        {DemoMethod: base_results, ImprovedDemoMethod: improved_results,}
+        {
+            DemoMethod: base_results,
+            ImprovedDemoMethod: improved_results,
+        }
     )

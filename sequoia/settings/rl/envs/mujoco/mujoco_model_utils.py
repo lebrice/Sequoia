@@ -1,9 +1,6 @@
 from dataclasses import dataclass
-from typing import Tuple, Union
-import numpy as np
-from typing import NamedTuple, Any
+from typing import Any, NamedTuple, Sequence, Tuple, Union
 from xml.etree.ElementTree import Element
-from typing import Sequence, Tuple, Union
 
 import numpy as np
 
@@ -35,9 +32,7 @@ class Pos(NamedTuple):
         if not isinstance(value, (list, tuple, np.ndarray)):
             return NotImplemented
         assert len(value) == len(self)
-        return type(self)(
-            *[v * axis_scaling_coef for v, axis_scaling_coef in zip(self, value)]
-        )
+        return type(self)(*[v * axis_scaling_coef for v, axis_scaling_coef in zip(self, value)])
 
     def __eq__(self, other: Union[Tuple[float, ...], np.ndarray]):
         if not isinstance(other, (list, tuple, np.ndarray)):
@@ -138,9 +133,7 @@ class FromTo:
     to_z: float
 
     def __str__(self):
-        return " ".join(
-            [self.from_x, self.from_y, self.from_z, self.to_x, self.to_y, self.to_z]
-        )
+        return " ".join([self.from_x, self.from_y, self.from_z, self.to_x, self.to_y, self.to_z])
 
 
 from dataclasses import dataclass

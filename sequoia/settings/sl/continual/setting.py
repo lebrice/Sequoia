@@ -1,12 +1,11 @@
 import itertools
 from dataclasses import dataclass
-from functools import partial
 from pathlib import Path
 from typing import ClassVar, Dict, List, Optional, Type, TypeVar, Union
 
 import gym
 import numpy as np
-import wandb
+import torch
 from continuum.datasets import (
     CIFAR10,
     CIFAR100,
@@ -24,53 +23,41 @@ from continuum.datasets import (
 )
 from continuum.scenarios import ClassIncremental, _BaseScenario
 from continuum.tasks import TaskSet, concat, split_train_val
-from gym import Space, spaces
+from gym import spaces
 from simple_parsing import choice, field, list_field
 from torch import Tensor
-from torch.utils.data import ConcatDataset, Dataset, Subset, random_split, TensorDataset
+from torch.utils.data import ConcatDataset, Dataset, Subset
 
+import wandb
 from sequoia.common.config import Config
-from sequoia.common.gym_wrappers import RenderEnvWrapper, TransformObservation, TransformReward
+from sequoia.common.gym_wrappers import RenderEnvWrapper, TransformObservation
 from sequoia.common.gym_wrappers.convert_tensors import add_tensor_support
-from sequoia.common.gym_wrappers.convert_tensors import (
-    add_tensor_support as tensor_space,
-)
-from sequoia.common.spaces import Image, Sparse, TypedDictSpace, TensorMultiDiscrete
+from sequoia.common.spaces import Sparse
 from sequoia.common.transforms import Compose, Transforms
 from sequoia.settings.assumptions.continual import ContinualAssumption
-from sequoia.settings.base import Method, SettingABC
-from sequoia.settings.sl import SLSetting
-from sequoia.settings.sl.environment import PassiveEnvironment
+from sequoia.settings.base import Method
+from sequoia.settings.sl.setting import SLSetting
 from sequoia.settings.sl.wrappers import MeasureSLPerformanceWrapper
-from sequoia.utils.generic_functions import move, concatenate
+from sequoia.utils.generic_functions import concatenate
 from sequoia.utils.logging_utils import get_logger
 from sequoia.utils.utils import flag
 
-from .environment import (
-    ContinualSLEnvironment,
-    ContinualSLTestEnvironment,
+from .environment import ContinualSLEnvironment, ContinualSLTestEnvironment
+from .envs import (
+    CTRL_INSTALLED,
+    CTRL_STREAMS,
     base_action_spaces,
     base_observation_spaces,
     base_reward_spaces,
+    get_action_space,
+    get_observation_space,
+    get_reward_space,
 )
-from .objects import (
-    Actions,
-    ActionType,
-    ActionSpace,
-    Observations,
-    ObservationType,
-    ObservationSpace,
-    Rewards,
-    RewardType,
-    RewardSpace,
-)
+from .objects import Actions, ActionSpace, Observations, ObservationSpace, Rewards, RewardSpace
 from .results import ContinualSLResults
 from .wrappers import relabel
-from .envs import get_observation_space, get_action_space, get_reward_space
-import torch
-from sequoia.common.spaces import ImageTensorSpace, TensorDiscrete
-from .envs import CTRL_INSTALLED, CTRL_STREAMS
-logger = get_logger(__file__)
+
+logger = get_logger(__name__)
 
 EnvironmentType = TypeVar("EnvironmentType", bound=ContinualSLEnvironment)
 
@@ -99,8 +86,8 @@ if CTRL_INSTALLED:
 
 @dataclass
 class ContinualSLSetting(SLSetting, ContinualAssumption):
-    """ Continuous, Task-Agnostic, Continual Supervised Learning.
-    
+    """Continuous, Task-Agnostic, Continual Supervised Learning.
+
     This is *currently* the most "general" Supervised Continual Learning setting in
     Sequoia.
 
@@ -182,25 +169,25 @@ class ContinualSLSetting(SLSetting, ContinualAssumption):
     # TODO: Need to put num_workers in only one place.
     batch_size: int = field(default=32, cmd=False)
     num_workers: int = field(default=4, cmd=False)
-    
+
     # When True, a Monitor-like wrapper will be applied to the training environment
     # and monitor the 'online' performance during training. Note that in SL, this will
     # also cause the Rewards (y) to be withheld until actions are passed to the `send`
     # method of the Environment.
     monitor_training_performance: bool = flag(False)
 
-    train_datasets: List[Dataset] = field(default_factory=list, cmd=False, repr=False, to_dict=False)
+    train_datasets: List[Dataset] = field(
+        default_factory=list, cmd=False, repr=False, to_dict=False
+    )
     val_datasets: List[Dataset] = field(default_factory=list, cmd=False, repr=False, to_dict=False)
     test_datasets: List[Dataset] = field(default_factory=list, cmd=False, repr=False, to_dict=False)
-    
+
     def __post_init__(self):
         super().__post_init__()
         # assert not self.has_setup_fit
         # Test values default to the same as train.
         self.test_increment = self.test_increment or self.increment
-        self.test_initial_increment = (
-            self.test_initial_increment or self.initial_increment
-        )
+        self.test_initial_increment = self.test_initial_increment or self.initial_increment
         self.test_class_order = self.test_class_order or self.class_order
 
         # TODO: For now we assume a fixed, equal number of classes per task, for
@@ -213,13 +200,12 @@ class ContinualSLSetting(SLSetting, ContinualAssumption):
         assert isinstance(self.increment, int)
         assert isinstance(self.test_increment, int)
 
-
         # The 'scenarios' for train and test from continuum. (ClassIncremental for now).
         self.train_cl_loader: Optional[_BaseScenario] = None
         self.test_cl_loader: Optional[_BaseScenario] = None
         self.train_cl_dataset: Optional[_ContinuumDataset] = None
         self.test_cl_dataset: Optional[_ContinuumDataset] = None
-        
+
         # This will be set by the Experiment, or passed to the `apply` method.
         # TODO: This could be a bit cleaner.
         self.config: Config
@@ -240,16 +226,19 @@ class ContinualSLSetting(SLSetting, ContinualAssumption):
 
         if CTRL_INSTALLED and self.dataset in CTRL_STREAMS:
             import ctrl
-            from ctrl.tasks.task import Task
             from ctrl.tasks.task_generator import TaskGenerator
-            from .envs import CTRL_NB_TASKS 
+
+            from .envs import CTRL_NB_TASKS
+
             self.nb_tasks = self.nb_tasks or CTRL_NB_TASKS[self.dataset]
             if self.dataset == "s_long" and not self.nb_tasks:
-                warnings.warn(RuntimeWarning(
-                    f"Limiting the scenario to 100 tasks for now when using 's_long' stream."
-                ))
+                warnings.warn(
+                    RuntimeWarning(
+                        f"Limiting the scenario to 100 tasks for now when using 's_long' stream."
+                    )
+                )
                 self.nb_tasks = 100
-            task_generator: TaskGenerator = ctrl.get_stream(self.dataset)
+            task_generator: TaskGenerator = ctrl.get_stream(self.dataset, seed=42)
             # Get the train/val/test splits from the tasks.
             for task_dataset in itertools.islice(task_generator, self.nb_tasks):
                 train_dataset = task_dataset.datasets[task_dataset.split_names.index("Train")]
@@ -260,7 +249,7 @@ class ContinualSLSetting(SLSetting, ContinualAssumption):
                 self.test_datasets.append(test_dataset)
 
         ## NOTE: Not sure this is a good idea, because we might easily mix the train/val
-        ## and test splits between different runs! Actually, now that I think about it, 
+        ## and test splits between different runs! Actually, now that I think about it,
         ## I need to make sure that this isn't happening already with Avalanche!
         # if self.datasets:
         #     if any(self.train_datasets, self.val_datasets, self.test_datasets):
@@ -316,7 +305,7 @@ class ContinualSLSetting(SLSetting, ContinualAssumption):
         self._using_custom_envs_foreach_task: bool = bool(self.train_datasets)
 
         # TODO: Remove this
-        if  self.dataset in self.base_action_spaces:
+        if self.dataset in self.base_action_spaces:
             if isinstance(self.action_space, spaces.Discrete):
                 base_action_space = self.base_action_spaces[self.dataset]
                 n_classes = base_action_space.n
@@ -365,7 +354,10 @@ class ContinualSLSetting(SLSetting, ContinualAssumption):
         batch_size = batch_size if batch_size is not None else self.batch_size
         num_workers = num_workers if num_workers is not None else self.num_workers
 
+        # NOTE: ATM the dataset here doesn't have any transforms. We add the transforms after the
+        # dataloader below using the TransformObservations wrapper. This isn't ideal.
         dataset = self._make_train_dataset()
+
         # TODO: Add some kind of Wrapper around the dataset to make it
         # semi-supervised?
         env = self.Environment(
@@ -380,6 +372,7 @@ class ContinualSLSetting(SLSetting, ContinualAssumption):
             pin_memory=True,
             batch_size=batch_size,
             num_workers=num_workers,
+            drop_last=self.drop_last,
             shuffle=False,
             one_epoch_only=(not self.known_task_boundaries_at_train_time),
         )
@@ -388,22 +381,23 @@ class ContinualSLSetting(SLSetting, ContinualAssumption):
             # Add a wrapper that calls 'env.render' at each step?
             env = RenderEnvWrapper(env)
 
-        # NOTE: The transforms from `self.transforms` (the 'base' transforms) were
-        # already added when creating the datasets and the CL scenario.
-        train_specific_transforms = self.additional_transforms(self.train_transforms)
-        if train_specific_transforms:
-            env = TransformObservation(env, f=train_specific_transforms)
+        train_transforms = Compose(self.transforms + self.train_transforms)
+        if train_transforms:
+            env = TransformObservation(env, f=train_transforms)
 
         if self.config.device:
             # TODO: Put this before or after the image transforms?
             from sequoia.common.gym_wrappers.convert_tensors import ConvertToFromTensors
+
             env = ConvertToFromTensors(env, device=self.config.device)
             # env = TransformObservation(env, f=partial(move, device=self.config.device))
             # env = TransformReward(env, f=partial(move, device=self.config.device))
-        
+
         if self.monitor_training_performance:
             env = MeasureSLPerformanceWrapper(
-                env, first_epoch_only=True, wandb_prefix=f"Train/",
+                env,
+                first_epoch_only=True,
+                wandb_prefix=f"Train/",
             )
 
         # NOTE: Quickfix for the 'dtype' of the TypedDictSpace perhaps getting lost
@@ -440,6 +434,7 @@ class ContinualSLSetting(SLSetting, ContinualAssumption):
             Actions=self.Actions,
             Rewards=self.Rewards,
             pin_memory=True,
+            drop_last=self.drop_last,
             batch_size=batch_size,
             num_workers=num_workers,
             one_epoch_only=(not self.known_task_boundaries_at_train_time),
@@ -454,13 +449,14 @@ class ContinualSLSetting(SLSetting, ContinualAssumption):
 
         # NOTE: The transforms from `self.transforms` (the 'base' transforms) were
         # already added when creating the datasets and the CL scenario.
-        val_specific_transforms = self.additional_transforms(self.val_transforms)
-        if val_specific_transforms:
-            env = TransformObservation(env, f=val_specific_transforms)
+        val_transforms = self.transforms + self.val_transforms
+        if val_transforms:
+            env = TransformObservation(env, f=val_transforms)
 
         if self.config.device:
             # TODO: Put this before or after the image transforms?
             from sequoia.common.gym_wrappers.convert_tensors import ConvertToFromTensors
+
             env = ConvertToFromTensors(env, device=self.config.device)
             # env = TransformObservation(env, f=partial(move, device=self.config.device))
             # env = TransformReward(env, f=partial(move, device=self.config.device))
@@ -482,8 +478,7 @@ class ContinualSLSetting(SLSetting, ContinualAssumption):
     def test_dataloader(
         self, batch_size: int = None, num_workers: int = None
     ) -> ContinualSLEnvironment[Observations, Actions, Rewards]:
-        """ Returns a Continual SL Test environment.
-        """
+        """Returns a Continual SL Test environment."""
         if not self.has_prepared_data:
             self.prepare_data()
         if not self.has_setup_test:
@@ -505,19 +500,21 @@ class ContinualSLSetting(SLSetting, ContinualAssumption):
             Actions=self.Actions,
             Rewards=self.Rewards,
             pretend_to_be_active=True,
+            drop_last=self.drop_last,
             shuffle=False,
             one_epoch_only=True,
         )
 
         # NOTE: The transforms from `self.transforms` (the 'base' transforms) were
         # already added when creating the datasets and the CL scenario.
-        test_specific_transforms = self.additional_transforms(self.test_transforms)
-        if test_specific_transforms:
-            env = TransformObservation(env, f=test_specific_transforms)
+        test_transforms = self.transforms + self.test_transforms
+        if test_transforms:
+            env = TransformObservation(env, f=test_transforms)
 
         if self.config.device:
             # TODO: Put this before or after the image transforms?
             from sequoia.common.gym_wrappers.convert_tensors import ConvertToFromTensors
+
             env = ConvertToFromTensors(env, device=self.config.device)
             # env = TransformObservation(env, f=partial(move, device=self.config.device))
             # env = TransformReward(env, f=partial(move, device=self.config.device))
@@ -560,7 +557,8 @@ class ContinualSLSetting(SLSetting, ContinualAssumption):
                 data_dir = Path("data")
 
         logger.info(f"Downloading datasets to directory {data_dir}")
-        if not self._using_custom_envs_foreach_task:            
+        self._using_custom_envs_foreach_task = bool(self.train_datasets)
+        if not self._using_custom_envs_foreach_task:
             self.train_cl_dataset = self.make_dataset(data_dir, download=True, train=True)
             self.test_cl_dataset = self.make_dataset(data_dir, download=True, train=False)
         return super().prepare_data()
@@ -588,20 +586,16 @@ class ContinualSLSetting(SLSetting, ContinualAssumption):
                     cl_dataset=self.train_cl_dataset,
                     **nb_tasks_kwarg,
                     initial_increment=self.initial_increment,
-                    transformations=self.train_transforms,
+                    transformations=[],  # NOTE: Changing this: The transforms will get added after.
                     class_order=self.class_order,
                 )
             if not self.train_datasets and not self.val_datasets:
                 for task_id, train_taskset in enumerate(self.train_cl_loader):
-                    train_taskset, valid_taskset = split_train_val(
-                        train_taskset, val_split=0.1
-                    )
+                    train_taskset, valid_taskset = split_train_val(train_taskset, val_split=0.1)
                     self.train_datasets.append(train_taskset)
                     self.val_datasets.append(valid_taskset)
                 # IDEA: We could do the remapping here instead of adding a wrapper later.
-                if self.shared_action_space and isinstance(
-                    self.action_space, spaces.Discrete
-                ):
+                if self.shared_action_space and isinstance(self.action_space, spaces.Discrete):
                     # If we have a shared output space, then they are all mapped to [0, n_per_task]
                     self.train_datasets = list(map(relabel, self.train_datasets))
                     self.val_datasets = list(map(relabel, self.val_datasets))
@@ -617,7 +611,7 @@ class ContinualSLSetting(SLSetting, ContinualAssumption):
                     nb_tasks=self.nb_tasks,
                     increment=self.test_increment,
                     initial_increment=self.test_initial_increment,
-                    transformations=self.test_transforms,
+                    transformations=[],  # note: not passing transforms here, they get added later
                     class_order=self.test_class_order,
                 )
             if not self.test_datasets:
@@ -626,9 +620,7 @@ class ContinualSLSetting(SLSetting, ContinualAssumption):
                 # self.test_task_order = list(range(len(self.test_datasets)))
                 self.test_datasets = list(self.test_cl_loader)
                 # IDEA: We could do the remapping here instead of adding a wrapper later.
-                if self.shared_action_space and isinstance(
-                    self.action_space, spaces.Discrete
-                ):
+                if self.shared_action_space and isinstance(self.action_space, spaces.Discrete):
                     # If we have a shared output space, then they are all mapped to [0, n_per_task]
                     self.test_datasets = list(map(relabel, self.test_datasets))
 
@@ -649,9 +641,7 @@ class ContinualSLSetting(SLSetting, ContinualAssumption):
 
     def _make_val_dataset(self) -> Dataset:
         if self.smooth_task_boundaries:
-            return smooth_task_boundaries_concat(
-                self.val_datasets, seed=self.config.seed
-            )
+            return smooth_task_boundaries_concat(self.val_datasets, seed=self.config.seed)
         if self.stationary_context:
             joined_dataset = concat(self.val_datasets)
             return shuffle(joined_dataset, seed=self.config.seed)
@@ -661,9 +651,7 @@ class ContinualSLSetting(SLSetting, ContinualAssumption):
 
     def _make_test_dataset(self) -> Dataset:
         if self.smooth_task_boundaries:
-            return smooth_task_boundaries_concat(
-                self.test_datasets, seed=self.config.seed
-            )
+            return smooth_task_boundaries_concat(self.test_datasets, seed=self.config.seed)
         else:
             return concatenate(self.test_datasets)
 
@@ -679,15 +667,11 @@ class ContinualSLSetting(SLSetting, ContinualAssumption):
 
         if self.dataset in self.available_datasets:
             dataset_class = self.available_datasets[self.dataset]
-            return dataset_class(
-                data_path=data_dir, download=download, train=train, **kwargs
-            )
+            return dataset_class(data_path=data_dir, download=download, train=train, **kwargs)
 
         elif self.dataset in self.available_datasets.values():
             dataset_class = self.dataset
-            return dataset_class(
-                data_path=data_dir, download=download, train=train, **kwargs
-            )
+            return dataset_class(data_path=data_dir, download=download, train=train, **kwargs)
 
         elif isinstance(self.dataset, Dataset):
             logger.info(f"Using a custom dataset {self.dataset}")
@@ -698,7 +682,7 @@ class ContinualSLSetting(SLSetting, ContinualAssumption):
 
     @property
     def observation_space(self) -> ObservationSpace[Observations]:
-        """ The un-batched observation space, based on the choice of dataset and
+        """The un-batched observation space, based on the choice of dataset and
         the transforms at `self.transforms` (which apply to the train/valid/test
         environments).
 
@@ -709,11 +693,6 @@ class ContinualSLSetting(SLSetting, ContinualAssumption):
            the task labels space is Sparse, and entries will be `None`.
 
         """
-        # TODO: Want to force re-computing the observation space only when necessary
-        # (a transform changed or something).
-        if self._observation_space and not self._using_custom_envs_foreach_task:
-            return self._observation_space
-
         # TODO: Need to clean this up a bit:
         if self._using_custom_envs_foreach_task:
             x_space = get_observation_space(self.train_datasets[0])
@@ -735,7 +714,9 @@ class ContinualSLSetting(SLSetting, ContinualAssumption):
         task_label_space = add_tensor_support(task_label_space)
 
         self._observation_space = self.ObservationSpace(
-            x=x_space, task_labels=task_label_space, dtype=self.Observations,
+            x=x_space,
+            task_labels=task_label_space,
+            dtype=self.Observations,
         )
         return self._observation_space
 
@@ -743,7 +724,7 @@ class ContinualSLSetting(SLSetting, ContinualAssumption):
 
     @property
     def action_space(self) -> spaces.Discrete:
-        """ Action space for this setting. """
+        """Action space for this setting."""
         if self._action_space:
             return self._action_space
         # Determine the action space using the right dataset.
@@ -762,7 +743,7 @@ class ContinualSLSetting(SLSetting, ContinualAssumption):
                 )
                 action_space = spaces.Discrete(self.increment)
 
-        self._action_space =  action_space
+        self._action_space = action_space
         return self._action_space
         # TODO: IDEA: Have the action space only reflect the number of 'current' classes
         # in order to create a "true" class-incremental learning setting.
@@ -791,47 +772,14 @@ class ContinualSLSetting(SLSetting, ContinualAssumption):
                 )
                 reward_space = spaces.Discrete(self.increment)
 
-        self._reward_space =  reward_space
+        self._reward_space = reward_space
         return self._reward_space
-
-    def additional_transforms(self, stage_transforms: List[Transforms]) -> Compose:
-        """ Returns the transforms in `stage_transforms` that are additional transforms
-        from those in `self.transforms`.
-
-        For example, if:
-        ```
-        setting.transforms = Compose([Transforms.Resize(32), Transforms.ToTensor])
-        setting.train_transforms = Compose([Transforms.Resize(32), Transforms.ToTensor, Transforms.RandomGrayscale])
-        ```
-        Then:
-        ```
-        setting.additional_transforms(setting.train_transforms)
-        # will give:
-        Compose([Transforms.RandomGrayscale])
-        ```
-        """
-        reference_transforms = self.transforms
-
-        if len(stage_transforms) < len(reference_transforms):
-            # Assume no overlap, return all the 'stage' transforms.
-            return Compose(stage_transforms)
-        if stage_transforms == reference_transforms:
-            # Complete overlap, return an empty list.
-            return Compose([])
-
-        # IDEA: Only add the additional transforms, compared to the 'base' transforms.
-        # As soon as one is different, break.
-        i = 0
-        for i, t_a, t_b in enumerate(zip(stage_transforms, self.transforms)):
-            if t_a != t_b:
-                break
-        return Compose(stage_transforms[i:])
 
 
 def smooth_task_boundaries_concat(
     datasets: List[Dataset], seed: int = None, window_length: float = 0.03
 ) -> ConcatDataset:
-    """ TODO: Use a smarter way of mixing from one to the other? """
+    """TODO: Use a smarter way of mixing from one to the other?"""
     lengths = [len(dataset) for dataset in datasets]
     total_length = sum(lengths)
     n_tasks = len(datasets)
@@ -846,9 +794,7 @@ def smooth_task_boundaries_concat(
 
     def option1():
         shuffled_indices = np.arange(total_length)
-        for start_index in range(
-            0, total_length - window_length + 1, window_length // 2
-        ):
+        for start_index in range(0, total_length - window_length + 1, window_length // 2):
             rng.shuffle(shuffled_indices[start_index : start_index + window_length])
         return shuffled_indices
 
@@ -857,9 +803,7 @@ def smooth_task_boundaries_concat(
     # IDEA #2: Sample based on how close to the 'center' of the task we are.
     def option2():
         boundaries = np.array(list(itertools.accumulate(lengths, initial=0)))
-        middles = [
-            (start + end) / 2 for start, end in zip(boundaries[0:], boundaries[1:])
-        ]
+        middles = [(start + end) / 2 for start, end in zip(boundaries[0:], boundaries[1:])]
         samples_left: Dict[int, int] = {i: length for i, length in enumerate(lengths)}
         indices_left: Dict[int, List[int]] = {
             i: list(range(boundaries[i], boundaries[i] + length))
@@ -891,9 +835,7 @@ def smooth_task_boundaries_concat(
             options = np.array(eligible_dataset_ids, dtype=int)
 
             # Calculate the 'distance' to the center of the task's dataset.
-            distances = np.abs(
-                [step - middles[dataset_index] for dataset_index in options]
-            )
+            distances = np.abs([step - middles[dataset_index] for dataset_index in options])
 
             # NOTE: THis exponent is kindof arbitrary, setting it to this value because it
             # sortof works for MNIST so far.
@@ -910,13 +852,9 @@ def smooth_task_boundaries_concat(
 
     def option3():
         shuffled_indices = np.arange(total_length)
-        for start_index in range(
-            0, total_length - window_length + 1, window_length // 2
-        ):
+        for start_index in range(0, total_length - window_length + 1, window_length // 2):
             rng.shuffle(shuffled_indices[start_index : start_index + window_length])
-        for start_index in reversed(
-            range(0, total_length - window_length + 1, window_length // 2)
-        ):
+        for start_index in reversed(range(0, total_length - window_length + 1, window_length // 2)):
             rng.shuffle(shuffled_indices[start_index : start_index + window_length])
         return shuffled_indices
 
@@ -961,21 +899,17 @@ def taskset_subset(taskset: TaskSet, indices: np.ndarray) -> TaskSet:
     bounding_boxes = taskset.bounding_boxes
     if bounding_boxes is not None:
         bounding_boxes = bounding_boxes[indices]
-    return replace_taskset_attributes(
-        taskset, x=x, y=y, t=t, bounding_boxes=bounding_boxes
-    )
+    return replace_taskset_attributes(taskset, x=x, y=y, t=t, bounding_boxes=bounding_boxes)
 
 
 def random_subset(
     taskset: TaskSet, n_samples: int, seed: int = None, ordered: bool = True
 ) -> TaskSet:
-    """ Returns a random (ordered) subset of the given TaskSet. """
+    """Returns a random (ordered) subset of the given TaskSet."""
     rng = np.random.default_rng(seed)
     dataset_length = len(taskset)
     if n_samples > dataset_length:
-        raise RuntimeError(
-            f"Dataset has {dataset_length}, asked for {n_samples} samples."
-        )
+        raise RuntimeError(f"Dataset has {dataset_length}, asked for {n_samples} samples.")
     indices = rng.permutation(range(dataset_length))[:n_samples]
     # indices = rng.choice(len(taskset), size=n_samples, replace=False)
     if ordered:
@@ -997,36 +931,40 @@ def shuffle(dataset: DatasetType, seed: int = None) -> DatasetType:
 import torch
 from torch import Tensor
 
-def smart_class_prediction(logits: Tensor, task_labels: Tensor, setting: SLSetting, train: bool) -> Tensor:
-    """ Predicts classes which are available, given the task labels. """
+
+def smart_class_prediction(
+    logits: Tensor, task_labels: Tensor, setting: SLSetting, train: bool
+) -> Tensor:
+    """Predicts classes which are available, given the task labels."""
     unique_task_ids = set(task_labels.unique().cpu().tolist())
     classes_in_each_task = {
-        task_id: setting.task_classes(task_id, train=train)
-        for task_id in unique_task_ids
+        task_id: setting.task_classes(task_id, train=train) for task_id in unique_task_ids
     }
-    y_pred = limit_to_available_classes(logits, task_labels, classes_in_each_task)    
+    y_pred = limit_to_available_classes(logits, task_labels, classes_in_each_task)
     return y_pred
 
 
-def limit_to_available_classes(logits: Tensor, task_labels: Tensor, classes_in_each_present_task: Dict[int, List[int]]) -> Tensor:
+def limit_to_available_classes(
+    logits: Tensor, task_labels: Tensor, classes_in_each_present_task: Dict[int, List[int]]
+) -> Tensor:
     B = logits.shape[0]
     C = logits.shape[-1]
 
     assert logits.shape[0] == task_labels.shape[0] == B
     y_preds = []
     indices = torch.arange(C, dtype=torch.long, device=logits.device)
-    
+
     elligible_masks = {
         task_id: sum(
             [indices == label for label in labels],
-            start=torch.zeros([C], dtype=bool, device=logits.device)
-            )
+            start=torch.zeros([C], dtype=bool, device=logits.device),
+        )
         for task_id, labels in classes_in_each_present_task.items()
     }
 
     y_preds = []
     # TODO: Also return the logits, so we can get a loss for the selected indices?
-    # logits = [] 
+    # logits = []
     for logit, task_label in zip(logits, task_labels):
         t = task_label.item()
         eligible_classes_list = classes_in_each_present_task[t]
@@ -1049,3 +987,11 @@ def limit_to_available_classes(logits: Tensor, task_labels: Tensor, classes_in_e
         y_preds.append(y_pred.reshape(()))  # Just to make sure they all have the same shape.
 
     return torch.stack(y_preds)
+
+
+from sequoia.common.transforms.channels import has_channels_last, has_channels_first
+
+
+@has_channels_last.register(ContinualSLSetting.Observations)
+def _has_channels_last(obs: ContinualSLSetting.Observations) -> bool:
+    return has_channels_last(obs.x)

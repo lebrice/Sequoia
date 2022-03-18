@@ -1,5 +1,5 @@
 from dataclasses import dataclass
-from typing import TypeVar, ClassVar
+from typing import ClassVar, TypeVar
 
 from sequoia.common.metrics.rl_metrics import EpisodeMetrics
 from sequoia.settings.assumptions.incremental_results import IncrementalResults

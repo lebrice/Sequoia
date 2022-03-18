@@ -1,12 +1,14 @@
-from typing import Dict, Optional, Tuple, List
+from typing import Dict, List, Optional, Tuple
 
 import numpy as np
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from torch import Tensor
+
+from sequoia.settings import Actions, PassiveEnvironment
 from sequoia.settings.sl.incremental import Observations, Rewards
-from sequoia.settings import PassiveEnvironment, Actions
+
 from .layers import PNNConvLayer, PNNLinearBlock
 
 
@@ -31,9 +33,7 @@ class PnnClassifier(nn.Module):
         self.n_classes_per_task: List[int] = []
 
     def forward(self, observations):
-        assert (
-            self.columns
-        ), "PNN should at least have one column (missing call to `new_task` ?)"
+        assert self.columns, "PNN should at least have one column (missing call to `new_task` ?)"
         x = observations.x
         x = torch.flatten(x, start_dim=1)
         labels = observations.task_labels
@@ -76,9 +76,7 @@ class PnnClassifier(nn.Module):
         task_id = len(self.columns)
         modules = []
         for i in range(0, self.n_layers):
-            modules.append(
-                PNNLinearBlock(col=task_id, depth=i, n_in=sizes[i], n_out=sizes[i + 1])
-            )
+            modules.append(PNNLinearBlock(col=task_id, depth=i, n_in=sizes[i], n_out=sizes[i + 1]))
 
         new_column = nn.ModuleList(modules).to(device)
         self.columns.append(new_column)
@@ -107,17 +105,17 @@ class PnnClassifier(nn.Module):
         environment: PassiveEnvironment,
     ):
         """Shared step used for both training and validation.
-                
+
         Parameters
         ----------
         batch : Tuple[Observations, Optional[Rewards]]
             Batch containing Observations, and optional Rewards. When the Rewards are
             None, it means that we'll need to provide the Environment with actions
             before we can get the Rewards (e.g. image labels) back.
-            
+
             This happens for example when being applied in a Setting which cares about
             sample efficiency or training performance, for example.
-            
+
         environment : Environment
             The environment we're currently interacting with. Used to provide the
             rewards when they aren't already part of the batch (as mentioned above).

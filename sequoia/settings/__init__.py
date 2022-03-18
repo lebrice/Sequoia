@@ -3,12 +3,11 @@
 import inspect
 from typing import Any, Dict, Iterable, List, Set, Type
 
-from .base.objects import (Actions, ActionType, Observations,
-                   ObservationType, Rewards, RewardType)
-from .base.results import Results
+from .base.bases import Method, SettingABC
 from .base.environment import Environment
+from .base.objects import Actions, ActionType, Observations, ObservationType, Rewards, RewardType
+from .base.results import Results
 from .base.setting import Setting, SettingType
-from .base.bases import SettingABC, Method
 from .rl import *
 from .sl import *
 
@@ -25,9 +24,7 @@ from .sl import *
 #     RLSetting,
 # ]
 # Or, get All the settings:
-all_settings: List[Type[Setting]] = frozenset([
-    Setting, *Setting.children()
-])
+all_settings: Set[Type[SettingABC]] = set([Setting, *Setting.children()])
 # FIXME: Remove this, just checking the inspect atm.:
 # import inspect
 # import pprint

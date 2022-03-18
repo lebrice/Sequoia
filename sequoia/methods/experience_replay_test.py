@@ -1,23 +1,24 @@
-from sequoia.settings.sl import ClassIncrementalSetting, TaskIncrementalSLSetting
+from typing import ClassVar, Dict, Type
+
 import pytest
-from .experience_replay import ExperienceReplayMethod
+
 from sequoia.common.config import Config
-from sequoia.methods import Method
-from sequoia.methods.method_test import MethodTests
 from sequoia.conftest import slow
-from sequoia.settings.sl import SLSetting
-from typing import ClassVar, Type
+from sequoia.methods.method_test import MethodTests
+from sequoia.settings.sl import ClassIncrementalSetting, SLSetting
+
+from .experience_replay import ExperienceReplayMethod
 
 
 class TestExperienceReplay(MethodTests):
-    Method: ClassVar[Type[Method]] = ExperienceReplayMethod
+    Method: ClassVar[Type[ExperienceReplayMethod]] = ExperienceReplayMethod
+    method_debug_kwargs: ClassVar[Dict] = {"buffer_capacity": 100, "max_epochs_per_task": 1}
 
     @classmethod
     @pytest.fixture
     def method(cls, config: Config) -> ExperienceReplayMethod:
-        """ Fixture that returns the Method instance to use when testing/debugging.
-        """
-        return cls.Method()
+        """Fixture that returns the Method instance to use when testing/debugging."""
+        return cls.Method(**cls.method_debug_kwargs)
 
     def validate_results(
         self,
@@ -33,7 +34,8 @@ class TestExperienceReplay(MethodTests):
     def test_class_incremental_mnist(self, config: Config):
         method = ExperienceReplayMethod(buffer_capacity=200, max_epochs_per_task=1)
         setting = ClassIncrementalSetting(
-            dataset="mnist", monitor_training_performance=True,
+            dataset="mnist",
+            monitor_training_performance=True,
         )
         results = setting.apply(method, config=config)
         assert 0.90 <= results.average_online_performance.objective

@@ -20,41 +20,37 @@ See: [LightningDataModule](https://pytorch-lightning.readthedocs.io/en/latest/da
 """
 import itertools
 import sys
+import typing
 from abc import abstractmethod
 from dataclasses import dataclass
 from pathlib import Path
-from typing import (
-    Optional,
-    TypeVar,
-    Generic,
-    ClassVar,
-    Type,
-    Dict,
-    Any,
-    List,
-    Union,
-    Iterable,
-)
+from typing import Any, ClassVar, Dict, Generic, Iterable, List, Optional, Type, TypeVar, Union
 
 import gym
 import numpy as np
 import torch
 from gym import spaces
 from pytorch_lightning import LightningDataModule
-from sequoia.common.config import Config, WandbConfig
-from sequoia.common.metrics import Metrics
-from sequoia.common.transforms import Compose, Transforms
-from sequoia.settings.presets import setting_presets
-from sequoia.utils import Parseable, get_logger, take
 from simple_parsing import Serializable, field
 from torch import Tensor
 
-from .bases import Method, SettingABC
-from .environment import Actions, Environment, Observations, Rewards
-from .results import Results, ResultsType
-from .setting_meta import SettingMeta
+from sequoia.common.config import Config, WandbConfig
+from sequoia.common.metrics import Metrics
 
-logger = get_logger(__file__)
+if typing.TYPE_CHECKING:
+    from sequoia.common.transforms import Compose
+from sequoia.common.transforms.transform_enum import Transforms
+
+from sequoia.settings.base.bases import Method, SettingABC
+from sequoia.settings.base.environment import Environment
+from sequoia.settings.base.objects import Actions, Observations, Rewards
+from sequoia.settings.base.results import Results, ResultsType
+from sequoia.settings.base.setting_meta import SettingMeta
+from sequoia.settings.presets import setting_presets
+from sequoia.utils import Parseable, get_logger
+from sequoia.utils.utils import take
+
+logger = get_logger(__name__)
 
 SettingType = TypeVar("SettingType", bound="Setting")
 EnvironmentType = TypeVar("EnvironmentType", bound=Environment)
@@ -69,7 +65,7 @@ class Setting(
     Generic[EnvironmentType],
     metaclass=SettingMeta,
 ):
-    """ Base class for all research settings in ML: Root node of the tree.
+    """Base class for all research settings in ML: Root node of the tree.
 
     A 'setting' is loosely defined here as a learning problem with a specific
     set of assumptions, restrictions, and an evaluation procedure.
@@ -172,9 +168,11 @@ class Setting(
         action_space: gym.Space = None,
         reward_space: gym.Space = None,
     ):
-        """ Initializes the fields of the setting that weren't set from the
+        """Initializes the fields of the setting that weren't set from the
         command-line.
         """
+        from sequoia.common.transforms import Compose
+
         logger.debug("__post_init__ of Setting")
         # BUG: simple-parsing sometimes parses a list with a single item, itself the
         # list of transforms. Not sure if this still happens.
@@ -216,25 +214,19 @@ class Setting(
             self.val_transforms = self.transforms.copy()
             self.test_transforms = self.transforms.copy()
 
-        if self.train_transforms is not None and not isinstance(
-            self.train_transforms, list
-        ):
+        if self.train_transforms is not None and not isinstance(self.train_transforms, list):
             self.train_transforms = [self.train_transforms]
 
-        if self.val_transforms is not None and not isinstance(
-            self.val_transforms, list
-        ):
+        if self.val_transforms is not None and not isinstance(self.val_transforms, list):
             self.val_transforms = [self.val_transforms]
 
-        if self.test_transforms is not None and not isinstance(
-            self.test_transforms, list
-        ):
+        if self.test_transforms is not None and not isinstance(self.test_transforms, list):
             self.test_transforms = [self.test_transforms]
 
         # Actually compose the list of Transforms or callables into a single transform.
-        self.train_transforms: Compose = Compose(self.train_transforms or [])
-        self.val_transforms: Compose = Compose(self.val_transforms or [])
-        self.test_transforms: Compose = Compose(self.test_transforms or [])
+        self.train_transforms = Compose(self.train_transforms or [])
+        self.val_transforms = Compose(self.val_transforms or [])
+        self.test_transforms = Compose(self.test_transforms or [])
 
         LightningDataModule.__init__(
             self,
@@ -259,7 +251,8 @@ class Setting(
         raise NotImplementedError("this is just here for illustration purposes. ")
 
         method.fit(
-            train_env=self.train_dataloader(), valid_env=self.val_dataloader(),
+            train_env=self.train_dataloader(),
+            valid_env=self.val_dataloader(),
         )
 
         # Test loop:
@@ -286,7 +279,7 @@ class Setting(
         return self.Results(test_metrics=test_metrics)
 
     def get_metrics(self, actions: Actions, rewards: Rewards) -> Union[float, Metrics]:
-        """ Calculate the "metric" from the model predictions (actions) and the true labels (rewards).
+        """Calculate the "metric" from the model predictions (actions) and the true labels (rewards).
 
         In this example, we return a 'Metrics' object:
         - `ClassificationMetrics` for classification problems,
@@ -317,9 +310,7 @@ class Setting(
         if isinstance(self.action_space, spaces.Discrete):
             batch_size = rewards.shape[0]
             actions = torch.as_tensor(actions)
-            if len(actions.shape) == 1 or (
-                actions.shape[-1] == 1 and self.action_space.n != 2
-            ):
+            if len(actions.shape) == 1 or (actions.shape[-1] == 1 and self.action_space.n != 2):
                 fake_logits = torch.zeros([batch_size, self.action_space.n], dtype=int)
                 # FIXME: There must be a smarter way to do this indexing.
                 for i, action in enumerate(actions):
@@ -388,7 +379,7 @@ class Setting(
 
     @classmethod
     def get_available_datasets(cls) -> Iterable[str]:
-        """ Returns an iterable of strings which represent the names of datasets. """
+        """Returns an iterable of strings which represent the names of datasets."""
         return cls.available_datasets
 
     def _setup_config(self, method: Method) -> Config:
@@ -402,13 +393,9 @@ class Setting(
         else:
             argv = self._argv
             if argv:
-                logger.debug(
-                    f"Parsing the Config from the command-line arguments ({argv})"
-                )
+                logger.debug(f"Parsing the Config from the command-line arguments ({argv})")
             else:
-                logger.debug(
-                    f"Parsing the config from the current command-line arguments."
-                )
+                logger.debug(f"Parsing the config from the current command-line arguments.")
             config = Config.from_args(argv, strict=False)
         return config
 
@@ -427,9 +414,7 @@ class Setting(
         results: ResultsType = experiment.launch(argv)
         return results
 
-    def apply_all(
-        self, argv: Union[str, List[str]] = None
-    ) -> Dict[Type["Method"], Results]:
+    def apply_all(self, argv: Union[str, List[str]] = None) -> Dict[Type["Method"], Results]:
         applicable_methods = self.get_applicable_methods()
         from sequoia.methods import Method
 
@@ -449,11 +434,12 @@ class Setting(
         return all_results
 
     def _check_environments(self):
-        """ Do a quick check to make sure that interacting with the envs/dataloaders
+        """Do a quick check to make sure that interacting with the envs/dataloaders
         works correctly.
         """
         # Check that the env's spaces are batched versions of the settings'.
         from gym.vector.utils import batch_space
+
         from sequoia.settings.sl import PassiveEnvironment
 
         batch_size = self.batch_size
@@ -471,9 +457,7 @@ class Setting(
             # would be depends on the type of spaces for each. Instead, we could
             # check samples from such spaces on how the spaces are batched.
             if batch_size:
-                expected_observation_space = batch_space(
-                    self.observation_space, n=batch_size
-                )
+                expected_observation_space = batch_space(self.observation_space, n=batch_size)
                 expected_action_space = batch_space(self.action_space, n=batch_size)
                 expected_reward_space = batch_space(self.reward_space, n=batch_size)
             else:
@@ -483,9 +467,10 @@ class Setting(
 
             # TODO: Batching the 'Sparse' makes it really ugly, so just
             # comparing the 'image' portion of the space for now.
-            assert (
-                env.observation_space["x"].shape == expected_observation_space[0].shape
-            ), (env.observation_space["x"], expected_observation_space[0])
+            assert env.observation_space["x"].shape == expected_observation_space[0].shape, (
+                env.observation_space["x"],
+                expected_observation_space[0],
+            )
 
             assert env.action_space == expected_action_space, (
                 env.action_space,
@@ -528,9 +513,7 @@ class Setting(
                     self._check_rewards(env, rewards)
 
                 if batch_size:
-                    actions = tuple(
-                        self.action_space.sample() for _ in range(batch_size)
-                    )
+                    actions = tuple(self.action_space.sample() for _ in range(batch_size))
                 else:
                     actions = self.action_space.sample()
                 # actions = self.Actions(torch.as_tensor(actions))
@@ -540,7 +523,7 @@ class Setting(
             env.close()
 
     def _check_observations(self, env: Environment, observations: Any):
-        """ Check that the given observation makes sense for the given environment.
+        """Check that the given observation makes sense for the given environment.
 
         TODO: This should probably not be in this file here. It's more used for
         testing than anything else.
@@ -591,10 +574,8 @@ class Setting(
         return super().__new__(cls, *args, **kwargs)
 
     @classmethod
-    def load_benchmark(
-        cls: Type[SettingType], benchmark: Union[str, Path]
-    ) -> SettingType:
-        """ Load the given "benchmark" (pre-configured Setting) of this type.
+    def load_benchmark(cls: Type[SettingType], benchmark: Union[str, Path]) -> SettingType:
+        """Load the given "benchmark" (pre-configured Setting) of this type.
 
         Parameters
         ----------
@@ -635,8 +616,7 @@ class Setting(
         # config file.
         # TODO: IDEA: Do the same thing for loading the Method?
         logger.info(
-            f"Will load the options for setting {cls} from the file "
-            f"at path {benchmark}."
+            f"Will load the options for setting {cls} from the file " f"at path {benchmark}."
         )
 
         # Raise an error if any of the args in sys.argv would have been used

@@ -1,9 +1,9 @@
 import pytest
 from d3rlpy.constants import ActionSpace
 
+from sequoia import TraditionalRLSetting
 from sequoia.methods.d3rlpy_methods.base import *
 from sequoia.settings.offline_rl.setting import OfflineRLSetting
-from sequoia import TraditionalRLSetting
 
 
 class BaseOfflineRLMethodTests:
@@ -13,7 +13,7 @@ class BaseOfflineRLMethodTests:
     def method(self):
         return self.Method(train_steps=1, train_steps_per_epoch=1)
 
-    @pytest.mark.parametrize('dataset', OfflineRLSetting.available_datasets)
+    @pytest.mark.parametrize("dataset", OfflineRLSetting.available_datasets)
     def test_offlinerl(self, method, dataset: str):
 
         setting_offline = OfflineRLSetting(dataset=dataset)
@@ -21,7 +21,7 @@ class BaseOfflineRLMethodTests:
         #
         # Check for mismatch
         if isinstance(setting_offline.env.action_space, gym.spaces.Box):
-            if method.algo.get_action_type() not in  {ActionSpace.CONTINUOUS, ActionSpace.BOTH}:
+            if method.algo.get_action_type() not in {ActionSpace.CONTINUOUS, ActionSpace.BOTH}:
                 pytest.skip("This setting requires continuous action space algorithm")
 
         elif isinstance(setting_offline.env.action_space, gym.spaces.discrete.Discrete):
@@ -35,7 +35,7 @@ class BaseOfflineRLMethodTests:
         # Difficult to set a meaningful threshold for 1 step fit
         assert isinstance(results.objective, float)
 
-    @pytest.mark.parametrize('dataset', TraditionalRLSetting.available_datasets)
+    @pytest.mark.parametrize("dataset", TraditionalRLSetting.available_datasets)
     def test_traditionalrl(self, method, dataset):
 
         # BC is a strictly offline method

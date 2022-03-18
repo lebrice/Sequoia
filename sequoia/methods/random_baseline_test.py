@@ -1,19 +1,8 @@
 # TODO: Create a sort of reusable fixture for the Method
 # TODO: Figure out how to ACTUALLY set the checkpoint dir in pytorch-lightning!
-from typing import List, Type
+from typing import List
 
-import pytest
-from sequoia.common import Config
-from sequoia.conftest import parametrize, slow
-from sequoia.settings import (
-    ClassIncrementalSetting,
-    ContinualRLSetting,
-    TraditionalSLSetting,
-    IncrementalRLSetting,
-    RLSetting,
-    Setting,
-    all_settings,
-)
+from sequoia.settings import all_settings
 
 from .random_baseline import RandomBaselineMethod
 

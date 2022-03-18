@@ -2,17 +2,18 @@
 
 You can use this model and method as a jumping off point for your own submission.
 """
-from dataclasses import replace, dataclass
+from dataclasses import dataclass, replace
 from logging import getLogger
-from typing import Optional
+from typing import ClassVar, Optional, Type
 
 import torch
 from gym import Space, spaces
-from sequoia.settings.sl.incremental import ClassIncrementalSetting
-from sequoia.settings.sl.incremental.objects import Observations
 from torch import Tensor, nn
 from torch.nn import functional as F
 from torch.optim.optimizer import Optimizer
+
+from sequoia.settings.sl.incremental import ClassIncrementalSetting
+from sequoia.settings.sl.incremental.objects import Observations
 
 from .classifier import Classifier, ExampleMethod
 
@@ -50,7 +51,7 @@ class MultiHeadClassifier(Classifier):
         return nn.Linear(self.representations_size, self.n_classes).to(self.device)
 
     def get_or_create_output_head(self, task_id: int) -> nn.Module:
-        """ Retrieves or creates a new output head for the given task index.
+        """Retrieves or creates a new output head for the given task index.
 
         Also stores it in the `output_heads`, and adds its parameters to the
         optimizer.
@@ -153,7 +154,8 @@ class MultiHeadClassifier(Classifier):
         unique_task_ids, inv_indices = torch.unique(task_labels, return_inverse=True)
         # There might be more than one task in the batch.
         batch_size = observations.batch_size
-        all_indices = torch.arange(batch_size, dtype=int, device=self.device)
+        assert batch_size is not None
+        all_indices = torch.arange(batch_size, dtype=torch.int64, device=self.device)
 
         # Placeholder for the predicitons for each item in the batch.
         task_outputs = [None for _ in range(batch_size)]
@@ -180,8 +182,7 @@ class MultiHeadClassifier(Classifier):
         return logits
 
     def task_inference_forward_pass(self, observations: Observations) -> Tensor:
-        """ Forward pass with a simple form of task inference.
-        """
+        """Forward pass with a simple form of task inference."""
         # We don't have access to task labels (`task_labels` is None).
         # --> Perform a simple kind of task inference:
         # 1. Perform a forward pass with each task's output head;
@@ -256,9 +257,7 @@ class MultiHeadClassifier(Classifier):
         # chosen_output_head_per_item: [0]
 
         # Create a bool tensor to select items associated with the chosen output head.
-        selected_mask = F.one_hot(chosen_output_head_per_item, T).to(
-            dtype=bool, device=self.device
-        )
+        selected_mask = F.one_hot(chosen_output_head_per_item, T).to(dtype=bool, device=self.device)
         assert selected_mask.shape == (B, T)
         # Select the logits using the mask:
         logits = logits_from_each_head[selected_mask]
@@ -266,8 +265,7 @@ class MultiHeadClassifier(Classifier):
         return logits
 
     def on_task_switch(self, task_id: Optional[int]):
-        """ Executed when the task switches (to either a known or unknown task).
-        """
+        """Executed when the task switches (to either a known or unknown task)."""
         if task_id is not None:
             # Switch the output head.
             self.current_task_id = task_id
@@ -275,11 +273,15 @@ class MultiHeadClassifier(Classifier):
 
 
 class ExampleTaskInferenceMethod(ExampleMethod):
+
+    ModelType: ClassVar[Type[Classifier]] = MultiHeadClassifier
+
     def __init__(self, hparams: MultiHeadClassifier.HParams = None):
         super().__init__(hparams=hparams or MultiHeadClassifier.HParams())
+        self.hparams: MultiHeadClassifier.HParams
 
     def configure(self, setting: ClassIncrementalSetting):
-        """ Called before the method is applied on a setting (before training).
+        """Called before the method is applied on a setting (before training).
 
         You can use this to instantiate your model, for instance, since this is
         where you get access to the observation & action spaces.
@@ -303,15 +305,15 @@ class ExampleTaskInferenceMethod(ExampleMethod):
 
 
 if __name__ == "__main__":
-    from sequoia.settings.sl.class_incremental import (
-        ClassIncrementalSetting,
-        TaskIncrementalSLSetting,
-    )
-
     # Create the Method, either manually:
     # method = ExampleTaskInferenceMethod()
     # Or, from the command-line:
     from simple_parsing import ArgumentParser
+
+    from sequoia.settings.sl.class_incremental import (
+        ClassIncrementalSetting,
+        TaskIncrementalSLSetting,
+    )
 
     parser = ArgumentParser(description=__doc__)
     ExampleTaskInferenceMethod.add_argparse_args(parser)

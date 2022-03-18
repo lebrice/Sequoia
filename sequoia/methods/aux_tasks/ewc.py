@@ -8,10 +8,10 @@ package, (which I don't think we need to have as a submodule).
 """
 
 from collections import deque
+from contextlib import contextmanager
 from copy import deepcopy
 from dataclasses import dataclass
-from typing import Type, Optional, Deque, List
-from contextlib import contextmanager
+from typing import Deque, List, Optional, Type
 
 from gym.spaces.utils import flatdim
 from nngeometry.metrics import FIM
@@ -20,8 +20,8 @@ from simple_parsing import choice
 from torch import Tensor
 from torch.utils.data import DataLoader
 
+from sequoia.common.hparams import categorical, uniform
 from sequoia.common.loss import Loss
-from sequoia.common.hparams import uniform, categorical
 from sequoia.methods.aux_tasks.auxiliary_task import AuxiliaryTask
 from sequoia.methods.models.forward_pass import ForwardPass
 from sequoia.methods.models.output_heads import ClassificationHead, RegressionHead
@@ -29,11 +29,11 @@ from sequoia.settings.base.objects import Observations
 from sequoia.utils.logging_utils import get_logger
 from sequoia.utils.utils import dict_intersection
 
-logger = get_logger(__file__)
+logger = get_logger(__name__)
 
 
 class EWCTask(AuxiliaryTask):
-    """ Elastic Weight Consolidation, implemented as a 'self-supervision-style'
+    """Elastic Weight Consolidation, implemented as a 'self-supervision-style'
     Auxiliary Task.
 
     ```bibtex
@@ -56,7 +56,7 @@ class EWCTask(AuxiliaryTask):
 
     @dataclass
     class Options(AuxiliaryTask.Options):
-        """ Options of the EWC auxiliary task. """
+        """Options of the EWC auxiliary task."""
 
         # Coefficient of the EWC auxilary task.
         # NOTE: It seems to be the case that, at least just for EWC, the coefficient
@@ -69,12 +69,11 @@ class EWCTask(AuxiliaryTask):
         sample_size_fim: int = categorical(2, 4, 8, 16, 32, 64, 128, 256, 512, default=8)
         # Fisher information representation type  (diagonal or block diagonal).
         fim_representation: Type[PMatAbstract] = choice(
-            {"diagonal": PMatDiag, "block_diagonal": PMatKFAC}, default=PMatDiag,
+            {"diagonal": PMatDiag, "block_diagonal": PMatKFAC},
+            default=PMatDiag,
         )
 
-    def __init__(
-        self, *args, name: str = None, options: "EWCTask.Options" = None, **kwargs
-    ):
+    def __init__(self, *args, name: str = None, options: "EWCTask.Options" = None, **kwargs):
         super().__init__(*args, options=options, name=name, **kwargs)
         self.options: EWCTask.Options
 
@@ -86,9 +85,7 @@ class EWCTask(AuxiliaryTask):
         self.previous_training_tasks: List[Optional[int]] = []
 
         self.previous_model_weights: Optional[PVector] = None
-        self.observation_collector: Deque[Observations] = deque(
-            maxlen=self.options.sample_size_fim
-        )
+        self.observation_collector: Deque[Observations] = deque(maxlen=self.options.sample_size_fim)
         self.fisher_information_matrices: List[PMatAbstract] = []
         # When True, ignore task boundaries (no EWC update).
         # This is used mainly because of the need for executing forward passes when
@@ -109,8 +106,7 @@ class EWCTask(AuxiliaryTask):
             self.disable()
 
     def get_loss(self, forward_pass: ForwardPass, y: Tensor = None) -> Loss:
-        """ Gets the EWC loss.
-        """
+        """Gets the EWC loss."""
         if self.training:
             self.observation_collector.append(forward_pass.observations)
 
@@ -129,8 +125,7 @@ class EWCTask(AuxiliaryTask):
         return ewc_loss
 
     def on_task_switch(self, task_id: Optional[int]):
-        """ Executed when the task switches (to either a known or unknown task).
-        """
+        """Executed when the task switches (to either a known or unknown task)."""
         if not self.enabled:
             return
         logger.debug(f"On task switch called: task_id={task_id}")
@@ -185,8 +180,7 @@ class EWCTask(AuxiliaryTask):
         # we dont want to go here at test time.
         # NOTE: We also switch between unknown tasks.
         logger.info(
-            f"Updating the EWC 'anchor' weights before starting training on "
-            f"task {new_task_id}"
+            f"Updating the EWC 'anchor' weights before starting training on " f"task {new_task_id}"
         )
         self.previous_model_weights = self.get_current_model_weights().clone().detach()
 
@@ -261,14 +255,13 @@ class EWCTask(AuxiliaryTask):
 
     @contextmanager
     def _ignoring_task_boundaries(self):
-        """ Contextmanager used to temporarily ignore task boundaries (no EWC update).
-        """
+        """Contextmanager used to temporarily ignore task boundaries (no EWC update)."""
         self._ignore_task_boundaries = True
         yield
         self._ignore_task_boundaries = False
 
     def consolidate(self, new_fims: List[PMatAbstract], task: Optional[int]) -> None:
-        """ Consolidates the new and current fisher information matrices.
+        """Consolidates the new and current fisher information matrices.
 
         Parameters
         ----------
@@ -294,9 +287,9 @@ class EWCTask(AuxiliaryTask):
                 # consolidate the fim_new into fim_previous in place
                 if isinstance(fim_new, PMatDiag):
                     # TODO: This is some kind of weird online-EWC related magic:
-                    fim_previous.data = (
-                        deepcopy(fim_new.data) + fim_previous.data * (task)
-                    ) / (task + 1)
+                    fim_previous.data = (deepcopy(fim_new.data) + fim_previous.data * (task)) / (
+                        task + 1
+                    )
 
                 elif isinstance(fim_new.data, dict):
                     # TODO: This is some kind of weird online-EWC related magic:
@@ -304,9 +297,9 @@ class EWCTask(AuxiliaryTask):
                         fim_previous.data, fim_new.data
                     ):
                         for prev_item, new_item in zip(prev_param, new_param):
-                            prev_item.data = (
-                                prev_item.data * task + deepcopy(new_item.data)
-                            ) / (task + 1)
+                            prev_item.data = (prev_item.data * task + deepcopy(new_item.data)) / (
+                                task + 1
+                            )
 
                 self.fisher_information_matrices[i] = fim_previous
 

@@ -5,20 +5,18 @@ the task, rather than setting a brand new random task.
 There could also be some kind of 'task_duration' parameter, and the model does
 linear or smoothed-out transitions between them depending on the step number?
 """
-from functools import singledispatch
-from typing import Dict, List, Optional, TypeVar
+from typing import Any, Callable, Dict, List, Optional, Union
 
 import gym
 import numpy as np
 from gym import spaces
 
-from torch import Tensor
 from sequoia.common.spaces.sparse import Sparse
 from sequoia.utils.logging_utils import get_logger
 
 from .multi_task_environment import MultiTaskEnvironment, add_task_labels
 
-logger = get_logger(__file__)
+logger = get_logger(__name__)
 
 
 ## TODO (@lebrice): Really cool idea!: Create a TaskSchedule class that inherits
@@ -26,7 +24,7 @@ logger = get_logger(__file__)
 
 
 class SmoothTransitions(MultiTaskEnvironment):
-    """ Extends MultiTaskEnvironment to support smooth task boudaries.
+    """Extends MultiTaskEnvironment to support smooth task boudaries.
 
     Same as `MultiTaskEnvironment`, but when in between two tasks, the
     environment will have its values set to a linear interpolation of the
@@ -53,13 +51,19 @@ class SmoothTransitions(MultiTaskEnvironment):
     def __init__(
         self,
         env: gym.Env,
+        task_schedule: Dict[int, Dict[str, float]] = None,
+        task_params: List[str] = None,
+        noise_std: float = 0.2,
         add_task_dict_to_info: bool = False,
         add_task_id_to_obs: bool = False,
-        only_update_on_episode_end: bool = False,
+        new_random_task_on_reset: bool = False,
+        starting_step: int = 0,
         nb_tasks: int = None,
-        **kwargs
+        max_steps: int = None,
+        seed: int = None,
+        only_update_on_episode_end: bool = False,
     ):
-        """ Wraps the environment, allowing for smooth task transitions.
+        """Wraps the environment, allowing for smooth task transitions.
 
         Same as `MultiTaskEnvironment`, but when in between two tasks, the
         environment will have its values set to a linear interpolation of the
@@ -77,7 +81,7 @@ class SmoothTransitions(MultiTaskEnvironment):
             env (gym.Env): The gym environment to wrap.
             task_schedule (Dict[int, Dict[str, float]], optional) (Same as
                 `MultiTaskEnvironment`): Dict mapping from a given step
-                number to the attributes to be set at that time. Interpolations
+                to the attributes to be set at that time. Interpolations
                 between the two neighbouring tasks will be used between task
                 transitions.
             only_update_on_episode_end (bool, optional): When `False` (default),
@@ -85,14 +89,32 @@ class SmoothTransitions(MultiTaskEnvironment):
                 step. When `True`, only update at the end of episodes (when
                 `reset()` is called).
         """
+        if task_schedule:
+            if not all(isinstance(value, dict) for value in task_schedule.values()):
+                raise RuntimeError("Task schedule values should be dicts of attributes to change.")
+            task_params = list(
+                set().union(*[task_dict.keys() for task_dict in task_schedule.values()])
+            )
+        elif not task_params:
+            raise RuntimeError(
+                "This wrapper needs either a `task_schedule` or `task_params` (the environment "
+                "attributes to modify)"
+            )
+
         super().__init__(
             env,
+            task_schedule=task_schedule,
+            task_params=task_params,
+            noise_std=noise_std,
             add_task_dict_to_info=add_task_dict_to_info,
             add_task_id_to_obs=add_task_id_to_obs,
+            new_random_task_on_reset=new_random_task_on_reset,
+            starting_step=starting_step,
             nb_tasks=nb_tasks,
-            **kwargs
+            max_steps=max_steps,
+            seed=seed,
         )
-        self.only_update_on_episode_end: bool = only_update_on_episode_end
+        self.only_update_on_episode_end = only_update_on_episode_end
         if self._max_steps is None and len(self.task_schedule) > 1:
             # TODO: DO we want to prevent going past the 'task step' in the task schedule?
             pass
@@ -125,7 +147,7 @@ class SmoothTransitions(MultiTaskEnvironment):
 
     @property
     def current_task_id(self) -> Optional[int]:
-        """ Returns the 'index' of the current task within the task schedule.
+        """Returns the 'index' of the current task within the task schedule.
 
         In this case, we return None, since there aren't clear task boundaries.
         """
@@ -135,7 +157,7 @@ class SmoothTransitions(MultiTaskEnvironment):
         return np.array([task.get(k, self.default_task[k]) for k in self.task_params])
 
     def smooth_update(self) -> None:
-        """ Update the curren_task at every step, based on a smooth mix of the
+        """Update the curren_task at every step, based on a smooth mix of the
         previous and the next task. Every time we reach a _step that is in the
         task schedule, we update the 'prev_task_step' and 'next_task_step'
         attributes.
@@ -151,10 +173,11 @@ class SmoothTransitions(MultiTaskEnvironment):
                 fixed_points.append(task.get(attr, self.default_task[attr]))
             # logger.debug(f"{attr}: steps={steps}, fp={fixed_points}")
             interpolated_value: float = np.interp(
-                x=self.steps, xp=steps, fp=fixed_points,
+                x=self.steps,
+                xp=steps,
+                fp=fixed_points,
             )
             current_task[attr] = interpolated_value
             # logger.debug(f"interpolated value of {attr} at step {self.step}: {interpolated_value}")
         # logger.debug(f"Updating task at step {self.step}: {current_task}")
         self.current_task = current_task
-

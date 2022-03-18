@@ -1,28 +1,24 @@
+from dataclasses import dataclass
 from typing import Optional
 
 import torch
-from dataclasses import dataclass
 from simple_parsing import mutable_field
 
+from examples.basic.pl_example import ExampleMethod, Model
 from sequoia.common import Config
 from sequoia.methods import BaseModel
+from sequoia.methods.packnet_method import PackNet
 from sequoia.methods.trainer import Trainer, TrainerConfig
 from sequoia.settings.sl import ContinualSLSetting, TaskIncrementalSLSetting
-from examples.basic.pl_example import ExampleMethod, Model
-from sequoia.methods.packnet_method import PackNet
 
 
 class ExamplePackNetMethod(ExampleMethod, target_setting=TaskIncrementalSLSetting):
-    def __init__(
-        self, hparams: Model.HParams = None, packnet_hparams: PackNet.HParams = None
-    ):
+    def __init__(self, hparams: Model.HParams = None, packnet_hparams: PackNet.HParams = None):
         super().__init__(hparams=hparams)
         self.packnet_hparams = packnet_hparams or PackNet.HParams()
         # TODO: Modify `hparams.max_epochs_per_task` to at least be enough so that
         # PackNet will work.
-        min_epochs = (
-            self.packnet_hparams.train_epochs + self.packnet_hparams.fine_tune_epochs
-        )
+        min_epochs = self.packnet_hparams.train_epochs + self.packnet_hparams.fine_tune_epochs
         if self.hparams.max_epochs_per_task < min_epochs:
             self.hparams.max_epochs_per_task = min_epochs
         self.p_net: PackNet
@@ -48,12 +44,10 @@ class ExamplePackNetMethod(ExampleMethod, target_setting=TaskIncrementalSLSettin
             gpus=torch.cuda.device_count(),
             min_epochs=self.p_net.total_epochs(),
             max_epochs=self.p_net.total_epochs(),
-            callbacks=[self.p_net]
+            callbacks=[self.p_net],
         )
 
-        self.trainer.fit(
-            self.model, train_dataloader=train_env, val_dataloaders=valid_env
-        )
+        self.trainer.fit(self.model, train_dataloader=train_env, val_dataloaders=valid_env)
 
     def on_task_switch(self, task_id: Optional[int]):
         """Called when switching between tasks.

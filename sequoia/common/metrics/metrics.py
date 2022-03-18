@@ -4,17 +4,16 @@ This is a bit like the Metrics from pytorch-lightning, but seems easier to use,
 as far as I know. Also totally transferable between gpus etc. (Haven't used
 the metrics from PL much yet, to be honest).
 """
-from abc import abstractmethod
-from dataclasses import InitVar, dataclass, field, fields
-from typing import Any, Dict, Optional, TypeVar, Union
+from dataclasses import dataclass, field, fields
+from typing import Any, Dict, TypeVar, Union
 
 import numpy as np
-import torch
 from torch import Tensor
-from sequoia.utils.logging_utils import cleanup
+
 from sequoia.utils.serialization import Serializable
 
 MetricsType = TypeVar("MetricsType", bound="Metrics")
+
 
 @dataclass
 class Metrics(Serializable):
@@ -23,7 +22,7 @@ class Metrics(Serializable):
 
     # TODO: Refactor this to take any kwargs, and then let each metric type
     # specify its own InitVars.
-    
+
     def __post_init__(self, **tensors):
         """Creates metrics given `y_pred` and `y`.
 
@@ -49,7 +48,7 @@ class Metrics(Serializable):
     def __radd__(self, other):
         # Instances of the Metrics base class shouldn't be added together, as
         # the subclasses should implement the method. We just return the other.
-        if isinstance(other, (int, float)) and other == 0.:
+        if isinstance(other, (int, float)) and other == 0.0:
             return self
         if isinstance(other, Metrics) and type(self) is Metrics:
             assert self.n_samples == 0
@@ -68,7 +67,7 @@ class Metrics(Serializable):
 
     def __truediv__(self, coefficient: Union[float, Tensor]) -> "Metrics":
         # By default, multiplying or dividing a Metrics object doesn't change
-        # anything about it. 
+        # anything about it.
         return self
 
     def to_log_dict(self, verbose: bool = False) -> Dict:
@@ -96,11 +95,8 @@ class Metrics(Serializable):
                 log_dict[field.name] = value
         return log_dict
 
-        return {
-            f.name: getattr(self, f.name) for f in fields(self)
-            if f.repr or verbose
-        }
-        
+        return {f.name: getattr(self, f.name) for f in fields(self) if f.repr or verbose}
+
         if verbose:
             return {"n_samples": self.n_samples}
         return {}
@@ -110,15 +106,15 @@ class Metrics(Serializable):
 
     def numpy(self):
         """Returns a new object with all the tensor fields converted to numpy arrays."""
+
         def to_numpy(val: Any):
             if isinstance(val, Tensor):
                 return val.detach().cpu().numpy()
             if isinstance(val, (list, tuple)):
                 return np.array(val)
             return val
-        return type(self)(**{
-            name: to_numpy(val) for name, val in self.items()
-        })
+
+        return type(self)(**{name: to_numpy(val) for name, val in self.items()})
 
     @property
     def objective(self) -> float:

@@ -9,23 +9,10 @@ from typing import Callable, ClassVar, Dict, List, Optional, Tuple, Type, Union
 
 import gym
 import numpy as np
-from sequoia.common.gym_wrappers.action_limit import ActionLimit
-from sequoia.common.gym_wrappers.episode_limit import EpisodeLimit
-from sequoia.common.gym_wrappers import (
-    TransformObservation,
-    TransformReward,
-    AddDoneToObservation,
-)
-from sequoia.common.gym_wrappers import EnvDataset
-from sequoia.settings.rl.continual.environment import GymDataLoader
-from sequoia.common.gym_wrappers.convert_tensors import ConvertToFromTensors
-from sequoia.utils.generic_functions import move
-from sequoia.settings.rl.wrappers import TypedObjectsWrapper
 from gym import spaces
+from gym.envs.registration import EnvSpec
 from gym.utils import colorize
 from gym.vector.utils import batch_space
-from gym.wrappers import TimeLimit
-from sequoia.common.spaces.typed_dict import TypedDictSpace
 from simple_parsing import list_field
 from simple_parsing.helpers import choice
 from typing_extensions import Final
@@ -34,8 +21,10 @@ from sequoia.common.gym_wrappers import MultiTaskEnvironment, TransformObservati
 from sequoia.common.gym_wrappers.utils import is_monsterkong_env
 from sequoia.common.metrics import EpisodeMetrics
 from sequoia.common.spaces import Sparse
+from sequoia.common.spaces.typed_dict import TypedDictSpace
 from sequoia.common.transforms import Transforms
-from sequoia.settings.assumptions.incremental import IncrementalAssumption, TaskResults
+from sequoia.settings.assumptions.iid_results import TaskResults
+from sequoia.settings.assumptions.incremental import IncrementalAssumption
 from sequoia.settings.base import Method
 from sequoia.settings.rl.continual import ContinualRLSetting
 from sequoia.settings.rl.envs import (
@@ -47,31 +36,17 @@ from sequoia.settings.rl.envs import (
     metaworld_envs,
     mtenv_envs,
 )
-
-from sequoia.settings.base import Results
 from sequoia.settings.rl.wrappers.task_labels import FixedTaskLabelWrapper
-from sequoia.utils import constant, dict_union, pairwise
 from sequoia.utils.logging_utils import get_logger
+from sequoia.utils.utils import constant, dict_union, pairwise
+
 from ..discrete.setting import DiscreteTaskAgnosticRLSetting
 from ..discrete.setting import supported_envs as _parent_supported_envs
-from .objects import (
-    Actions,
-    ActionType,
-    Observations,
-    ObservationType,
-    Rewards,
-    RewardType,
-)
+from .objects import Actions, Observations, Rewards  # type: ignore
 from .results import IncrementalRLResults
-from .tasks import (
-    EnvSpec,
-    IncrementalTask,
-    is_supported,
-    make_incremental_task,
-    sequoia_registry,
-)
+from .tasks import IncrementalTask, is_supported, make_incremental_task, sequoia_registry
 
-logger = get_logger(__file__)
+logger = get_logger(__name__)
 
 # A callable that returns an env.
 EnvFactory = Callable[[], gym.Env]
@@ -160,9 +135,9 @@ class IncrementalRLSetting(IncrementalAssumption, DiscreteTaskAgnosticRLSetting)
                     f"Using a custom number of tasks ({self.nb_tasks}) instead of the default "
                     f"({len(self.train_envs)})."
                 )
-                self.train_envs = self.train_envs[:self.nb_tasks]
-                self.val_envs = self.val_envs[:self.nb_tasks]
-                self.test_envs = self.test_envs[:self.nb_tasks]
+                self.train_envs = self.train_envs[: self.nb_tasks]
+                self.val_envs = self.val_envs[: self.nb_tasks]
+                self.test_envs = self.test_envs[: self.nb_tasks]
 
             self.nb_tasks = len(self.train_envs)
             self.max_episode_steps = self.max_episode_steps or 1_000
@@ -556,6 +531,7 @@ class IncrementalRLSetting(IncrementalAssumption, DiscreteTaskAgnosticRLSetting)
                     RandomMultiEnvWrapper,
                     RoundRobinWrapper,
                 )
+
                 # NOTE: Here is how this supports passing custom envs for each task: We
                 # just switch out the value of these properties, and let the
                 # `train/val/test_dataloader` methods work as usual!
@@ -1148,7 +1124,9 @@ def create_env(
     return env
 
 
-def make_lpg_ftw_datasets(dataset: str) -> Tuple[List[EnvFactory], List[EnvFactory], List[EnvFactory]]:
+def make_lpg_ftw_datasets(
+    dataset: str,
+) -> Tuple[List[EnvFactory], List[EnvFactory], List[EnvFactory]]:
     # IDEA: "LPG-FTW-{bodyparts|gravity}-{HalfCheetah|Hopper|Walker2d}-{v2|v3}",
     # TODO: Instead of doing what I'm doing here, we could instead add an argument that gets
     # passed to the task creation function, for instance to get only a bodysize task, or

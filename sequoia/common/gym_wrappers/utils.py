@@ -15,11 +15,11 @@ from typing import (
     TypeVar,
     Union,
 )
+import warnings
 
 import gym
 import numpy as np
 from gym.envs import registry
-
 from gym.envs.classic_control import (
     AcrobotEnv,
     CartPoleEnv,
@@ -48,6 +48,7 @@ classic_control_env_prefixes: Tuple[str, ...] = (
     "MountainCar",
     "MountainCarContinuous",
 )
+logger = get_logger(__name__)
 
 
 def is_classic_control_env(env: Union[str, gym.Env, Type[gym.Env]]) -> bool:
@@ -104,11 +105,8 @@ def is_classic_control_env(env: Union[str, gym.Env, Type[gym.Env]]) -> bool:
     return False
 
 
-def is_proxy_to(
-    env, env_type_or_types: Union[Type[gym.Env], Tuple[Type[gym.Env], ...]]
-) -> bool:
-    """ Returns wether `env` is a proxy to an env of the given type or types.
-    """
+def is_proxy_to(env, env_type_or_types: Union[Type[gym.Env], Tuple[Type[gym.Env], ...]]) -> bool:
+    """Returns wether `env` is a proxy to an env of the given type or types."""
     from sequoia.client.env_proxy import EnvironmentProxy
 
     return isinstance(env.unwrapped, EnvironmentProxy) and issubclass(
@@ -131,20 +129,39 @@ def is_atari_env(env: Union[str, gym.Env]) -> bool:
         Wether the given env is an Atari env from Gym.
 
     Examples:
-
     >>> import gym
     >>> is_atari_env("CartPole-v0")
     False
-    >>> is_atari_env("Breakout-v0")
-    True
     >>> is_atari_env("bob")
     False
+    >>> # is_atari_env("ALE/Breakout-v5")
+    # True
+    >>> # is_atari_env("Breakout-v0")
+    # True
 
     NOTE: Removing this doctest, since recent changes to gym have changed this a bit.
     >>> #from gym.envs import atari
     >>> #is_atari_env(atari.AtariEnv) # requires atari_py to be installed
     # True
     """
+    from sequoia.settings.rl.envs import ATARI_PY_INSTALLED
+
+    if not isinstance(env, (str, gym.Env)):
+        raise RuntimeError(f"`env` needs to be either a str or gym env, not {env}")
+    if isinstance(env, str):
+        try:
+            spec = registry.spec(env)
+        except gym.error.NameNotFound:
+            return False
+        except gym.error.NamespaceNotFound:
+            return False
+        if spec.namespace is None:
+            return False
+        return spec.namespace is "ALE"
+    if not ATARI_PY_INSTALLED:
+        return False
+    raise NotImplementedError(f"TODO: Check if isinstance(env.unwrapped, AtariEnv)")
+
     if isinstance(env, partial):
         if env.func is gym.make and isinstance(env.args[0], str):
             logger.warning(
@@ -168,6 +185,7 @@ def is_atari_env(env: Union[str, gym.Env]) -> bool:
 
     try:
         from gym.envs import atari
+
         AtariEnv = atari.AtariEnv
         if inspect.isclass(env) and issubclass(env, AtariEnv):
             return True
@@ -177,9 +195,7 @@ def is_atari_env(env: Union[str, gym.Env]) -> bool:
     return False
 
 
-def get_env_class(
-    env: Union[str, gym.Env, Type[gym.Env], Callable[[], gym.Env]]
-) -> Type[gym.Env]:
+def get_env_class(env: Union[str, gym.Env, Type[gym.Env], Callable[[], gym.Env]]) -> Type[gym.Env]:
     if isinstance(env, partial):
         if env.func is gym.make and isinstance(env.args[0], str):
             return get_env_class(env.args[0])
@@ -192,9 +208,7 @@ def get_env_class(
         return type(env)
     if inspect.isclass(env) and issubclass(env, gym.Env):
         return env
-    raise NotImplementedError(
-        f"Don't know how to get the class of env being used by {env}!"
-    )
+    raise NotImplementedError(f"Don't know how to get the class of env being used by {env}!")
 
 
 def is_monsterkong_env(env: Union[str, gym.Env, Callable[[], gym.Env]]) -> bool:
@@ -202,6 +216,7 @@ def is_monsterkong_env(env: Union[str, gym.Env, Callable[[], gym.Env]]) -> bool:
         return env.lower().startswith(("metamonsterkong", "monsterkong"))
     try:
         from meta_monsterkong.make_env import MetaMonsterKongEnv
+
         if inspect.isclass(env):
             return issubclass(env, MetaMonsterKongEnv)
         if isinstance(env, gym.Env):
@@ -211,7 +226,7 @@ def is_monsterkong_env(env: Union[str, gym.Env, Callable[[], gym.Env]]) -> bool:
         return False
 
 
-logger = get_logger(__file__)
+logger = get_logger(__name__)
 
 EnvType = TypeVar("EnvType", bound=gym.Env)
 ObservationType = TypeVar("ObservationType")
@@ -248,9 +263,9 @@ def has_wrapper(
 
 
 class MayCloseEarly(gym.Wrapper, ABC):
-    """ ABC for Wrappers that may close an environment early depending on some
+    """ABC for Wrappers that may close an environment early depending on some
     conditions.
-    
+
     WIP: Also prevents calling `step` and `reset` on a closed env.
     """
 
@@ -267,8 +282,8 @@ class MayCloseEarly(gym.Wrapper, ABC):
         return self._is_closed
 
     def closed_error_message(self) -> str:
-        """ Return the error message to use when attempting to use the closed env.
-        
+        """Return the error message to use when attempting to use the closed env.
+
         This can be useful for wrappers that close when a given condition is reached,
         e.g. a number of episodes has been performed, which could return a more relevant
         message here.
@@ -302,26 +317,27 @@ from .env_dataset import EnvDataset
 
 
 class IterableWrapper(MayCloseEarly, IterableDataset, Generic[EnvType], ABC):
-    """ ABC for a gym Wrapper that supports iterating over the environment.
+    """ABC for a gym Wrapper that supports iterating over the environment.
 
     This allows us to wrap dataloader-based Environments and still use the gym
     wrapper conventions, as well as iterate over a gym environment as in the
     Active-dataloader case.
-    
+
     NOTE: We have IterableDataset as a base class here so that we can pass a wrapped env
     to the DataLoader function. This wrapper however doesn't perform the actual
     iteration, and instead depends on the wrapped environment already supporting
-    iteration. 
+    iteration.
     """
 
     def __init__(self, env: gym.Env):
         super().__init__(env)
         from sequoia.settings.sl import PassiveEnvironment
+
         self.wrapping_passive_env = isinstance(self.unwrapped, PassiveEnvironment)
 
     @property
     def is_vectorized(self) -> bool:
-        """ Returns wether this wrapper is wrapping a vectorized environment. """
+        """Returns wether this wrapper is wrapping a vectorized environment."""
         return isinstance(self.unwrapped, VectorEnv)
 
     def __next__(self):
@@ -332,6 +348,7 @@ class IterableWrapper(MayCloseEarly, IterableDataset, Generic[EnvType], ABC):
         # logger.debug(f"Wrapped env {self.env} isnt a PolicyEnv or an EnvDataset")
         # return type(self.env).__next__(self)
         from sequoia.settings.rl.environment import ActiveDataLoader
+
         # from sequoia.settings.sl.environment import PassiveEnvironment
 
         if has_wrapper(self.env, EnvDataset) or is_proxy_to(
@@ -359,13 +376,12 @@ class IterableWrapper(MayCloseEarly, IterableDataset, Generic[EnvType], ABC):
     # def __len__(self):
     #     return self.env.__len__()
 
-    def length(self) -> Optional[int]:
-        """ Attempts to return the "length" (in number of steps/batches) of this env.
-        
+    def get_length(self) -> Optional[int]:
+        """Attempts to return the "length" (in number of steps/batches) of this env.
+
         When not possible, returns None.
-        
-        NOTE: This is a bit ugly, but the idea seems alright: Check for `__len__`,
-        otherwise 
+
+        NOTE: This is a bit ugly, but the idea seems alright.
         """
         try:
             # Try to call self.__len__() without recursing into the wrapped env:
@@ -384,7 +400,7 @@ class IterableWrapper(MayCloseEarly, IterableDataset, Generic[EnvType], ABC):
             pass
         try:
             # If all else fails, delegate to the wrapped env's length() method, if any:
-            return self.env.length()
+            return self.env.get_length()
         except AttributeError:
             pass
         # In the worst case, return None, meaning that we don't have a length.
@@ -400,7 +416,12 @@ class IterableWrapper(MayCloseEarly, IterableDataset, Generic[EnvType], ABC):
             return reward
 
         self.unwrapped.action_ = action
-        self.unwrapped.observation_, self.unwrapped.reward_, self.unwrapped.done_, self.unwrapped.info_ = self.step(action)
+        (
+            self.unwrapped.observation_,
+            self.unwrapped.reward_,
+            self.unwrapped.done_,
+            self.unwrapped.info_,
+        ) = self.step(action)
         return self.unwrapped.reward_
 
         # (Option 1 below)
@@ -560,7 +581,7 @@ class IterableWrapper(MayCloseEarly, IterableDataset, Generic[EnvType], ABC):
 
 
 class RenderEnvWrapper(IterableWrapper):
-    """ Simple Wrapper that renders the env at each step. """
+    """Simple Wrapper that renders the env at each step."""
 
     def __init__(self, env: gym.Env, display: Any = None):
         super().__init__(env)
@@ -569,6 +590,35 @@ class RenderEnvWrapper(IterableWrapper):
     def step(self, action):
         self.env.render("human")
         return self.env.step(action)
+
+
+def tile_images(img_nhwc):
+    """
+    TAKEN FROM https://github.com/openai/gym/pull/1624/files
+
+    Tile N images into one big PxQ image
+    (P,Q) are chosen to be as close as possible, and if N
+    is square, then P=Q.
+    input: img_nhwc, list or array of images, ndim=4 once turned into array
+        n = batch index, h = height, w = width, c = channel
+    returns:
+        bigim_HWc, ndarray with ndim=3
+    """
+    img_nhwc = np.asarray(img_nhwc)
+
+    N, h, w, c = img_nhwc.shape
+    if c not in {1, 3}:
+        img_nhwc = img_nhwc.transpose([0, 2, 3, 1])
+        N, h, w, c = img_nhwc.shape
+    assert c in {1, 3}
+
+    H = int(np.ceil(np.sqrt(N)))
+    W = int(np.ceil(float(N) / H))
+    img_nhwc = np.array(list(img_nhwc) + [img_nhwc[0] * 0 for _ in range(N, H * W)])
+    img_HWhwc = img_nhwc.reshape(H, W, h, w, c)
+    img_HhWwc = img_HWhwc.transpose(0, 2, 1, 3, 4)
+    img_Hh_Ww_c = img_HhWwc.reshape(H * h, W * w, c)
+    return img_Hh_Ww_c
 
 
 if __name__ == "__main__":

@@ -18,11 +18,11 @@ from sequoia.utils import get_logger
 
 from .on_policy_method import OnPolicyMethod, OnPolicyModel
 
-logger = get_logger(__file__)
+logger = get_logger(__name__)
 
 
 class A2CModel(A2C, OnPolicyModel):
-    """ Advantage Actor Critic (A2C) model imported from stable-baselines3.
+    """Advantage Actor Critic (A2C) model imported from stable-baselines3.
 
     Paper: https://arxiv.org/abs/1602.01783
     Code: The SB3 implementation borrows code from
@@ -35,11 +35,12 @@ class A2CModel(A2C, OnPolicyModel):
 
     @dataclass
     class HParams(OnPolicyModel.HParams):
-        """ Hyper-parameters of the A2C Model.
+        """Hyper-parameters of the A2C Model.
 
         TODO: Set actual 'good' priors for these hyper-parameters, as these were set
         somewhat arbitrarily. (They do however use the same defaults as in SB3).
         """
+
         # learning rate for the optimizer, it can be a function of the current
         # progress remaining (from 1 to 0)
         learning_rate: Union[float, Callable] = log_uniform(1e-7, 1e-2, default=7e-4)
@@ -123,7 +124,7 @@ class A2CModel(A2C, OnPolicyModel):
 @register_method
 @dataclass
 class A2CMethod(OnPolicyMethod):
-    """ Method that uses the A2C model from stable-baselines3. """
+    """Method that uses the A2C model from stable-baselines3."""
 
     # changing the 'name' in this case here, because the default name would be
     # 'a_2_c'.
@@ -139,8 +140,7 @@ class A2CMethod(OnPolicyMethod):
             if self.hparams.n_steps > setting.steps_per_phase:
                 self.hparams.n_steps = math.ceil(0.1 * setting.steps_per_phase)
                 logger.info(
-                    f"Capping the n_steps to 10% of step budget length: "
-                    f"{self.hparams.n_steps}"
+                    f"Capping the n_steps to 10% of step budget length: " f"{self.hparams.n_steps}"
                 )
             # NOTE: We limit the number of trainign steps per task, such that we never
             # attempt to fill the buffer using more samples than the environment allows.
@@ -148,9 +148,7 @@ class A2CMethod(OnPolicyMethod):
                 self.train_steps_per_task,
                 setting.steps_per_phase - self.hparams.n_steps - 1,
             )
-            logger.info(
-                f"Limitting training steps per task to {self.train_steps_per_task}"
-            )
+            logger.info(f"Limitting training steps per task to {self.train_steps_per_task}")
 
     def create_model(self, train_env: gym.Env, valid_env: gym.Env) -> A2CModel:
         return self.Model(env=train_env, **self.hparams.to_dict())
@@ -162,11 +160,12 @@ class A2CMethod(OnPolicyMethod):
         self, observations: ContinualRLSetting.Observations, action_space: spaces.Space
     ) -> ContinualRLSetting.Actions:
         return super().get_actions(
-            observations=observations, action_space=action_space,
+            observations=observations,
+            action_space=action_space,
         )
 
     def on_task_switch(self, task_id: Optional[int]) -> None:
-        """ Called when switching tasks in a CL setting.
+        """Called when switching tasks in a CL setting.
 
         If task labels are available, `task_id` will correspond to the index of
         the new task. Otherwise, if task labels aren't available, `task_id` will
@@ -176,9 +175,7 @@ class A2CMethod(OnPolicyMethod):
         """
         super().on_task_switch(task_id=task_id)
 
-    def get_search_space(
-        self, setting: ContinualRLSetting
-    ) -> Mapping[str, Union[str, Dict]]:
+    def get_search_space(self, setting: ContinualRLSetting) -> Mapping[str, Union[str, Dict]]:
         search_space = super().get_search_space(setting)
         if isinstance(setting.action_space, spaces.Discrete):
             # From stable_baselines3/common/base_class.py", line 170:

@@ -1,23 +1,22 @@
 from sequoia.conftest import mujoco_required
 
 pytestmark = mujoco_required
+import inspect
 import itertools
+import os
+from pathlib import Path
+from typing import ClassVar, Type
+from xml.etree.ElementTree import ElementTree, fromstring
+
+import pytest
+from gym.envs.mujoco import MujocoEnv
+
+from sequoia.conftest import mujoco_required
 
 from .hopper import ContinualHopperV2Env, ContinualHopperV3Env
 from .modified_gravity_test import ModifiedGravityEnvTests
-from .modified_size_test import ModifiedSizeEnvTests
 from .modified_mass_test import ModifiedMassEnvTests
-from typing import ClassVar, Type
-
-import pytest
-import os
-import inspect
-from gym.envs.mujoco import MujocoEnv
-from xml.etree.ElementTree import ElementTree, Element, parse, fromstring, tostring
-from pathlib import Path
-
-
-from sequoia.conftest import mujoco_required
+from .modified_size_test import ModifiedSizeEnvTests
 
 # # TODO: There is a bug in the way the hopper XML is generated, where the sticks / joints don't seem to follow.
 # bob = ContinualHopperEnv(body_name_to_size_scale={"thigh": 2})
@@ -25,16 +24,12 @@ from sequoia.conftest import mujoco_required
 
 
 @mujoco_required
-class TestContinualHopperV2Env(
-    ModifiedGravityEnvTests, ModifiedSizeEnvTests, ModifiedMassEnvTests
-):
+class TestContinualHopperV2Env(ModifiedGravityEnvTests, ModifiedSizeEnvTests, ModifiedMassEnvTests):
     Environment: ClassVar[Type[ContinualHopperV2Env]] = ContinualHopperV2Env
 
 
 @mujoco_required
-class TestContinualHopperV3Env(
-    ModifiedGravityEnvTests, ModifiedSizeEnvTests, ModifiedMassEnvTests
-):
+class TestContinualHopperV3Env(ModifiedGravityEnvTests, ModifiedSizeEnvTests, ModifiedMassEnvTests):
     Environment: ClassVar[Type[ContinualHopperV3Env]] = ContinualHopperV3Env
 
 
@@ -132,7 +127,7 @@ def elements_equal(e1, e2) -> bool:
 def test_change_torso(input_xml_str: str, scale_factor: float, output_xml_str: str):
 
     # # TODO: Get rid of annoying whitespace issues!
-    from xml.etree.ElementTree import XMLParser
+    pass
 
     input_tree = fromstring(input_xml_str)
     expected = fromstring(output_xml_str)

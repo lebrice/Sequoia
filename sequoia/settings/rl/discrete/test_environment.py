@@ -1,20 +1,19 @@
-from ..continual.test_environment import ContinualRLTestEnvironment, TestEnvironment
+import itertools
+import math
+from typing import Dict
+
+from sequoia.common.metrics.rl_metrics import EpisodeMetrics
 from sequoia.settings.assumptions.discrete_results import TaskSequenceResults
 from sequoia.settings.assumptions.iid_results import TaskResults
-from typing import Dict
-import math
-from sequoia.common.metrics.rl_metrics import EpisodeMetrics
-import itertools
-from sequoia.common.gym_wrappers.batch_env.tile_images import tile_images
+
+from ..continual.test_environment import ContinualRLTestEnvironment
 
 
 class DiscreteTaskAgnosticRLTestEnvironment(ContinualRLTestEnvironment):
     def __init__(self, *args, task_schedule: Dict, **kwargs):
         super().__init__(*args, task_schedule=task_schedule, **kwargs)
         self.task_schedule = task_schedule
-        self.boundary_steps = [
-            step // (self.batch_size or 1) for step in self.task_schedule.keys()
-        ]
+        self.boundary_steps = [step // (self.batch_size or 1) for step in self.task_schedule.keys()]
         # TODO: Removing the last entry since it's the terminal state.
         self.boundary_steps.pop(-1)
 
@@ -39,6 +38,7 @@ class DiscreteTaskAgnosticRLTestEnvironment(ContinualRLTestEnvironment):
 
         assert 0 in task_steps
         import bisect
+
         nb_tasks = len(task_steps)
         assert nb_tasks >= 1
 
@@ -49,13 +49,13 @@ class DiscreteTaskAgnosticRLTestEnvironment(ContinualRLTestEnvironment):
         ):
             # Given the step, find the task id.
             task_id = bisect.bisect_right(task_steps, step) - 1
-            
+
             episode_metric = EpisodeMetrics(
                 n_samples=1,
                 mean_episode_reward=episode_reward,
                 mean_episode_length=episode_length,
             )
-            
+
             test_results.task_results[task_id].metrics.append(episode_metric)
 
         return test_results
@@ -70,4 +70,3 @@ class DiscreteTaskAgnosticRLTestEnvironment(ContinualRLTestEnvironment):
     def _after_reset(self, observation):
         # Is this going to work fine when the observations are batched though?
         return super()._after_reset(observation)
-

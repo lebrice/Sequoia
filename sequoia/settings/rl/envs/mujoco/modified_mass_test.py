@@ -1,12 +1,13 @@
 """ TODO: Tests for the 'modified gravity' mujoco envs. """
 import operator
 from typing import ClassVar, List, Type
+
 from gym.wrappers import TimeLimit
+
 from sequoia.conftest import mujoco_required
 
 pytestmark = mujoco_required
 
-from gym.envs.mujoco import MujocoEnv
 
 from .modified_mass import ModifiedMassEnv
 
@@ -63,9 +64,7 @@ class ModifiedMassEnvTests:
                 episode_steps += 1
                 total_steps += 1
 
-                env.set_mass(
-                    **{body_part: start_mass + 5 * total_steps / max_episode_steps}
-                )
+                env.set_mass(**{body_part: start_mass + 5 * total_steps / max_episode_steps})
 
                 moved_up += state[1] > previous_state[1]
                 print(f"Moving upward? {moved_up}")

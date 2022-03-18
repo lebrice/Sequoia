@@ -2,21 +2,19 @@
 
 Then maybe after we can make something more general that also works for RL.
 """
-import warnings
-from abc import ABC
-from collections import defaultdict
 
-from sequoia.settings.rl import ActiveEnvironment
-from sequoia.common.gym_wrappers.measure_performance import MeasurePerformanceWrapper
-from sequoia.common.metrics.rl_metrics import EpisodeMetrics
-from sequoia.common.metrics import Metrics
-from typing import Dict, Any, Union, Sequence, Optional, List
-from gym.vector import VectorEnv, VectorEnvWrapper
+from typing import Any, Dict, List, Optional, Sequence, Union
+
 import numpy as np
-from sequoia.settings.base import Observations, Actions, Rewards
-import wandb
 from torch import Tensor
-from sequoia.utils import add_prefix
+
+import wandb
+from sequoia.common.gym_wrappers.measure_performance import MeasurePerformanceWrapper
+from sequoia.common.metrics import Metrics
+from sequoia.common.metrics.rl_metrics import EpisodeMetrics
+from sequoia.settings.base import Actions, Observations, Rewards
+from sequoia.settings.rl import ActiveEnvironment
+from sequoia.utils.utils import add_prefix
 
 
 class MeasureRLPerformanceWrapper(
@@ -53,7 +51,7 @@ class MeasureRLPerformanceWrapper(
         Returns
         -------
         bool
-            Wether or not the performance on the env is being monitored. 
+            Wether or not the performance on the env is being monitored.
         """
         if self._eval_steps:
             return self._steps <= self._eval_steps
@@ -80,9 +78,7 @@ class MeasureRLPerformanceWrapper(
 
         if self.in_evaluation_period:
             if self.is_vectorized:
-                for env_index, (env_is_done, env_reward) in enumerate(
-                    zip(done, reward)
-                ):
+                for env_index, (env_is_done, env_reward) in enumerate(zip(done, reward)):
                     self._current_episode_reward[env_index] += env_reward
                     self._current_episode_steps[env_index] += 1
             else:
@@ -98,39 +94,39 @@ class MeasureRLPerformanceWrapper(
         return observation, rewards_, done, info
 
     # def send(self, action: Actions) -> Rewards:
-        # self.action_ = action
-        # rewards_ = super().send(action)
-        # self._steps += 1
-        # reward = rewards_.y if isinstance(rewards_, Rewards) else rewards_
+    # self.action_ = action
+    # rewards_ = super().send(action)
+    # self._steps += 1
+    # reward = rewards_.y if isinstance(rewards_, Rewards) else rewards_
 
-        # # TODO: Need access to the "done" signal in here somehow.
-        # done = self.done_
+    # # TODO: Need access to the "done" signal in here somehow.
+    # done = self.done_
 
-        # if isinstance(done, bool):
-        #     self._episodes += int(done)
-        # elif isinstance(done, np.ndarray):
-        #     self._episodes += sum(done)
-        # else:
-        #     self._episodes += done.int().sum()
+    # if isinstance(done, bool):
+    #     self._episodes += int(done)
+    # elif isinstance(done, np.ndarray):
+    #     self._episodes += sum(done)
+    # else:
+    #     self._episodes += done.int().sum()
 
-        # if self.in_evaluation_period:
-        #     if self.is_vectorized:
-        #         for env_index, (env_is_done, env_reward) in enumerate(
-        #             zip(done, reward)
-        #         ):
-        #             self._current_episode_reward[env_index] += env_reward
-        #             self._current_episode_steps[env_index] += 1
-        #     else:
-        #         self._current_episode_reward[0] += reward
-        #         self._current_episode_steps[0] += 1
+    # if self.in_evaluation_period:
+    #     if self.is_vectorized:
+    #         for env_index, (env_is_done, env_reward) in enumerate(
+    #             zip(done, reward)
+    #         ):
+    #             self._current_episode_reward[env_index] += env_reward
+    #             self._current_episode_steps[env_index] += 1
+    #     else:
+    #         self._current_episode_reward[0] += reward
+    #         self._current_episode_steps[0] += 1
 
-        #     metrics = self.get_metrics(action, reward, done)
+    #     metrics = self.get_metrics(action, reward, done)
 
-        #     if metrics is not None:
-        #         assert self._steps not in self._metrics, "two metrics at same step?"
-        #         self._metrics[self._steps] = metrics
+    #     if metrics is not None:
+    #         assert self._steps not in self._metrics, "two metrics at same step?"
+    #         self._metrics[self._steps] = metrics
 
-        # return rewards_
+    # return rewards_
 
     def get_metrics(
         self,

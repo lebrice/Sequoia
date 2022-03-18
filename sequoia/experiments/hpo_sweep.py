@@ -1,18 +1,20 @@
-from pathlib import Path
-from dataclasses import dataclass
 import json
-from simple_parsing.helpers import choice
-from typing import Optional, Dict, Union, List, Tuple, Type
-from sequoia.settings import Setting, Method, Results
-from sequoia.common.config import Config
-from .experiment import Experiment, parse_setting_and_method_instances
-import sys
 import shlex
+import sys
+from dataclasses import dataclass
+from pathlib import Path
+from typing import Dict, List, Optional, Tuple, Type, Union
+
+from simple_parsing.helpers import choice
+
+from sequoia.settings import Method, Results, Setting
+
+from .experiment import Experiment, parse_setting_and_method_instances
 
 
 @dataclass
 class HPOSweep(Experiment):
-    """ Experiment which launches an HPO Sweep using Orion.
+    """Experiment which launches an HPO Sweep using Orion.
 
     TODO: Maybe use this somewhere in main.py once we redesign the command-line API.
     """
@@ -32,7 +34,11 @@ class HPOSweep(Experiment):
     max_runs: Optional[int] = 10
 
     hpo_algorithm: str = choice(
-        {"random": "random", "bayesian": "BayesianOptimizer",}, default="bayesian"
+        {
+            "random": "random",
+            "bayesian": "BayesianOptimizer",
+        },
+        default="bayesian",
     )  # TODO: BayesianOptimizer does not support num > 1
 
     def __post_init__(self):
@@ -84,15 +90,16 @@ class HPOSweep(Experiment):
             hpo_algorithm=self.hpo_algorithm,
         )
         print(
-            "Best params:\n"
-            + "\n".join(f"\t{key}: {value}" for key, value in best_params.items())
+            "Best params:\n" + "\n".join(f"\t{key}: {value}" for key, value in best_params.items())
         )
         print(f"Best objective: {best_objective}")
         return (best_params, best_objective)
 
     @classmethod
     def main(
-        cls, argv: Union[str, List[str]] = None, strict_args: bool = False,
+        cls,
+        argv: Union[str, List[str]] = None,
+        strict_args: bool = False,
     ) -> List[Tuple[Dict, Results]]:
         """Launches this experiment from the command-line.
 
@@ -126,9 +133,7 @@ class HPOSweep(Experiment):
         # config: Config = experiment.config
 
         if method is None or setting is None:
-            raise RuntimeError(
-                "Both `--setting` and `--method` must be set to run a sweep."
-            )
+            raise RuntimeError("Both `--setting` and `--method` must be set to run a sweep.")
         return experiment.launch(argv, strict_args=strict_args)
 
 

@@ -8,42 +8,40 @@ https://medium.com/deeplearningmadeeasy/advantage-actor-critic-a2c-implementatio
 """
 
 from dataclasses import dataclass
-from typing import Dict, Tuple, Union, Optional
+from typing import Optional, Tuple
 
-import gym
-import numpy as np
 import torch
 from gym import spaces
 from gym.spaces.utils import flatdim
-from torch import LongTensor, Tensor, nn
-from torch.optim.optimizer import Optimizer
+from torch import Tensor, nn
 
-from sequoia.common.layers import Lambda
 from sequoia.common import Loss
-from sequoia.settings.base.objects import Actions, Observations, Rewards
 from sequoia.settings import ContinualRLSetting
-from sequoia.utils.utils import prod
 from sequoia.utils import get_logger
 
 from ...forward_pass import ForwardPass
-from ..classification_head import ClassificationOutput, ClassificationHead
-from .policy_head import PolicyHead, PolicyHeadOutput, Categorical
-logger = get_logger(__file__)
+from ..classification_head import ClassificationHead
+from .policy_head import Categorical, PolicyHeadOutput
+
+logger = get_logger(__name__)
+
 
 class ActorCriticHead(ClassificationHead):
-    
     @dataclass
     class HParams(ClassificationHead.HParams):
-        """ Hyper-parameters of the Actor-Critic head. """
+        """Hyper-parameters of the Actor-Critic head."""
+
         gamma: float = 0.95
         learning_rate: float = 1e-3
 
-    def __init__(self,
-                 input_space: spaces.Space,
-                 action_space: spaces.Discrete,
-                 reward_space: spaces.Box,
-                 hparams: "ActorCriticHead.HParams" = None,
-                 name: str = "actor_critic"):
+    def __init__(
+        self,
+        input_space: spaces.Space,
+        action_space: spaces.Discrete,
+        reward_space: spaces.Box,
+        hparams: "ActorCriticHead.HParams" = None,
+        name: str = "actor_critic",
+    ):
         assert isinstance(action_space, spaces.Discrete), "Only support discrete space for now."
         super().__init__(
             input_space=input_space,
@@ -54,7 +52,7 @@ class ActorCriticHead(ClassificationHead):
         )
         if not isinstance(self.hparams, self.HParams):
             self.hparams = self.upgrade_hparams()
-            
+
         action_dims = flatdim(action_space)
 
         # Critic takes in state-action pairs? or just state?
@@ -75,35 +73,37 @@ class ActorCriticHead(ClassificationHead):
             nn.Linear(self.actor_input_dims, 32),
             nn.ReLU(),
             nn.Linear(32, self.actor_output_dims),
-        )        
+        )
         self._current_state: Optional[Tensor] = None
         self._previous_state: Optional[Tensor] = None
         self._step = 0
 
         self.optimizer = torch.optim.Adam(self.actor.parameters(), lr=self.hparams.learning_rate)
-        self.optimizer_critic = torch.optim.Adam(self.critic.parameters(), lr=self.hparams.learning_rate)
+        self.optimizer_critic = torch.optim.Adam(
+            self.critic.parameters(), lr=self.hparams.learning_rate
+        )
 
-    def forward(self,
-                observations: ContinualRLSetting.Observations,
-                representations: Tensor) -> PolicyHeadOutput:
+    def forward(
+        self, observations: ContinualRLSetting.Observations, representations: Tensor
+    ) -> PolicyHeadOutput:
         # NOTE: Here we could probably use either as the 'state':
         # state = observations.x
         # state = representations
         representations = representations.float()
         if len(representations.shape) != 2:
             representations = representations.reshape([-1, self.actor_input_dims])
-        
+
         self._previous_state = self._current_state
         self._current_state = representations
-        
+
         # TODO: Actually implement the actor-critic forward pass.
         # predicted_reward = self.critic([state, action])
         # Do we want to detach the representations? or not?
-        
+
         logits = self.actor(representations)
         # The policy is the distribution over actions given the current state.
         action_dist = Categorical(logits=logits)
-        
+
         if action_dist.has_rsample:
             sample = action_dist.rsample()
         else:
@@ -115,11 +115,13 @@ class ActorCriticHead(ClassificationHead):
             action_dist=action_dist,
         )
         return actions
-  
-    def get_loss(self,
-                 forward_pass: ForwardPass,
-                 actions: PolicyHeadOutput,
-                 rewards: ContinualRLSetting.Rewards) -> Loss:
+
+    def get_loss(
+        self,
+        forward_pass: ForwardPass,
+        actions: PolicyHeadOutput,
+        rewards: ContinualRLSetting.Rewards,
+    ) -> Loss:
         action_dist: Categorical = actions.action_dist
 
         rewards = rewards.to(device=actions.device)
@@ -139,24 +141,24 @@ class ActorCriticHead(ClassificationHead):
         # TODO: Need to detach something here, right?
         advantage: Tensor = (
             env_reward
-            +  (~done) * self.hparams.gamma * self.critic(self._current_state)
-            - self.critic(self._previous_state) # detach previous representations?
+            + (~done) * self.hparams.gamma * self.critic(self._current_state)
+            - self.critic(self._previous_state)  # detach previous representations?
         )
-        
+
         total_loss = Loss(self.name)
         if self.training:
             self.optimizer_critic.zero_grad()
-        critic_loss_tensor = (advantage ** 2).mean()
+        critic_loss_tensor = (advantage**2).mean()
         critic_loss = Loss("critic", loss=critic_loss_tensor)
         if self.training:
             critic_loss_tensor.backward()
             self.optimizer_critic.step()
-            
+
         total_loss += critic_loss.detach()
 
         if self.training:
             self.optimizer.zero_grad()
-        actor_loss_tensor = - action_dist.log_prob(actions.action) * advantage.detach()
+        actor_loss_tensor = -action_dist.log_prob(actions.action) * advantage.detach()
         actor_loss_tensor = actor_loss_tensor.mean()
         actor_loss = Loss("actor", loss=actor_loss_tensor)
         if self.training:

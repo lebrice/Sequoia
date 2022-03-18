@@ -23,9 +23,10 @@ from gym.envs.classic_control import (
     MountainCarEnv,
     PendulumEnv,
 )
-from gym.envs.registration import EnvRegistry, EnvSpec, load, registry, spec
+from gym.envs.registration import EnvRegistry, EnvSpec, load, registry
+
 from sequoia.common.gym_wrappers.multi_task_environment import make_env_attributes_task
-from sequoia.settings.rl.envs import MUJOCO_INSTALLED, EnvVariantSpec, sequoia_registry
+from sequoia.settings.rl.envs import MUJOCO_INSTALLED, sequoia_registry
 from sequoia.utils.utils import camel_case
 
 # Idea: Create a true 'Task' class?
@@ -43,8 +44,7 @@ class TaskSchedule(Dict[int, TaskType]):
 
 
 class EnvironmentNotSupportedError(gym.error.UnregisteredEnv):
-    """ Error raised when we don't know how to create a task for the given environment.
-    """
+    """Error raised when we don't know how to create a task for the given environment."""
 
 
 def names_match(name_a: str, name_b: str) -> bool:
@@ -61,7 +61,7 @@ def _is_supported(
     _make_task_function: Callable[..., ContinuousTask],
     env_registry: EnvRegistry = registry,
 ) -> bool:
-    """ Returns wether Sequoia is able to create (continuous) tasks for the given
+    """Returns wether Sequoia is able to create (continuous) tasks for the given
     environment.
 
     WIP: It is better not to use this directly, and instead use the equivalent
@@ -69,7 +69,7 @@ def _is_supported(
     """
 
     def _has_handler(some_env_type: Type[gym.Env]) -> bool:
-        """ Returns wether the "make task" function has a registered handler for the
+        """Returns wether the "make task" function has a registered handler for the
         given envs.
         """
         return some_env_type in _make_task_function.registry or (
@@ -123,9 +123,9 @@ def _is_supported(
 def task_sampling_function(
     env_registry: EnvRegistry = registry, based_on: Callable[[gym.Env], TaskType] = None
 ) -> Callable[[gym.Env], TaskType]:
-    """ Decorator for a "make_task" function (e.g. `make_continuous_task`,
+    """Decorator for a "make_task" function (e.g. `make_continuous_task`,
     `make_discrete_task`, etc.) that does the following:
-    
+
     1. Creates a singledispatch callable from the given function, if necessary;
     2. Registers three useful handlers, for strings, environment types, and wrappers to
     the new function.
@@ -140,17 +140,13 @@ def task_sampling_function(
     seed, step and change_steps.
     """
 
-    def _wrapper(
-        make_task_fn: Callable[[gym.Env], TaskType]
-    ) -> Callable[[gym.Env], TaskType]:
+    def _wrapper(make_task_fn: Callable[[gym.Env], TaskType]) -> Callable[[gym.Env], TaskType]:
 
         if not hasattr(make_task_fn, "registry"):
             make_task_fn = singledispatch(make_task_fn)
 
         @make_task_fn.register(type)
-        def make_discrete_task_from_type(
-            env_type: Type[gym.Env], **kwargs
-        ) -> ContinuousTask:
+        def make_discrete_task_from_type(env_type: Type[gym.Env], **kwargs) -> ContinuousTask:
             try:
                 # Try to create a task without actually instantiating the env, by passing the
                 # type of env as the 'env' argument, rather than an env instance.
@@ -162,7 +158,10 @@ def task_sampling_function(
                 ) from exc
 
         @make_task_fn.register(str)
-        def make_discrete_task_by_id(env: str, **kwargs,) -> Union[Dict[str, Any], Any]:
+        def make_discrete_task_by_id(
+            env: str,
+            **kwargs,
+        ) -> Union[Dict[str, Any], Any]:
             # Load the entry-point class, and use it to determine what handler to use.
             # TODO: Actually instantiate the env here? or just dispatch based on the env class?
             if env not in env_registry.env_specs:
@@ -174,9 +173,7 @@ def task_sampling_function(
             # import inspect
 
             try:
-                task: ContinuousTask = make_discrete_task_from_type(
-                    env_entry_point, **kwargs
-                )
+                task: ContinuousTask = make_discrete_task_from_type(env_entry_point, **kwargs)
                 return task
 
             except RuntimeError as exc:
@@ -194,7 +191,10 @@ def task_sampling_function(
 
         @make_task_fn.register
         def make_discrete_for_wrapped_env(
-            env: gym.Wrapper, step: int, change_steps: List[int] = None, **kwargs,
+            env: gym.Wrapper,
+            step: int,
+            change_steps: List[int] = None,
+            **kwargs,
         ) -> Union[Dict[str, Any], Any]:
             # NOTE: Not sure if this is totally a good idea...
             # If someone registers a handler for some kind of Wrapper, than all envs wrapped
@@ -218,11 +218,15 @@ def task_sampling_function(
 
 @singledispatch
 def make_continuous_task(
-    env: gym.Env, step: int, change_steps: List[int], seed: int = None, **kwargs,
+    env: gym.Env,
+    step: int,
+    change_steps: List[int],
+    seed: int = None,
+    **kwargs,
 ) -> ContinuousTask:
-    """ Generic function used by Sequoia's RL settings to create a "task" that will be
+    """Generic function used by Sequoia's RL settings to create a "task" that will be
     applied to an environment like `env`.
-    
+
     To add support for a new type of environment, simply register a handler function:
 
     ```
@@ -242,9 +246,7 @@ def make_continuous_task(
     raise NotImplementedError(f"Don't currently know how to create tasks for env {env}")
 
 
-make_continuous_task = task_sampling_function(env_registry=sequoia_registry)(
-    make_continuous_task
-)
+make_continuous_task = task_sampling_function(env_registry=sequoia_registry)(make_continuous_task)
 is_supported = partial(_is_supported, _make_task_function=make_continuous_task)
 
 # from functools import _SingleDispatchCallable
@@ -330,7 +332,10 @@ def make_task_for_classic_control_env(
     # TODO: Need to refactor the whole MultiTaskEnv/SmoothTransition wrappers / tasks
     # etc.
     return make_env_attributes_task(
-        env, task_params=task_params, rng=rng, noise_std=noise_std,
+        env,
+        task_params=task_params,
+        rng=rng,
+        noise_std=noise_std,
     )
 
 
@@ -375,4 +380,3 @@ if MUJOCO_INSTALLED:
         # TODO: Do we want to start with normal gravity?
         gravity = coefficient * default_mujoco_gravity
         return {"gravity": gravity}
-

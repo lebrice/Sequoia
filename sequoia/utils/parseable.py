@@ -2,16 +2,17 @@ import dataclasses
 import shlex
 import sys
 from argparse import Namespace
-from dataclasses import Field, dataclass, field, is_dataclass
-from typing import Dict, List, Optional, Tuple, Type, TypeVar, Union
+from dataclasses import is_dataclass
+from typing import List, Optional, Tuple, Type, TypeVar, Union
 
 from pytorch_lightning import LightningDataModule
 from simple_parsing import ArgumentParser
 
 from sequoia.utils.utils import camel_case
+
 from .logging_utils import get_logger
 
-logger = get_logger(__file__)
+logger = get_logger(__name__)
 P = TypeVar("P", bound="Parseable")
 
 
@@ -21,9 +22,9 @@ class Parseable:
     @classmethod
     def add_argparse_args(cls, parser: ArgumentParser) -> None:
         """Add the command-line arguments for this class to the given parser.
-        
+
         Override this if you don't use simple-parsing to add the args.
-        
+
         Parameters
         ----------
         parser : ArgumentParser
@@ -79,10 +80,9 @@ class Parseable:
         )
 
     @classmethod
-    def from_args(cls: Type[P],
-                  argv: Union[str, List[str]] = None,
-                  reorder: bool = True,
-                  strict: bool = True) -> P:
+    def from_args(
+        cls: Type[P], argv: Union[str, List[str]] = None, reorder: bool = True, strict: bool = True
+    ) -> P:
         """Parse an instance of this class from the command-line args.
 
         Parameters
@@ -136,10 +136,9 @@ class Parseable:
         return instance
 
     @classmethod
-    def from_known_args(cls,
-                        argv: Union[str, List[str]] = None,
-                        reorder: bool = True,
-                        strict: bool = False) -> Tuple[P, List[str]]:
+    def from_known_args(
+        cls, argv: Union[str, List[str]] = None, reorder: bool = True, strict: bool = False
+    ) -> Tuple[P, List[str]]:
         # if not is_dataclass(cls):
         #     raise NotImplementedError(
         #         f"Don't know how to parse an instance of class {cls} from the "
@@ -154,8 +153,7 @@ class Parseable:
         if isinstance(argv, str):
             argv = shlex.split(argv)
 
-        parser = ArgumentParser(description=cls.__doc__,
-                                add_dest_to_option_strings=False)
+        parser = ArgumentParser(description=cls.__doc__, add_dest_to_option_strings=False)
         cls.add_argparse_args(parser)
         # TODO: Set temporarily on the class, so its accessible in the class constructor
         cls_argv = cls._argv
@@ -168,9 +166,9 @@ class Parseable:
         else:
             args, unused_args = parser.parse_known_args(argv, attempt_to_reorder=reorder)
             if unused_args:
-                logger.debug(RuntimeWarning(
-                    f"Unknown/unused args when parsing class {cls}: {unused_args}"
-                ))
+                logger.debug(
+                    RuntimeWarning(f"Unknown/unused args when parsing class {cls}: {unused_args}")
+                )
         instance = cls.from_argparse_args(args)
         # Save the argv that were used to create the instance on its `_argv`
         # attribute.
@@ -200,16 +198,19 @@ class Parseable:
         # NOTE: If a value is not at its current default, keep it.
         default_hparams = target_type()
         missing_fields = [
-            f.name for f in dataclasses.fields(target_type)
+            f.name
+            for f in dataclasses.fields(target_type)
             if f.name not in current_hparams
             or current_hparams[f.name] == getattr(current_type(), f.name, None)
             or current_hparams[f.name] == getattr(default_hparams, f.name)
         ]
-        logger.warning(RuntimeWarning(
-            f"Upgrading the hparams from type {current_type} to "
-            f"type {target_type}. This will try to fetch the values for "
-            f"the missing fields {missing_fields} from the command-line. "
-        ))
+        logger.warning(
+            RuntimeWarning(
+                f"Upgrading the hparams from type {current_type} to "
+                f"type {target_type}. This will try to fetch the values for "
+                f"the missing fields {missing_fields} from the command-line. "
+            )
+        )
         # Get the missing values
 
         if self._argv:
@@ -218,7 +219,6 @@ class Parseable:
         for missing_field in missing_fields:
             current_hparams[missing_field] = getattr(hparams, missing_field)
         return target_type(**current_hparams)
-
 
     # @classmethod
     # def fields(cls) -> Dict[str, Field]:

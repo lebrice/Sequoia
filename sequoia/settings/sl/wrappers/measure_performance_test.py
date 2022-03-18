@@ -2,34 +2,27 @@
 over the first "epoch" 
 """
 import dataclasses
-import itertools
-from functools import partial
 from typing import Iterable, Tuple, TypeVar
-from itertools import accumulate
 
-import gym
 import numpy as np
 import pytest
 import torch
-from gym.vector import SyncVectorEnv
 from torch.utils.data import TensorDataset
 
 from sequoia.common import Config
-from sequoia.common.gym_wrappers import AddDoneToObservation, EnvDataset
 from sequoia.common.metrics import ClassificationMetrics
 from sequoia.settings.rl.wrappers import TypedObjectsWrapper
-from sequoia.settings.rl.continual.setting import ContinualRLSetting
-from sequoia.settings.sl.environment import PassiveEnvironment
 from sequoia.settings.sl import ClassIncrementalSetting
-from .measure_performance import MeasureSLPerformanceWrapper
+from sequoia.settings.sl.environment import PassiveEnvironment
 from sequoia.settings.sl.incremental.objects import Actions, Observations, Rewards
 
+from .measure_performance import MeasureSLPerformanceWrapper
 
 T = TypeVar("T")
 
 
 def with_is_last(iterable: Iterable[T]) -> Iterable[Tuple[T, bool]]:
-    """ Function that mimics what's happening in pytorch-lightning, where the iterator
+    """Function that mimics what's happening in pytorch-lightning, where the iterator
     is one-offset. This can cause a bit of headache in Sequoia's wrappers when iterating
     over an env, because they expect an action for each observation.
     """
@@ -72,6 +65,7 @@ def test_measure_performance_wrapper():
         reward = env.send(action)
         assert reward == i
     assert i == 99
+    from sequoia.settings.sl.continual.objects import Observations, Actions, Rewards
 
     env = TypedObjectsWrapper(
         env, observations_type=Observations, actions_type=Actions, rewards_type=Rewards
@@ -104,8 +98,7 @@ def test_measure_performance_wrapper():
 
 def make_dummy_env(n_samples: int = 100, batch_size: int = 1, drop_last: bool = False):
     dataset = TensorDataset(
-        torch.arange(n_samples).reshape([n_samples, 1, 1, 1])
-        * torch.ones([n_samples, 3, 32, 32]),
+        torch.arange(n_samples).reshape([n_samples, 1, 1, 1]) * torch.ones([n_samples, 3, 32, 32]),
         torch.arange(n_samples),
     )
     pretend_to_be_active = False
@@ -237,7 +230,7 @@ def test_measure_performance_wrapper_odd_vs_even_passive():
 
 
 def test_last_batch():
-    """ Test what happens with the last batch, in the case where the batch size doesn't
+    """Test what happens with the last batch, in the case where the batch size doesn't
     divide the dataset equally.
     """
     env = make_dummy_env(n_samples=110, batch_size=20)
@@ -262,15 +255,13 @@ from sequoia.methods.models.base_model import BaseModel
 
 
 def test_last_batch_baseline_model():
-    """ BUG: Baseline method is doing something weird at the last batch, and I dont know quite why.
-    """
+    """BUG: Baseline method is doing something weird at the last batch, and I dont know quite why."""
     n_samples = 110
     batch_size = 20
 
     # Note: the y's here are different.
     dataset = TensorDataset(
-        torch.arange(n_samples).reshape([n_samples, 1, 1, 1])
-        * torch.ones([n_samples, 3, 32, 32]),
+        torch.arange(n_samples).reshape([n_samples, 1, 1, 1]) * torch.ones([n_samples, 3, 32, 32]),
         torch.zeros(n_samples, dtype=int),
     )
     pretend_to_be_active = False
@@ -284,14 +275,12 @@ def test_last_batch_baseline_model():
         env, observations_type=Observations, actions_type=Actions, rewards_type=Rewards
     )
     env = MeasureSLPerformanceWrapper(env, first_epoch_only=True)
-    
+
     # FIXME: Hacky setup: Should instead have a way of using a 'test' setting with a
     # configurable in-memory test dataset.
     setting = ClassIncrementalSetting()
     setting.train_env = env
-    model = BaseModel(
-        setting=setting, hparams=BaseModel.HParams(), config=Config(debug=True)
-    )
+    model = BaseModel(setting=setting, hparams=BaseModel.HParams(), config=Config(debug=True))
 
     for i, (obs, rew) in enumerate(env):
         obs = dataclasses.replace(
@@ -308,16 +297,16 @@ def test_last_batch_baseline_model():
 
 @pytest.mark.parametrize("drop_last", [False, True])
 def test_delayed_actions(drop_last: bool):
-    """ Test that whenever some intermediate between the env and the Method is
+    """Test that whenever some intermediate between the env and the Method is
     caching some of the observations, the actions and rewards still end up lining up.
-    
+
     This is just to replicate what's happening in Pytorch Lightning, where they use some
     function to check if the batch is the last one or not, and was causing issue before.
     """
     env = make_dummy_env(n_samples=110, batch_size=20, drop_last=drop_last)
     env = MeasureSLPerformanceWrapper(env, first_epoch_only=True)
     i = 0
-    
+
     for i, ((obs, rew), is_last) in enumerate(with_is_last(env)):
         print(i, obs.batch_size)
         assert rew is None
@@ -327,10 +316,10 @@ def test_delayed_actions(drop_last: bool):
             assert obs.batch_size == 10, i
         actions = Actions(y_pred=torch.arange(i * 20, (i + 1) * 20)[: obs.batch_size])
         rewards = env.send(actions)
-        assert (rewards.y == torch.arange(i * 20, (i + 1) * 20)[: obs.batch_size]).all()    
+        assert (rewards.y == torch.arange(i * 20, (i + 1) * 20)[: obs.batch_size]).all()
     assert i == (4 if drop_last else 5)
     assert is_last
-    
+
     for i, ((obs, rew), is_last) in enumerate(with_is_last(env)):
         print(i)
         # We get rewards now that we're outside of the first epoch.
@@ -342,15 +331,13 @@ def test_delayed_actions(drop_last: bool):
 
         # actions = Actions(y_pred=torch.arange(i * 20, (i + 1) * 20)[: obs.batch_size])
         # rewards = env.send(actions)
-        # assert (rewards.y == torch.arange(i * 20, (i + 1) * 20)[: obs.batch_size]).all()    
+        # assert (rewards.y == torch.arange(i * 20, (i + 1) * 20)[: obs.batch_size]).all()
     assert i == 4 if drop_last else 5
     assert len(list(env)) == 5 if drop_last else 6
     assert len(list(with_is_last(env))) == 5 if drop_last else 6
-    
 
     perf = env.get_average_online_performance()
     assert perf.accuracy == 1.0
     # BUG: The number of samples for the metrics isn't quite right, should include the
     # last batch, even if it doesn't have a 'full' batch.
     assert perf.n_samples == (100 if drop_last else 110)
-

@@ -9,15 +9,17 @@ TODO: Tests for the multi-task SL setting.
 - Classes shouldn't be relabeled.
 
 """
+import dataclasses
 import itertools
 
 import numpy as np
 import pytest
 import torch
 from gym.spaces import Discrete
+
 from sequoia.common.spaces import Image, TypedDictSpace
-from sequoia.settings import Environment, Actions
-from sequoia.methods import Method
+from sequoia.settings import Actions, Environment
+
 from .setting import MultiTaskSLSetting
 
 
@@ -50,7 +52,7 @@ def check_is_multitask_env(env: Environment, has_rewards: bool):
     assert obs.x in x_space, (obs.x, x_space)
     assert obs.task_labels in t_space, (obs.task_labels, t_space)
     assert isinstance(obs, env.observation_space.dtype)
-    
+
     assert obs in env.observation_space
     done = False
     steps = 0
@@ -73,11 +75,12 @@ from sequoia.common.config import Config
 
 
 def test_multitask_setting(config: Config):
+    config = dataclasses.replace(config, device=torch.device("cpu"))
     setting = MultiTaskSLSetting(dataset="mnist", config=config)
     assert setting.phases == 1
     assert setting.nb_tasks == 5
-    from sequoia.common.spaces.tensor_spaces import TensorBox, TensorDiscrete
     from sequoia.common.spaces.image import ImageTensorSpace
+    from sequoia.common.spaces.tensor_spaces import TensorDiscrete
 
     assert setting.observation_space == TypedDictSpace(
         x=ImageTensorSpace(0.0, 1.0, (3, 28, 28), np.float32, device=config.device),
@@ -85,7 +88,7 @@ def test_multitask_setting(config: Config):
         dtype=setting.Observations,
     )
     assert setting.action_space == Discrete(10)
-    assert setting.config.device.type == "cuda" if torch.cuda.is_available() else "cpu"
+    # assert setting.config.device.type == "cuda" if torch.cuda.is_available() else "cpu"
 
     with setting.train_dataloader(batch_size=32, num_workers=0) as train_env:
         check_is_multitask_env(train_env, has_rewards=True)
@@ -110,12 +113,7 @@ def test_multitask_setting_test_env():
         check_is_multitask_env(test_env, has_rewards=False)
 
 
-from sequoia.settings.assumptions.incremental import (
-    IncrementalAssumption,
-    TestEnvironment,
-)
 from sequoia.settings.assumptions.incremental_test import DummyMethod
-from sequoia.conftest import DummyEnvironment
 
 
 def test_on_task_switch_is_called_multi_task():

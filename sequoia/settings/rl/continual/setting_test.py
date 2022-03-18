@@ -2,7 +2,8 @@ import dataclasses
 from dataclasses import asdict, is_dataclass, replace
 from functools import partial, singledispatch
 from pathlib import Path
-from typing import Any, ClassVar, Dict, List, Optional, Sequence, Type
+from typing import Any, Callable, Union, ClassVar, Dict, List, Optional, Sequence, Type
+import typing
 
 import gym
 import matplotlib.pyplot as plt
@@ -10,6 +11,7 @@ import numpy as np
 import pytest
 from gym import spaces
 from gym.vector.utils import batch_space
+
 from sequoia.common.config import Config
 from sequoia.common.spaces import TypedDictSpace
 from sequoia.common.spaces.sparse import Sparse
@@ -19,12 +21,12 @@ from sequoia.conftest import (
     param_requires_monsterkong,
     param_requires_mujoco,
 )
-from sequoia.settings.rl.incremental.setting import IncrementalRLSetting
 from sequoia.settings.assumptions.incremental_test import DummyMethod as _DummyMethod
+from sequoia.settings.base.setting_test import SettingTests
+from sequoia.settings.rl.incremental.setting import IncrementalRLSetting
 from sequoia.settings.rl.setting_test import DummyMethod
 from sequoia.utils.utils import pairwise, take
-from sequoia.settings.base.setting_test import SettingTests
-
+from sequoia.settings.base import Setting
 from .setting import ContinualRLSetting
 
 
@@ -40,6 +42,168 @@ from .setting import ContinualRLSetting
 def test_passing_unsupported_dataset_raises_error(dataset: Any):
     with pytest.raises((gym.error.Error, NotImplementedError)):
         _ = ContinualRLSetting(dataset=dataset)
+
+
+def test_acrobot_attributes_change_over_time():
+    from sequoia.settings.rl.setting_test import CheckAttributesWrapper
+    from sequoia.settings.rl.wrappers import MeasureRLPerformanceWrapper
+    from sequoia.settings.rl.continual.environment import GymDataLoader
+    from sequoia.common.gym_wrappers.env_dataset import EnvDataset
+    from sequoia.settings.rl.wrappers import TypedObjectsWrapper
+    from sequoia.common.gym_wrappers.action_limit import ActionLimit
+    from sequoia.settings.rl.wrappers import HideTaskLabelsWrapper
+    from sequoia.common.gym_wrappers.smooth_environment import SmoothTransitions
+
+    task_schedule = {
+        0: {
+            "LINK_LENGTH_1": 1.0,
+            "LINK_LENGTH_2": 1.0,
+            "LINK_MASS_1": 1.0,
+            "LINK_MASS_2": 1.0,
+            "LINK_COM_POS_1": 0.5,
+            "LINK_COM_POS_2": 0.5,
+            "LINK_MOI": 1.0,
+        },
+        100: {
+            "LINK_LENGTH_1": 1.077662352662672,
+            "LINK_LENGTH_2": 1.0029158956681965,
+            "LINK_MASS_1": 1.284506509206828,
+            "LINK_MASS_2": 1.3452415995540132,
+            "LINK_COM_POS_1": 0.3838164987591757,
+            "LINK_COM_POS_2": 0.6022014573018389,
+            "LINK_MOI": 0.866228909018773,
+        },
+        200: {
+            "LINK_LENGTH_1": 0.9787461324812216,
+            "LINK_LENGTH_2": 1.1761685623559348,
+            "LINK_MASS_1": 1.0598898754474704,
+            "LINK_MASS_2": 1.1760598598046939,
+            "LINK_COM_POS_1": 0.4523967193123413,
+            "LINK_COM_POS_2": 0.4100516516032442,
+            "LINK_MOI": 1.010250702300972,
+        },
+    }
+    from .objects import Observations
+
+    attributes = list(task_schedule[0].keys())
+    assert Observations is ContinualRLSetting.Observations
+    max_steps = 200
+    max_episode_steps = 10
+    # List of w
+    wrapper_fns = []
+    from gym.envs.classic_control.acrobot import AcrobotEnv
+    from gym.wrappers import TimeLimit
+
+    base_env: AcrobotEnv = gym.make("Acrobot-v1")  # type: ignore
+    base_env = AcrobotEnv()
+    base_env = TimeLimit(base_env, max_episode_steps=max_episode_steps)
+    env = wrap(
+        base_env,
+        lambda env: SmoothTransitions(
+            env,
+            task_schedule=task_schedule,
+            add_task_id_to_obs=True,
+            only_update_on_episode_end=False,
+        ),
+        HideTaskLabelsWrapper,
+        lambda env: ActionLimit(env, max_steps=10_000),
+        lambda env: TypedObjectsWrapper(
+            env,
+            observations_type=ContinualRLSetting.Observations,
+            # observation_space=TypedDictSpace(x:Box([ -1.        -1.        -1.        -1.       -12.566371 -28.274334], [ 1.        1.        1.    ...one:Sparse(Box(False, True, (), bool), sparsity=1), dtype=<class 'sequoia.settings.rl.continual.objects.Observations'>)
+            observation_space=TypedDictSpace(
+                x=spaces.Box(
+                    np.asfarray([-1.0, -1.0, -1.0, -1.0, -12.566371, -28.274334]),
+                    np.asfarray([1.0, 1.0, 1.0, 1.0, 12.566371, 28.274334]),
+                    (6,),
+                    np.float32,
+                ),
+                task_labels=Sparse(spaces.Box(0.0, 1.0, (), np.float32), sparsity=1),
+                done=Sparse(spaces.Box(False, True, (), bool), sparsity=1),
+                dtype=Observations,
+            ),
+            action_space=spaces.Discrete(3),
+            actions_type=ContinualRLSetting.Actions,
+            rewards_type=ContinualRLSetting.Rewards,
+            reward_space=spaces.Box(-np.inf, np.inf, (), np.float32),
+        ),
+        EnvDataset,
+        GymDataLoader,
+        MeasureRLPerformanceWrapper,
+        lambda env: CheckAttributesWrapper(env, attributes=attributes),
+    )
+
+    import itertools
+
+    env.seed(123)
+    episodes = max_steps // max_episode_steps
+    done = False
+    total_steps = 0
+    for episode in range(episodes):
+        obs = env.reset()
+        done = False
+
+        step: int = 0
+        for step in itertools.count():
+            action = env.action_space.sample()
+            obs, reward, done, info = env.step(action)
+            total_steps += 1
+            link_length_1 = env.LINK_LENGTH_1
+            if done:
+                break
+        current_values = env.values[max(env.values)]
+        # assert current_values == env.current_task  # NOTE: A bit too fine-grained. This is slightly different.
+        print(
+            f"End of episode {episode} at step {total_steps} (lasted {step} steps): \n\t{current_values}"
+        )
+
+    values_at_each_step = env.values
+    for attribute in attributes:
+        train_values: List[float] = [
+            values_dict[attribute] for step, values_dict in values_at_each_step.items()
+        ]
+        # We store the values before and after each step, so it's fine if they are the same at that last
+        # step.
+        assert train_values[0] == train_values[1]
+        assert len(train_values) == len(set(train_values)) + 1
+
+
+from typing import TypeVar
+
+E = TypeVar("E", bound=gym.Env)
+W = TypeVar("W", bound=gym.Wrapper)
+
+
+def wrap(
+    env: E, *wrapper_fns: Union[Type[W], Callable[[Union[E, W]], W]]
+) -> Union[E, W, Union[W, E]]:
+    """Wraps the environment `env` with the provided wrapper types or wrapper functions.
+
+    The wrapper functions are applied in order to `env`, meaning the first item is the innermost
+    wrapper, and the last item in `wrapper_fns` is the outermost wrapper.
+
+    Parameters
+    ----------
+    env : E
+        [description]
+
+    Returns
+    -------
+    Union[W, E]
+        [description]
+    """
+    wrapped_env: Union[W, E] = env
+    for wrapper_fn in wrapper_fns:
+        wrapped_env = wrapper_fn(wrapped_env)
+    if typing.TYPE_CHECKING:
+        assert isinstance(wrapped_env, (E, W))
+    return wrapped_env
+
+
+def wrap_reversed(
+    env: E, *wrapper_fns: Union[Type[W], Callable[[Union[E, W]], W]]
+) -> Union[E, W, Union[W, E]]:
+    return wrap(env, *reversed(wrapper_fns))
 
 
 @singledispatch
@@ -232,6 +396,7 @@ class TestContinualRLSetting(SettingTests):
         setting_kwargs.setdefault("max_episode_steps", 50)
         setting_kwargs.setdefault("test_max_steps", 1000)
         setting = self.Setting(**setting_kwargs)
+
         assert setting.train_task_schedule
 
         # NOTE: Have to check for `setting.train_envs` because in that case the task schedule won't
@@ -279,8 +444,8 @@ class TestContinualRLSetting(SettingTests):
                 train_values=train_values,
             )
 
+    @staticmethod
     def validate_env_value_changes(
-        self,
         setting: ContinualRLSetting,
         attribute: str,
         task_schedule_for_attr: Dict[str, float],
@@ -303,8 +468,8 @@ class TestContinualRLSetting(SettingTests):
             # NOTE: This test won't really work with integer values, but that doesn't matter
             # right now because we don't/won't support changing the values of integer
             # parameters in this "continuous" task setting.
-            assert len(set(train_values)) == setting.train_max_steps - 1, (
-                f"Should have encountered {setting.train_max_steps-1} distinct values "
+            assert len(set(train_values)) == setting.train_max_steps, (
+                f"Should have encountered {setting.train_max_steps} distinct values "
                 f"for attribute {attribute}: during training!"
             )
         else:
@@ -460,7 +625,10 @@ class TestContinualRLSetting(SettingTests):
             assert obs.task_labels in env.observation_space.task_labels
             if batch_size:
                 assert obs.x[0] in setting.observation_space.x
-                assert obs.task_labels is None or obs.task_labels[0] in setting.observation_space.task_labels
+                assert (
+                    obs.task_labels is None
+                    or obs.task_labels[0] in setting.observation_space.task_labels
+                )
             else:
                 assert obs in setting.observation_space
 
@@ -678,7 +846,6 @@ if MUJOCO_INSTALLED:
         ContinualHopperEnv,
         ContinualHopperV2Env,
         ContinualHopperV3Env,
-        ContinualWalker2dEnv,
         ContinualWalker2dV2Env,
         ContinualWalker2dV3Env,
     )

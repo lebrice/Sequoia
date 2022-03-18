@@ -40,10 +40,10 @@
 import wandb
 from sequoia.common import Config
 from sequoia.methods.base_method import BaseMethod
-from sequoia.settings import TraditionalSLSetting, Results, Setting
+from sequoia.settings import Results, Setting, TraditionalSLSetting
 from sequoia.utils.logging_utils import get_logger
 
-logger = get_logger(__file__)
+logger = get_logger(__name__)
 
 
 if __name__ == "__main__":
@@ -51,11 +51,12 @@ if __name__ == "__main__":
 
     ## Create the Setting:
     from sequoia.settings import RLSetting
+
     setting = RLSetting(dataset="monsterkong")
-    
+
     # from sequoia.settings import TaskIncrementalSLSetting
     # setting = TaskIncrementalSLSetting(dataset="cifar10")
-    
+
     ## Create the BaseMethod:
     # Option 1: Create the method manually:
     # method = BaseMethod()
@@ -91,4 +92,3 @@ if __name__ == "__main__":
 
     print(f"Best hparams: {best_hparams}, best perf: {best_results}")
     # results = setting.apply(method, config=Config(debug=True))
-

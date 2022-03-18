@@ -5,22 +5,24 @@ from typing import Callable, ClassVar, Optional, Type, Union
 import gym
 from gym import spaces
 from simple_parsing import mutable_field
-from stable_baselines3.td3 import TD3
 from stable_baselines3.common.off_policy_algorithm import TrainFreq
+from stable_baselines3.td3 import TD3
 
 from sequoia.common.hparams import log_uniform
 from sequoia.methods import register_method
 from sequoia.settings.rl import ContinualRLSetting
 from sequoia.utils.logging_utils import get_logger
+
 from .off_policy_method import OffPolicyMethod, OffPolicyModel
 
-logger = get_logger(__file__)
+logger = get_logger(__name__)
 
 
 class TD3Model(TD3, OffPolicyModel):
     @dataclass
     class HParams(OffPolicyModel.HParams):
-        """ Hyper-parameters of the TD3 model. """
+        """Hyper-parameters of the TD3 model."""
+
         # TODO: Add HParams specific to TD3 here, if any, and also check that the
         # default values are correct.
 
@@ -44,7 +46,7 @@ class TD3Model(TD3, OffPolicyModel):
 @register_method
 @dataclass
 class TD3Method(OffPolicyMethod):
-    """ Method that uses the TD3 model from stable-baselines3. """
+    """Method that uses the TD3 model from stable-baselines3."""
 
     Model: ClassVar[Type[TD3Model]] = TD3Model
     hparams: TD3Model.HParams = mutable_field(TD3Model.HParams)
@@ -65,11 +67,12 @@ class TD3Method(OffPolicyMethod):
         self, observations: ContinualRLSetting.Observations, action_space: spaces.Space
     ) -> ContinualRLSetting.Actions:
         return super().get_actions(
-            observations=observations, action_space=action_space,
+            observations=observations,
+            action_space=action_space,
         )
 
     def on_task_switch(self, task_id: Optional[int]) -> None:
-        """ Called when switching tasks in a CL setting.
+        """Called when switching tasks in a CL setting.
 
         If task labels are available, `task_id` will correspond to the index of
         the new task. Otherwise, if task labels aren't available, `task_id` will

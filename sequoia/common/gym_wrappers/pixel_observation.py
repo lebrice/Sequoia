@@ -3,18 +3,15 @@ from typing import Union
 
 import gym
 import numpy as np
-from gym.envs.classic_control import CartPoleEnv
 from gym.wrappers.pixel_observation import PixelObservationWrapper as PixelObservationWrapper_
-from torch import Tensor
 
-from sequoia.common.transforms import to_tensor
 from sequoia.common.spaces.image import Image
 
 from .utils import IterableWrapper
 
 
 class PixelObservationWrapper(PixelObservationWrapper_):
-    """ Less annoying version of gym's `PixelObservationWrapper`:
+    """Less annoying version of gym's `PixelObservationWrapper`:
 
     - Resets the environment before calling the constructor (fixes crash).
     - Makes the popup window non-visible when rendering with mode="rgb_array".
@@ -23,6 +20,7 @@ class PixelObservationWrapper(PixelObservationWrapper_):
           have to revert this change at some point.
     - `reset()` returns the pixels.
     """
+
     def __init__(self, env: Union[str, gym.Env]):
         if isinstance(env, str):
             env = gym.make(env)
@@ -31,14 +29,15 @@ class PixelObservationWrapper(PixelObservationWrapper_):
         pixel_space = self.observation_space["pixels"]
         self.observation_space = Image.from_box(pixel_space)
         from gym.envs.classic_control.rendering import Viewer
+
         self.viewer: Viewer
         if self.env.viewer is None:
             self.env.render(mode="rgb_array")
-                    
+
         if self.env.viewer is not None:
             self.viewer: Viewer = env.viewer
             self.viewer.window.set_visible(False)
-    
+
     def step(self, *args, **kwargs):
         state, reward, done, info = super().step(*args, **kwargs)
         state = state["pixels"]
@@ -49,8 +48,8 @@ class PixelObservationWrapper(PixelObservationWrapper_):
         self.state = super().reset()["pixels"]
         self.state = self.to_array(self.state)
         return self.state
-    
-    def render(self, mode: str="human", **kwargs):
+
+    def render(self, mode: str = "human", **kwargs):
         if mode == "human" and self.viewer and not self.viewer.window.visible:
             self.viewer.window.set_visible(True)
         return super().render(mode=mode, **kwargs)
@@ -61,10 +60,11 @@ class PixelObservationWrapper(PixelObservationWrapper_):
             # with the image having a negative stride dimension or something
             # like that. Also, ideally, we would return a numpy array (without
             # depending on pytorch here)
+            from sequoia.common.transforms.to_tensor import to_tensor
+
             return to_tensor(image)
             return np.array(image.copy())
         return image
-
 
 
 class ImageObservations(IterableWrapper):

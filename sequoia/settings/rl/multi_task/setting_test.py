@@ -2,13 +2,13 @@
 from typing import ClassVar, Type
 
 import pytest
-from sequoia.settings import Setting
+
+from sequoia.settings.rl.setting_test import DummyMethod
 
 from ..task_incremental.setting_test import (
     TestTaskIncrementalRLSetting as TaskIncrementalRLSettingTests,
 )
 from .setting import MultiTaskRLSetting
-from sequoia.settings.rl.setting_test import DummyMethod
 
 
 class TestMultiTaskRLSetting(TaskIncrementalRLSettingTests):
@@ -34,7 +34,7 @@ class TestMultiTaskRLSetting(TaskIncrementalRLSettingTests):
         method: DummyMethod,
         results: MultiTaskRLSetting.Results,
     ) -> None:
-        """ Check that the results make sense.
+        """Check that the results make sense.
         The Dummy Method used also keeps useful attributes, which we check here.
         """
         assert results

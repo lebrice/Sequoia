@@ -1,5 +1,6 @@
 """ TODO: launch the 'sequoia gRPC server' at a given address / port. """
 import argparse
+
 from .server import server
 
 if __name__ == "__main__":

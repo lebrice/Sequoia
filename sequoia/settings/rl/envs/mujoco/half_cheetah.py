@@ -1,16 +1,15 @@
-from typing import ClassVar, List, Dict
+from typing import ClassVar, Dict, List
 
 import numpy as np
 from gym.envs.mujoco import MujocoEnv
 from gym.envs.mujoco.half_cheetah import HalfCheetahEnv as _HalfCheetahV2Env
 
+# TODO: Use HalfCheetah-v3 instead, which allows explicitly to change the model file!
+from gym.envs.mujoco.half_cheetah_v3 import HalfCheetahEnv as _HalfCheetahV3Env
+
 from .modified_gravity import ModifiedGravityEnv
 from .modified_mass import ModifiedMassEnv
 from .modified_size import ModifiedSizeEnv
-
-
-# TODO: Use HalfCheetah-v3 instead, which allows explicitly to change the model file!
-from gym.envs.mujoco.half_cheetah_v3 import HalfCheetahEnv as _HalfCheetahV3Env
 
 
 class HalfCheetahV2Env(_HalfCheetahV2Env):
@@ -93,9 +92,7 @@ class HalfCheetahWithSensorEnv(HalfCheetahV2Env):
         obs = np.concatenate(
             [
                 super()._get_obs(),
-                np.zeros(
-                    self.n_bins
-                ),  # NOTE: @lebrice HUH? what's the point of doing this?
+                np.zeros(self.n_bins),  # NOTE: @lebrice HUH? what's the point of doing this?
                 # goal_readings
             ]
         )

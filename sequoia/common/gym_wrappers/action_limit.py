@@ -2,16 +2,16 @@
 """
 import gym
 from gym.error import ClosedEnvironmentError
-from gym.vector import VectorEnv
+
 from sequoia.utils import get_logger
 
 from .utils import IterableWrapper
 
-logger = get_logger(__file__)
+logger = get_logger(__name__)
 
 
 class ActionCounter(IterableWrapper):
-    """ Wrapper that counts the total number of actions performed so far.
+    """Wrapper that counts the total number of actions performed so far.
     (including those in the individual environments when wrapping a VectorEnv.)
     """
 
@@ -32,7 +32,7 @@ class ActionCounter(IterableWrapper):
 
 
 class ActionLimit(ActionCounter):
-    """ Closes the env when `max_steps` actions have been performed *in total*.
+    """Closes the env when `max_steps` actions have been performed *in total*.
 
     For vectorized environments, each step consumes up to `num_envs` from this
     total budget, i.e. the step counter is incremented by the batch size at
@@ -58,9 +58,7 @@ class ActionLimit(ActionCounter):
 
     def step(self, action):
         if self._action_counter >= self._max_steps:
-            raise ClosedEnvironmentError(
-                f"Env reached max number of steps ({self._max_steps})"
-            )
+            raise ClosedEnvironmentError(f"Env reached max number of steps ({self._max_steps})")
 
         obs, reward, done, info = super().step(action)
         # logger.debug(f"(step {self._action_counter}/{self._max_steps})")

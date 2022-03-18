@@ -9,15 +9,16 @@ from typing import Any, Dict, Mapping, Optional, Union
 import gym
 import numpy as np
 import tqdm
+from simple_parsing import ArgumentParser
+from torch import Tensor
+
 from sequoia.methods import register_method
 from sequoia.settings import Setting
 from sequoia.settings.base import Actions, Environment, Method, Observations
 from sequoia.settings.sl import SLSetting
 from sequoia.utils import get_logger
-from simple_parsing import ArgumentParser
-from torch import Tensor
 
-logger = get_logger(__file__)
+logger = get_logger(__name__)
 
 
 @register_method

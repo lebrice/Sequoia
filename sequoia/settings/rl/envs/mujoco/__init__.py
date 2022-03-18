@@ -7,14 +7,14 @@ NOTE: This is based on https://github.com/Breakend/gym-extensions
 
 import os
 from pathlib import Path
-from typing import Callable, Union
-from typing import Dict, List, Type
+from typing import Callable, Dict, List, Type, Union
 
 import gym
 from gym.envs import register
 from gym.envs.mujoco import MujocoEnv
 from gym.envs.mujoco.half_cheetah_v3 import HalfCheetahEnv
 from gym.envs.registration import EnvRegistry, EnvSpec, load, registry
+
 from sequoia.utils.logging_utils import get_logger
 
 from ..variant_spec import EnvVariantSpec
@@ -27,15 +27,9 @@ from .half_cheetah import (
 from .hopper import ContinualHopperV2Env, ContinualHopperV3Env, HopperV2Env, HopperV3Env
 from .modified_gravity import ModifiedGravityEnv
 from .modified_size import ModifiedSizeEnv
-from .walker2d import (
-    ContinualWalker2dV2Env,
-    ContinualWalker2dV3Env,
-    Walker2dV2Env,
-    Walker2dV3Env,
-)
+from .walker2d import ContinualWalker2dV2Env, ContinualWalker2dV3Env, Walker2dV2Env, Walker2dV3Env
 
-
-logger = get_logger(__file__)
+logger = get_logger(__name__)
 
 # NOTE: Prefer the 'V3' variants
 # HalfCheetahEnv = HalfCheetahV3Env
@@ -112,9 +106,9 @@ def register_mujoco_variants(env_registry: EnvRegistry = registry) -> None:
             # TODO: Use the same ID, or a different one?
             new_id = prefix + env_id
 
-            if (
-                new_id not in env_registry.env_specs or new_id == env_id
-            ) and not isinstance(original_env_spec, EnvVariantSpec):
+            if (new_id not in env_registry.env_specs or new_id == env_id) and not isinstance(
+                original_env_spec, EnvVariantSpec
+            ):
                 new_spec = EnvVariantSpec.of(
                     original=original_env_spec,
                     new_id=new_id,

@@ -3,21 +3,15 @@ import warnings
 from functools import partial
 from logging import getLogger
 from pathlib import Path
-from typing import Any, Dict, Generic, List, Optional, Type, TypeVar, Callable
+from typing import Any, Callable, Dict, Generic, List, Optional, Type, TypeVar
 
 import gym
 import numpy as np
+
 from sequoia.common.config import Config
 from sequoia.methods import Method
-from sequoia.settings import (
-    ClassIncrementalSetting,
-    IncrementalRLSetting,
-    Results,
-    Setting,
-)
-from sequoia.settings.assumptions.incremental import (
-    IncrementalAssumption,
-)
+from sequoia.settings import ClassIncrementalSetting, IncrementalRLSetting, Results, Setting
+from sequoia.settings.assumptions.incremental import IncrementalAssumption
 from sequoia.settings.base import SettingABC
 
 from .env_proxy import EnvironmentProxy
@@ -39,7 +33,7 @@ SettingType = TypeVar("SettingType", bound=Setting)
 
 
 class SettingProxy(SettingABC, Generic[SettingType]):
-    """ Proxy for a Setting.
+    """Proxy for a Setting.
 
     TODO: Creating the Setting locally for now, but we'd spin-up or contact a gRPC
     service" that would have at least the following endpoints:
@@ -118,7 +112,7 @@ class SettingProxy(SettingABC, Generic[SettingType]):
         self.__setting.test_env = value
 
     def _temp_make_readable(self, attribute: str) -> None:
-        """ Temporarily makes an attribute readable. """
+        """Temporarily makes an attribute readable."""
         # if attribute in _hidden_attributes:
 
     @property
@@ -203,7 +197,7 @@ class SettingProxy(SettingABC, Generic[SettingType]):
         self.Observations = self._setting_type.Observations
         self.Actions = self._setting_type.Actions
         self.Rewards = self._setting_type.Rewards
-        
+
         if hasattr(self._setting_type, "TestEnvironment"):
             self.TestEnvironment = self._setting_type.TestEnvironment
         # results = self._setting_type.apply(self, method, config=config)
@@ -231,9 +225,7 @@ class SettingProxy(SettingABC, Generic[SettingType]):
     def set_attribute(self, name: str, value: Any) -> None:
         return setattr(self.__setting, name, value)
 
-    def train_dataloader(
-        self, batch_size: int = None, num_workers: int = None
-    ) -> EnvironmentProxy:
+    def train_dataloader(self, batch_size: int = None, num_workers: int = None) -> EnvironmentProxy:
         # TODO: Faking this 'remote-ness' for now:
         return EnvironmentProxy(
             env_fn=partial(
@@ -243,15 +235,9 @@ class SettingProxy(SettingABC, Generic[SettingType]):
             ),
             setting_type=self._setting_type,
         )
-        
-        batch_size = (
-            batch_size if batch_size is not None else self.get_attribute("batch_size")
-        )
-        num_workers = (
-            num_workers
-            if num_workers is not None
-            else self.get_attribute("num_workers")
-        )
+
+        batch_size = batch_size if batch_size is not None else self.get_attribute("batch_size")
+        num_workers = num_workers if num_workers is not None else self.get_attribute("num_workers")
         if self._train_env:
             self._train_env.close()
             del self._train_env
@@ -266,9 +252,7 @@ class SettingProxy(SettingABC, Generic[SettingType]):
         )
         return self._train_env
 
-    def val_dataloader(
-        self, batch_size: int = None, num_workers: int = None
-    ) -> EnvironmentProxy:
+    def val_dataloader(self, batch_size: int = None, num_workers: int = None) -> EnvironmentProxy:
         return EnvironmentProxy(
             env_fn=partial(
                 self.__setting.val_dataloader,
@@ -277,7 +261,7 @@ class SettingProxy(SettingABC, Generic[SettingType]):
             ),
             setting_type=self._setting_type,
         )
-       
+
         if self._val_env:
             self._val_env.close()
             del self._val_env
@@ -308,20 +292,13 @@ class SettingProxy(SettingABC, Generic[SettingType]):
         #     partial(self._setting_type.test_dataloader, self, batch_size=batch_size, num_workers=num_workers),
         #     setting_type=self._setting_type,
         # )
-    
 
     def __test_dataloader(
         self, batch_size: int = None, num_workers: int = None
     ) -> EnvironmentProxy:
 
-        batch_size = (
-            batch_size if batch_size is not None else self.get_attribute("batch_size")
-        )
-        num_workers = (
-            num_workers
-            if num_workers is not None
-            else self.get_attribute("num_workers")
-        )
+        batch_size = batch_size if batch_size is not None else self.get_attribute("batch_size")
+        num_workers = num_workers if num_workers is not None else self.get_attribute("num_workers")
         if self._test_env:
             self._test_env.close()
             del self._test_env
@@ -357,10 +334,10 @@ class SettingProxy(SettingABC, Generic[SettingType]):
         # test_results = self.__setting.main_loop(method)
         # test_results._objective_scaling_factor = (
         #     0.01 if dataset.startswith("MetaMonsterKong") else 1.0
-        # )        
+        # )
         test_results = self._setting_type.main_loop(self, method=method)
         start_time = time.process_time()
-        
+
         # for task_id in range(nb_tasks):
         #     logger.info(
         #         f"Starting training" + (f" on task {task_id}." if nb_tasks > 1 else ".")
@@ -415,7 +392,7 @@ class SettingProxy(SettingABC, Generic[SettingType]):
         return test_results
 
     def test_loop(self, method: Method) -> "IncrementalAssumption.Results":
-        """ (WIP): Runs an incremental test loop and returns the Results.
+        """(WIP): Runs an incremental test loop and returns the Results.
 
         The idea is that this loop should be exactly the same, regardless of if
         you're on the RL or the CL side of the tree.
@@ -437,9 +414,7 @@ class SettingProxy(SettingABC, Generic[SettingType]):
         task_labels_at_test_time = self.get_attribute("task_labels_at_test_time")
         if task_labels_at_test_time:
             warnings.warn(
-                RuntimeWarning(
-                    "no task labels at test time for now when using a SettingProxy"
-                )
+                RuntimeWarning("no task labels at test time for now when using a SettingProxy")
             )
         # TODO: Avoid duplicating the test loop here?
         test_results = self.__setting.test_loop(method=method)
@@ -525,8 +500,7 @@ class SettingProxy(SettingABC, Generic[SettingType]):
             print(f"Accessing missing attribute {name} from the 'remote' setting.")
             return self.get_attribute(name)
         raise AttributeError(
-            f"Attribute {name} is either not present on the setting, or not marked as "
-            f"readable!"
+            f"Attribute {name} is either not present on the setting, or not marked as " f"readable!"
         )
 
     # def __setattr__(self, name: str, value: Any) -> None:

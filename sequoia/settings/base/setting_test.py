@@ -1,9 +1,12 @@
+import functools
+import inspect
 from dataclasses import dataclass
+from typing import Union
 
 import pytest
 
 from sequoia.methods import Method
-from sequoia.utils import constant
+from sequoia.utils.utils import constant
 
 from .setting import Setting
 
@@ -95,7 +98,7 @@ class CoolGeneralMethod(Method, target_setting=Setting):
 
 
 def test_that_transforms_can_be_set_through_command_line():
-    from sequoia.common.transforms import Transforms, Compose
+    from sequoia.common.transforms import Compose, Transforms
 
     setting = Setting(train_transforms=[])
     assert setting.train_transforms == []
@@ -109,10 +112,11 @@ def test_that_transforms_can_be_set_through_command_line():
     assert isinstance(setting.train_transforms, Compose)
 
 
-from typing import ClassVar, Type, Dict, Any
+from typing import Any, ClassVar, Dict, Type
+
 from sequoia.common.config import Config
 from sequoia.methods.random_baseline import RandomBaselineMethod
-from sequoia.settings.base.results import Results
+
 from .setting import Setting
 
 
@@ -176,7 +180,7 @@ class SettingTests:
     fast_dev_run_kwargs: ClassVar[Dict[str, Any]] = {}
 
     def __init_subclass__(cls, setting: Type[Setting] = None):
-        """ Autogenerates fixtures on the class under test. """
+        """Autogenerates fixtures on the class under test."""
         super().__init_subclass__()
         if not setting and not hasattr(cls, "Setting"):
             raise RuntimeError(
@@ -230,7 +234,7 @@ class SettingTests:
         self.assert_chance_level(setting, results=results)
 
 
-def make_dataset_fixture(setting_type) -> pytest.fixture:
+def make_dataset_fixture(setting_type: Union[Type[Setting], functools.partial]):
     """Create a parametrized fixture that will go through all the available datasets
     for a given setting."""
 
@@ -238,10 +242,11 @@ def make_dataset_fixture(setting_type) -> pytest.fixture:
         dataset = request.param
         return dataset
 
-    datasets = set(setting_type.available_datasets.values())
-    # FIXME: Temporarily removing these datasets because they take quite a long time to
-    # run. Also: not sure if we can use a `slow_param` on these only, because we're
-    # parameterizing a fixture rather than a test.
+    if isinstance(setting_type, functools.partial):
+        setting_type = setting_type.args[0]
+        assert inspect.isclass(setting_type) and issubclass(setting_type, Setting)
+
+    datasets = set(setting_type.available_datasets.keys())
     datasets_to_remove = set(["MT10", "MT50", "CW10", "CW20"])
     # NOTE: Need deterministic ordering for the datasets for tests to be parallelizable
     # with pytest-xdist.

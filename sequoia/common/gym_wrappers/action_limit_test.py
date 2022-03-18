@@ -1,9 +1,12 @@
-import gym
-from .action_limit import ActionLimit
 from typing import List
+
+import gym
 import pytest
-from sequoia.common.gym_wrappers.env_dataset import EnvDataset
 from gym.wrappers import TimeLimit
+
+from sequoia.common.gym_wrappers.env_dataset import EnvDataset
+
+from .action_limit import ActionLimit
 
 
 def test_basics():
@@ -81,7 +84,7 @@ from sequoia.settings.sl.wrappers.measure_performance_test import with_is_last
     )
 )
 def test_delayed_EnvDataset_of_ActionLimit():
-    """ Same test as above, however introduce a delay (like what's happening in the pl.Trainer)
+    """Same test as above, however introduce a delay (like what's happening in the pl.Trainer)
     between the items sent by the trainer and the rewards returned by the env.
 
     """
@@ -110,4 +113,3 @@ def test_delayed_EnvDataset_of_ActionLimit():
 
     assert env.is_closed()
     assert sum(step + 1 for step in episode_steps) == max_steps
-

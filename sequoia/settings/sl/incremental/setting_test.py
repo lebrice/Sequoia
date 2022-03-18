@@ -1,17 +1,15 @@
-import math
 from typing import Any, ClassVar, Dict, Type
 
 import pytest
 from continuum import ClassIncremental
 from gym import spaces
 from gym.spaces import Discrete, Space
+
 from sequoia.common.config import Config
 from sequoia.common.metrics import ClassificationMetrics
 from sequoia.common.spaces import Sparse
-from sequoia.conftest import skip_param, xfail_param
-from sequoia.settings.assumptions.incremental_test import OtherDummyMethod
-from sequoia.settings.base import Setting
-from sequoia.settings.base.setting_test import SettingTests
+from sequoia.common.spaces.typed_dict import TypedDictSpace
+from sequoia.conftest import skip_param, xfail_param, requires_pyglet
 from sequoia.settings.sl.continual.envs import get_action_space
 
 from ..discrete.setting_test import (
@@ -22,9 +20,10 @@ from .setting import IncrementalSLSetting as ClassIncrementalSetting
 
 
 class TestIncrementalSLSetting(DiscreteTaskAgnosticSLSettingTests):
-    Setting: ClassVar[Type[Setting]] = IncrementalSLSetting
+    Setting: ClassVar[Type[IncrementalSLSetting]] = IncrementalSLSetting
     fast_dev_run_kwargs: ClassVar[Dict[str, Any]] = dict(
-        dataset="mnist", batch_size=64,
+        dataset="mnist",
+        batch_size=64,
     )
 
     def assert_chance_level(
@@ -74,9 +73,7 @@ class TestIncrementalSLSetting(DiscreteTaskAgnosticSLSettingTests):
             "cifar100",
             "fashionmnist",
             "kmnist",
-            xfail_param(
-                "emnist", reason="Bug in emnist, requires split positional arg?"
-            ),
+            xfail_param("emnist", reason="Bug in emnist, requires split positional arg?"),
             xfail_param("qmnist", reason="Bug in qmnist, 229421 not in list"),
             "mnistfellowship",
             "cifar10",
@@ -85,7 +82,7 @@ class TestIncrementalSLSetting(DiscreteTaskAgnosticSLSettingTests):
     )
     @pytest.mark.timeout(60)
     def test_observation_spaces_match_dataset(self, dataset_name: str):
-        """ Test to check that the `observation_spaces` and `reward_spaces` dict
+        """Test to check that the `observation_spaces` and `reward_spaces` dict
         really correspond to the entries of the corresponding datasets, before we do
         anything with them.
         """
@@ -107,21 +104,25 @@ class TestIncrementalSLSetting(DiscreteTaskAgnosticSLSettingTests):
     @pytest.mark.parametrize("dataset_name", ["mnist"])
     @pytest.mark.parametrize("nb_tasks", [2, 5])
     def test_task_label_space(self, dataset_name: str, nb_tasks: int):
-        # dataset = ClassIncrementalSetting.available_datasets[dataset_name]
         nb_tasks = 2
-        setting = ClassIncrementalSetting(dataset=dataset_name, nb_tasks=nb_tasks,)
+        setting = ClassIncrementalSetting(
+            dataset=dataset_name,
+            nb_tasks=nb_tasks,
+        )
         task_label_space: Space = setting.observation_space.task_labels
         # TODO: Should the task label space be Sparse[Discrete]? or Discrete?
         assert task_label_space == Discrete(nb_tasks)
 
     @pytest.mark.parametrize("dataset_name", ["mnist"])
     def test_setting_obs_space_changes_when_transforms_change(self, dataset_name: str):
-        """ TODO: Test that the `observation_space` property on the
+        """TODO: Test that the `observation_space` property on the
         ClassIncrementalSetting reflects the data produced by the dataloaders, and
         that changing a transform on a Setting also changes the value of that
         property on both the Setting itself, as well as on the corresponding
         dataloaders/environments.
         """
+        import torch
+
         # dataset = ClassIncrementalSetting.available_datasets[dataset_name]
         setting = self.Setting(
             dataset=dataset_name,
@@ -132,23 +133,33 @@ class TestIncrementalSLSetting(DiscreteTaskAgnosticSLSettingTests):
             test_transforms=[],
             batch_size=None,
             num_workers=0,
+            config=Config(device=torch.device("cpu")),
         )
-        assert (
-            setting.observation_space.x == Setting.base_observation_spaces[dataset_name]
-        )
+        base_x_space = type(setting).base_observation_spaces[dataset_name]
+        assert setting.observation_space.x == base_x_space
         # TODO: Should the 'transforms' apply to ALL the environments, and the
         # train/valid/test transforms apply only to those envs?
         from sequoia.common.transforms import Transforms
 
-        setting.transforms = [
-            Transforms.to_tensor,
-            Transforms.three_channels,
-            Transforms.channels_first_if_needed,
-            Transforms.resize_32x32,
-        ]
+        from sequoia.common.transforms import Compose
+
+        transforms = Compose(
+            [
+                Transforms.to_tensor,
+                Transforms.three_channels,
+                Transforms.channels_first_if_needed,
+                Transforms.resize_32x32,
+            ]
+        )
+        setting.transforms = transforms
+        expected_x_space = transforms(base_x_space)
+        # Check the the `x` property of the setting's observation space has also been transformed:
+        assert setting.observation_space.x == expected_x_space
+
         # When there are no transforms in setting.train_tansforms, the observation
         # space of the Setting and of the train dataloader are the same:
         train_env = setting.train_dataloader(batch_size=None, num_workers=None)
+        assert not setting.train_transforms
         assert train_env.observation_space == setting.observation_space
 
         reset_obs = train_env.reset()
@@ -160,9 +171,12 @@ class TestIncrementalSLSetting(DiscreteTaskAgnosticSLSettingTests):
 
         # When we add a transform to `setting.train_transforms` the observation
         # space of the Setting and of the train dataloader are different:
+        # NOTE: Transforms should act as the 'base', and train_transforms gets added to it.
         setting.train_transforms = [Transforms.resize_64x64]
 
         train_env = setting.train_dataloader(batch_size=None)
+        assert train_env.f == setting.transforms + setting.train_transforms
+
         assert train_env.observation_space.x.shape == (3, 64, 64)
         assert train_env.reset() in train_env.observation_space
 
@@ -191,7 +205,8 @@ class TestIncrementalSLSetting(DiscreteTaskAgnosticSLSettingTests):
                 assert test_env.observation_space == setting.observation_space
             else:
                 assert isinstance(test_env.observation_space["task_labels"], Sparse)
-            assert test_env.reset() in test_env.observation_space
+            obs = test_env.reset()
+            assert obs in test_env.observation_space
 
         setting.test_transforms = [Transforms.resize_64x64]
         with setting.test_dataloader(batch_size=None) as test_env:
@@ -205,6 +220,7 @@ class TestIncrementalSLSetting(DiscreteTaskAgnosticSLSettingTests):
 # TODO: This renders, even when we're using the pytest-xvfb plugin, which might
 # mean that it's actually creating a Display somewhere?
 @pytest.mark.timeout(30)
+@requires_pyglet
 def test_render(config: Config):
     setting = ClassIncrementalSetting(dataset="mnist", config=config)
     import matplotlib.pyplot as plt

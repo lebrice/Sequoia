@@ -2,22 +2,17 @@ from typing import Any, Callable, Tuple, Union
 
 import gym
 from gym import spaces
-from sequoia.common.spaces import TypedDictSpace
-from sequoia.settings.sl.continual.environment import ContinualSLEnvironment
 from torch.utils.data import Dataset, IterableDataset
 
-from ..continual.environment import ContinualSLTestEnvironment
-from .objects import (
-    Actions,
-    ActionType,
-    Observations,
-    ObservationType,
-    Rewards,
-    RewardType,
-)
+from sequoia.common.spaces import TypedDictSpace
 from sequoia.settings.base.objects import Rewards as BaseRewards
+from sequoia.settings.sl.continual.environment import ContinualSLEnvironment
 from sequoia.utils.logging_utils import get_logger
-logger = get_logger(__file__)
+
+from ..continual.environment import ContinualSLTestEnvironment
+from .objects import Actions, ActionType, Observations, ObservationType, RewardType
+
+logger = get_logger(__name__)
 
 
 class IncrementalSLEnvironment(ContinualSLEnvironment[ObservationType, ActionType, RewardType]):
@@ -28,9 +23,7 @@ class IncrementalSLEnvironment(ContinualSLEnvironment[ObservationType, ActionTyp
         observation_space: TypedDictSpace[ObservationType] = None,
         action_space: gym.Space = None,
         reward_space: gym.Space = None,
-        split_batch_fn: Callable[
-            [Tuple[Any, ...]], Tuple[ObservationType, ActionType]
-        ] = None,
+        split_batch_fn: Callable[[Tuple[Any, ...]], Tuple[ObservationType, ActionType]] = None,
         pretend_to_be_active: bool = False,
         strict: bool = False,
         one_epoch_only: bool = False,
@@ -50,25 +43,25 @@ class IncrementalSLEnvironment(ContinualSLEnvironment[ObservationType, ActionTyp
         )
 
 
-from .results import IncrementalSLResults
-from sequoia.settings.assumptions.incremental import (
-    TaskResults, TaskSequenceResults, TestEnvironment
-)
-from typing import Dict, Any
-from sequoia.common.metrics import ClassificationMetrics
-import torch
-import warnings
 import bisect
-from sequoia.common.gym_wrappers.batch_env.tile_images import tile_images
+import warnings
+from typing import Any, Dict
+
 import numpy as np
+import torch
 from torch.nn import functional as F
+
+from sequoia.common.gym_wrappers.utils import tile_images
+from sequoia.common.metrics import ClassificationMetrics
 from sequoia.common.transforms import Transforms
+from sequoia.settings.assumptions.iid_results import TaskResults
+from sequoia.settings.assumptions.incremental import TaskSequenceResults
+
+from .results import IncrementalSLResults
 
 
 class IncrementalSLTestEnvironment(ContinualSLTestEnvironment):
-    def __init__(
-        self, env: gym.Env, *args, task_schedule: Dict[int, Any] = None, **kwargs
-    ):
+    def __init__(self, env: gym.Env, *args, task_schedule: Dict[int, Any] = None, **kwargs):
         super().__init__(env, *args, **kwargs)
         self._steps = 0
         # TODO: Maybe rework this so we don't depend on the test phase being one task at
@@ -139,7 +132,7 @@ class IncrementalSLTestEnvironment(ContinualSLTestEnvironment):
                     f"is larger than the rewards': ({reward.batch_size})"
                 )
             )
-            action = action[:, :reward.batch_size]
+            action = action[:, : reward.batch_size]
 
         # TODO: Use some kind of generic `get_metrics(actions: Actions, rewards: Rewards)`
         # function instead.

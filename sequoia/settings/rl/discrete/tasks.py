@@ -5,17 +5,20 @@ move the "incremental" tasks from `incremental/tasks.py` to this level.
 """
 
 import warnings
-from functools import singledispatch, partial
-from typing import Any, Callable, Dict, List, Optional, Union, Type
+from functools import partial, singledispatch
+from typing import Any, Callable, Dict, List, Optional, Union
 
 import gym
 import numpy as np
-from gym.envs.registration import EnvRegistry, EnvSpec, registry, load
+
 from sequoia.settings.rl.envs import MONSTERKONG_INSTALLED, MetaMonsterKongEnv, sequoia_registry
 
-from ..continual.tasks import ContinuousTask, task_sampling_function
-from ..continual.tasks import _is_supported
-from ..continual.tasks import make_continuous_task, TaskSchedule
+from ..continual.tasks import (
+    ContinuousTask,
+    _is_supported,
+    make_continuous_task,
+    task_sampling_function,
+)
 
 DiscreteTask = Union[ContinuousTask, Callable[[gym.Env], Any]]
 
@@ -23,9 +26,14 @@ DiscreteTask = Union[ContinuousTask, Callable[[gym.Env], Any]]
 @task_sampling_function(env_registry=sequoia_registry, based_on=make_continuous_task)
 @singledispatch
 def make_discrete_task(
-    env: gym.Env, *, step: int, change_steps: List[int], seed: int = None, **kwargs,
+    env: gym.Env,
+    *,
+    step: int,
+    change_steps: List[int],
+    seed: int = None,
+    **kwargs,
 ) -> DiscreteTask:
-    """ Generic function used by Sequoia's `DiscreteTaskAgnosticRLSetting` (and its
+    """Generic function used by Sequoia's `DiscreteTaskAgnosticRLSetting` (and its
     descendants) to create a "task" that will be applied to an environment like `env`.
 
     To add support for a new type of environment, simply register a handler function:
@@ -45,7 +53,6 @@ def make_discrete_task(
 is_supported = partial(_is_supported, _make_task_function=make_discrete_task)
 
 
-
 if MONSTERKONG_INSTALLED:
     # In MonsterKong the tasks can be changed on-the-fly, whereas they can't in the
     # size-based MUJOCO envs.
@@ -58,14 +65,12 @@ if MONSTERKONG_INSTALLED:
         seed: int = None,
         **kwargs,
     ) -> Union[Dict[str, Any], Any]:
-        """ Samples a task for the MonsterKong environment.
+        """Samples a task for the MonsterKong environment.
 
         TODO: When given a seed, sample the task randomly (but deterministicly) using
         the seed.
         """
-        assert (
-            change_steps is not None
-        ), "Need task boundaries to construct the task schedule."
+        assert change_steps is not None, "Need task boundaries to construct the task schedule."
 
         if step not in change_steps:
             raise RuntimeError(

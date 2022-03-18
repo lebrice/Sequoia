@@ -1,11 +1,12 @@
 """ TODO: Maybe create a typed version of 'add_tensor_support' of gym_wrappers.convert_tensors
 """
+from typing import Optional, Union
+
 import gym
-from typing import Union, Optional
-from gym import spaces
-from torch import Tensor
 import numpy as np
 import torch
+from gym import spaces
+from torch import Tensor
 
 # Dict of NumPy dtype -> torch dtype (when the correspondence exists)
 numpy_to_torch_dtypes = {
@@ -26,38 +27,30 @@ torch_to_numpy_dtypes = {value: key for (key, value) in numpy_to_torch_dtypes.it
 
 
 def get_numpy_dtype_equivalent_to(torch_dtype: torch.dtype) -> np.dtype:
-    """ TODO: Gets the numpy dtype equivalent to the given torch dtype. """
+    """TODO: Gets the numpy dtype equivalent to the given torch dtype."""
 
     def dtypes_equal(a: torch.dtype, b: torch.dtype) -> bool:
         return a == b  # simple for now.
 
-    matching_dtypes = [
-        v for k, v in torch_to_numpy_dtypes.items() if dtypes_equal(k, torch_dtype)
-    ]
+    matching_dtypes = [v for k, v in torch_to_numpy_dtypes.items() if dtypes_equal(k, torch_dtype)]
     if len(matching_dtypes) == 0:
         raise RuntimeError(f"Unable to find a numpy dtype equivalent to {torch_dtype}")
     if len(matching_dtypes) > 1:
-        raise RuntimeError(
-            f"Found more than one match for dtype {torch_dtype}: {matching_dtypes}"
-        )
+        raise RuntimeError(f"Found more than one match for dtype {torch_dtype}: {matching_dtypes}")
     return np.dtype(matching_dtypes[0])
 
 
 def get_torch_dtype_equivalent_to(numpy_dtype: np.dtype) -> torch.dtype:
-    """ TODO: Gets the torch dtype equivalent to the given np dtype. """
+    """TODO: Gets the torch dtype equivalent to the given np dtype."""
 
     def dtypes_equal(a: torch.dtype, b: torch.dtype) -> bool:
         return a == b  # simple for now.
 
-    matching_dtypes = [
-        v for k, v in numpy_to_torch_dtypes.items() if dtypes_equal(k, numpy_dtype)
-    ]
+    matching_dtypes = [v for k, v in numpy_to_torch_dtypes.items() if dtypes_equal(k, numpy_dtype)]
     if len(matching_dtypes) == 0:
         raise RuntimeError(f"Unable to find a torch dtype equivalent to {numpy_dtype}")
     if len(matching_dtypes) > 1:
-        raise RuntimeError(
-            f"Found more than one match for dtype {numpy_dtype}: {matching_dtypes}"
-        )
+        raise RuntimeError(f"Found more than one match for dtype {numpy_dtype}: {matching_dtypes}")
     return matching_dtypes[0]
 
 
@@ -66,9 +59,7 @@ from typing import Any
 
 
 def is_numpy_dtype(dtype: Any) -> bool:
-    return (
-        isinstance(dtype, np.dtype) or isclass(dtype) and issubclass(dtype, np.generic)
-    )
+    return isinstance(dtype, np.dtype) or isclass(dtype) and issubclass(dtype, np.generic)
 
 
 def is_torch_dtype(dtype: Any) -> bool:
@@ -81,11 +72,10 @@ from abc import ABC
 def supports_tensors(space: gym.Space) -> bool:
     raise NotImplementedError(f"TODO: Create a generic function for this.")
     return isinstance(space, TensorSpace)
-    pass
 
 
 class TensorSpace(gym.Space, ABC):
-    """ Mixin class that makes a Space's `contains` and `sample` methods accept and
+    """Mixin class that makes a Space's `contains` and `sample` methods accept and
     produce tensors, respectively.
     """
 
@@ -113,9 +103,7 @@ class TensorSpace(gym.Space, ABC):
         else:
             assert not any(dtype == k for k in numpy_to_torch_dtypes)
             assert not any(dtype == k for k in torch_to_numpy_dtypes)
-            raise NotImplementedError(
-                f"Unsupported dtype {dtype} (of type {type(dtype)})"
-            )
+            raise NotImplementedError(f"Unsupported dtype {dtype} (of type {type(dtype)})")
         if "dtype" in kwargs:
             kwargs["dtype"] = self._numpy_dtype
         super().__init__(*args, **kwargs)
@@ -123,11 +111,9 @@ class TensorSpace(gym.Space, ABC):
 
 
 class TensorBox(TensorSpace, spaces.Box):
-    """ Box space that accepts both Tensor and ndarrays. """
+    """Box space that accepts both Tensor and ndarrays."""
 
-    def __init__(
-        self, low, high, shape=None, dtype=np.float32, device: torch.device = None
-    ):
+    def __init__(self, low, high, shape=None, dtype=np.float32, device: torch.device = None):
         super().__init__(low, high, shape=shape, dtype=dtype, device=device)
         self.low_tensor = torch.as_tensor(self.low, device=self.device)
         self.high_tensor = torch.as_tensor(self.high, device=self.device)
@@ -143,14 +129,17 @@ class TensorBox(TensorSpace, spaces.Box):
         if isinstance(x, list):
             x = np.array(x)  # Promote list to array for contains check
         if isinstance(x, Tensor):
+            if not (x.device == self.low_tensor.device == self.high_tensor.device):
+                raise RuntimeError(
+                    f"Values aren't on the same device: {x.device}, {self.device}, {self.low_tensor.device}"
+                )
+
             return (
                 x.shape == self.shape
                 and (x >= self.low_tensor).all()
                 and (x <= self.high_tensor).all()
             )
-        return (
-            x.shape == self.shape and np.all(x >= self.low) and np.all(x <= self.high)
-        )
+        return x.shape == self.shape and np.all(x >= self.low) and np.all(x <= self.high)
 
     def __repr__(self):
         return (

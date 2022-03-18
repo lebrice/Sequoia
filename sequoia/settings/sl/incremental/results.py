@@ -3,49 +3,38 @@
 This object basically calculates the 'objective' specific to this setting as
 well as provide a set of methods for making useful plots and utilities for
 logging results to wandb.
-""" 
-from collections import defaultdict
-from contextlib import redirect_stdout
-from dataclasses import dataclass
-from io import StringIO
-from itertools import accumulate, chain
-from functools import partial
-from typing import Dict, List, Union, ClassVar
-from pathlib import Path
-import wandb
+"""
+from typing import ClassVar
 
 import matplotlib.pyplot as plt
-from simple_parsing import field, list_field, mutable_field
 
-from sequoia.common.loss import Loss
-from sequoia.common.metrics import ClassificationMetrics, Metrics, RegressionMetrics
-from sequoia.utils.logging_utils import get_logger
-from sequoia.utils.plotting import PlotSectionLabel, autolabel
-from sequoia.utils.utils import mean
+import wandb
 from sequoia.settings.assumptions.incremental import IncrementalAssumption
+from sequoia.utils.logging_utils import get_logger
+from sequoia.utils.plotting import autolabel
 
-from .. import Results
-logger = get_logger(__file__)
+logger = get_logger(__name__)
 
 
 class IncrementalSLResults(IncrementalAssumption.Results):
     """Results for a ClassIncrementalSetting.
-    
+
     The main objective in this setting is the average test accuracy over all
     tasks.
-    
+
     The plots to generate are:
     - Accuracy per task
     - Average Test Accuray over the course of testing
     - Confusion matrix at the end of testing
-    
+
     All of these will be created from the list of test metrics (Classification
     metrics for now).
-    
+
     TODO: Add back Wandb logging somehow, even though we might be doing the
     evaluation loop ourselves.
     TODO: Fix this for the 'incremental regression' case.
     """
+
     # Higher accuracy => better
     lower_is_better: ClassVar[bool] = False
     objective_name: ClassVar[str] = "Average Accuracy"
@@ -55,7 +44,6 @@ class IncrementalSLResults(IncrementalAssumption.Results):
     min_runtime_hours: ClassVar[float] = 5.0 / 60.0  # 5 minutes
     # Maximum runtime allowed (in hours).
     max_runtime_hours: ClassVar[float] = 1.0  # one hour.
-
 
     def make_plots(self):
         plots_dict = {}
@@ -94,7 +82,7 @@ class IncrementalSLResults(IncrementalAssumption.Results):
         y = []
         metric_name: str = ""
         for i in range(self.num_tasks):
-            previous_metrics = self.metrics_matrix[i][:i+1]
+            previous_metrics = self.metrics_matrix[i][: i + 1]
             cumul_metrics = sum(previous_metrics)
             y.append(cumul_metrics.objective)
             if not metric_name:

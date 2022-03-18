@@ -6,26 +6,27 @@ from typing import Callable, ClassVar, Optional, Type, Union
 
 import gym
 from gym import spaces
+from simple_parsing import mutable_field
+from simple_parsing.helpers.hparams import log_uniform, uniform
+from stable_baselines3.dqn import DQN
+
 from sequoia.common.hparams import categorical
 from sequoia.common.transforms import ChannelsFirst
 from sequoia.methods import register_method
 from sequoia.settings.rl import ContinualRLSetting
 from sequoia.utils.logging_utils import get_logger
-from simple_parsing import mutable_field
-from simple_parsing.helpers.hparams import log_uniform, uniform
-from stable_baselines3.dqn import DQN
 
 from .off_policy_method import OffPolicyMethod, OffPolicyModel
 
-logger = get_logger(__file__)
+logger = get_logger(__name__)
 
 
 class DQNModel(DQN, OffPolicyModel):
-    """ Customized version of the DQN model from stable-baselines-3. """
+    """Customized version of the DQN model from stable-baselines-3."""
 
     @dataclass
     class HParams(OffPolicyModel.HParams):
-        """ Hyper-parameters of the DQN model from `stable_baselines3`.
+        """Hyper-parameters of the DQN model from `stable_baselines3`.
 
         The command-line arguments for these are created with simple-parsing.
         """
@@ -56,9 +57,7 @@ class DQNModel(DQN, OffPolicyModel):
         # tau: float = uniform(0., 1., default=1.0)
         # Update the target network every ``target_update_interval`` environment
         # steps.
-        target_update_interval: int = categorical(
-            1, 10, 100, 1_000, 10_000, default=10_000
-        )
+        target_update_interval: int = categorical(1, 10, 100, 1_000, 10_000, default=10_000)
         # Fraction of entire training period over which the exploration rate is
         # reduced.
         exploration_fraction: float = 0.1
@@ -80,7 +79,7 @@ class DQNModel(DQN, OffPolicyModel):
 @register_method
 @dataclass
 class DQNMethod(OffPolicyMethod):
-    """ Method that uses a DQN model from the stable-baselines3 package. """
+    """Method that uses a DQN model from the stable-baselines3 package."""
 
     Model: ClassVar[Type[DQNModel]] = DQNModel
 
@@ -88,7 +87,7 @@ class DQNMethod(OffPolicyMethod):
     hparams: DQNModel.HParams = mutable_field(DQNModel.HParams)
 
     # Approximate limit on the size of the replay buffer, in megabytes.
-    max_buffer_size_megabytes: float = 1_024*10.
+    max_buffer_size_megabytes: float = 1_024 * 10.0
 
     def configure(self, setting: ContinualRLSetting):
         super().configure(setting)
@@ -124,7 +123,7 @@ class DQNMethod(OffPolicyMethod):
         return action
 
     def on_task_switch(self, task_id: Optional[int]) -> None:
-        """ Called when switching tasks in a CL setting.
+        """Called when switching tasks in a CL setting.
 
         If task labels are available, `task_id` will correspond to the index of
         the new task. Otherwise, if task labels aren't available, `task_id` will

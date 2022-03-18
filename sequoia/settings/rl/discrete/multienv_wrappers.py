@@ -9,13 +9,14 @@ from typing import Any, Callable, List, Optional, Sequence, Union
 import gym
 import numpy as np
 from gym import spaces
+
 from sequoia.common.gym_wrappers import IterableWrapper
 from sequoia.common.gym_wrappers.multi_task_environment import add_task_labels
 from sequoia.common.gym_wrappers.utils import MayCloseEarly
 from sequoia.utils.generic_functions import concatenate
 from sequoia.utils.logging_utils import get_logger
 
-logger = get_logger(__file__)
+logger = get_logger(__name__)
 
 
 def instantiate_env(env: Union[str, gym.Env, Callable[[], gym.Env]]) -> gym.Env:
@@ -28,7 +29,7 @@ def instantiate_env(env: Union[str, gym.Env, Callable[[], gym.Env]]) -> gym.Env:
 
 
 class MultiEnvWrapper(IterableWrapper, ABC):
-    """ TODO: Wrapper like that iterates over the envs.
+    """TODO: Wrapper like that iterates over the envs.
 
     Could look a little bit like this:
     https://github.com/rlworkgroup/garage/blob/master/src/garage/envs/multi_env_wrapper.py
@@ -89,7 +90,7 @@ class MultiEnvWrapper(IterableWrapper, ABC):
         return obs, rewards, done, info
 
     def is_closed(self, env_index: int = None):
-        """ returns `True` if the environment at index `env_index` is closed, otherwise
+        """returns `True` if the environment at index `env_index` is closed, otherwise
         if `env_index` is None, returns `True` if `close()` was called on the wrapper.
         (todo: or if all envs are closed.)
         """
@@ -113,14 +114,12 @@ class MultiEnvWrapper(IterableWrapper, ABC):
         return self._envs_is_closed[env_index]
 
     def close(self, env_index: int = None) -> None:
-        """ Close the environment for the given index, or of all envs if `env_index` is
+        """Close the environment for the given index, or of all envs if `env_index` is
         `None`.
         """
         if env_index is None:
             logger.info(f"Closing all envs")
-            for env_index, (env_is_closed, env) in enumerate(
-                zip(self._envs_is_closed, self._envs)
-            ):
+            for env_index, (env_is_closed, env) in enumerate(zip(self._envs_is_closed, self._envs)):
                 if not env_is_closed:
                     self._envs_is_closed[env_index] = True
                     env.close()
@@ -168,12 +167,8 @@ class MultiEnvWrapper(IterableWrapper, ABC):
         return observation
 
 
-from sequoia.common.gym_wrappers.env_dataset import EnvDataset
-from torch.utils.data import ChainDataset
-
-
 class ConcatEnvsWrapper(MultiEnvWrapper):
-    """ Wrapper that exhausts the current environment before moving onto the next. """
+    """Wrapper that exhausts the current environment before moving onto the next."""
 
     def __init__(
         self,
@@ -215,14 +210,12 @@ class ConcatEnvsWrapper(MultiEnvWrapper):
 
 
 @concatenate.register(gym.Env)
-def _concatenate_gym_envs(
-    first_env: gym.Env, *other_envs: gym.Env
-) -> ConcatEnvsWrapper:
+def _concatenate_gym_envs(first_env: gym.Env, *other_envs: gym.Env) -> ConcatEnvsWrapper:
     return ConcatEnvsWrapper([first_env, *other_envs])
 
 
 class RoundRobinWrapper(MultiEnvWrapper):
-    """ MultiEnvWrapper that alternates between the non-closed environments in a
+    """MultiEnvWrapper that alternates between the non-closed environments in a
     round-robin fashion.
     """
 
@@ -247,8 +240,7 @@ class RandomMultiEnvWrapper(MultiEnvWrapper):
 
 
 class CustomMultiEnvWrapper(MultiEnvWrapper):
-    """ MultiEnvWrapper that uses a custom callable to determine which env to use next.
-    """
+    """MultiEnvWrapper that uses a custom callable to determine which env to use next."""
 
     def __init__(
         self,

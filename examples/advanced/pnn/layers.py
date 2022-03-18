@@ -2,10 +2,10 @@ import torch.nn as nn
 import torch.nn.functional as F
 from torchvision import transforms
 
-
 """
 Based on https://github.com/TomVeniat/ProgressiveNeuralNetworks.pytorch
 """
+
 
 class PNNConvLayer(nn.Module):
     def __init__(self, col, depth, n_in, n_out, kernel_size=3):
@@ -15,8 +15,9 @@ class PNNConvLayer(nn.Module):
 
         self.u = nn.ModuleList()
         if depth > 0:
-            self.u.extend([nn.Conv2d(n_in, n_out, kernel_size,
-                                     stride=2, padding=1) for _ in range(col)])
+            self.u.extend(
+                [nn.Conv2d(n_in, n_out, kernel_size, stride=2, padding=1) for _ in range(col)]
+            )
 
     def forward(self, inputs):
         if not isinstance(inputs, list):
@@ -26,7 +27,7 @@ class PNNConvLayer(nn.Module):
         prev_columns_out = [mod(x) for mod, x in zip(self.u, inputs)]
 
         return F.relu(cur_column_out + sum(prev_columns_out))
-        
+
 
 class PNNLinearBlock(nn.Module):
     def __init__(self, col: int, depth: int, n_in: int, n_out: int):
