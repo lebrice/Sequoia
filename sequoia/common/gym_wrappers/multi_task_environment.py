@@ -533,6 +533,7 @@ class MultiTaskEnvironment(MayCloseEarly):
         self.np_random = np.random.default_rng(seed)
         self.action_space.seed(seed)
         self.observation_space.seed(seed)
+        # NOTE: Mujoco envs require a seed, so passing `seed=None` here will cause an error.
         return self.env.seed(seed)
 
     def task_dict(self, task_array: np.ndarray) -> Dict[str, float]:

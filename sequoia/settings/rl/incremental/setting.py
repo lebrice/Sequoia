@@ -1092,6 +1092,7 @@ def make_metaworld_env(env_class: Type[MetaWorldEnv], tasks: List["Task"]) -> Me
         new_random_task_on_reset=True,
         add_task_dict_to_info=False,
         add_task_id_to_obs=False,
+        seed=42,
     )
     return env
 
