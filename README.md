@@ -8,7 +8,7 @@ A Playground for research at the intersection of Continual, Reinforcement, and S
 - [Continual Reinforcement Learning Study](https://wandb.ai/sequoia/crl_study) (~2300 runs)
 
 
-## Note: This project is not being actively developed at the moment. If you encounter any difficulties, please create an issue, and I'll do what I can to help. 
+## Note: This project is not being actively developed at the moment. If you encounter any difficulties, please create an issue and I'll help you out. 
 
 If you have any questions or comments, please make an issue!
 
