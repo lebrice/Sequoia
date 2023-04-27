@@ -357,7 +357,7 @@ def constant(v: T, **kwargs) -> T:
 
 
 def flag(default: bool, *args, **kwargs):
-    return field(default=default, nargs=1, *args, **kwargs)
+    return field(default=default, nargs="?", *args, **kwargs)
 
 
 def dict_union(*dicts: Dict[K, V], recurse: bool = True, dict_factory=dict) -> Dict[K, V]:
