@@ -4,7 +4,7 @@ gym @ git+https://www.github.com/openai/gym@8819d561132082f6130d4a2388c68a963f41
 nngeometry @ git+https://github.com/oleksost/nngeometry.git#egg=nngeometry
 # Temporary fix for issue#128
 pyyaml!=5.4.*,>=5.1
-simple_parsing>=0.0.16.post2
+simple_parsing==0.1.2.post1
 # matplotlib==3.2.2
 matplotlib
 # NOTE: @lebrice: PyTorch suddenly got really picky about type annotations in 1.9.0 for
