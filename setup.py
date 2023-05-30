@@ -33,7 +33,7 @@ extras_require: Dict[str, Union[str, List[str]]] = {
         "mujoco_py",
     ],
     "metaworld": [
-        "metaworld @ git+https://github.com/rlworkgroup/metaworld.git@master#egg=metaworld"
+        "metaworld @ git+https://github.com/rlworkgroup/metaworld.git@29fe5d6d95cf9ad86f63eac38db8c0aef3837994#egg=metaworld"
     ],
     "sb3": "stable-baselines3==1.2.0",
 }
