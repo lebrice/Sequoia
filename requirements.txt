@@ -10,7 +10,7 @@ matplotlib
 # NOTE: @lebrice: PyTorch suddenly got really picky about type annotations in 1.9.0 for
 # some reason, and they really don't do a great job at evaluating them, so removing it
 # for now.
-torch==1.8.1
+torch==1.13.1
 torchvision==0.9.1
 scikit-learn
 tqdm
