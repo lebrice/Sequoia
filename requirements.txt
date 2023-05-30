@@ -22,7 +22,7 @@ pandas
 # Only for python < 3.8
 singledispatchmethod;python_version<'3.8'
 # NOTE: PyTorch-Lightning version 1.4.0 is "working" but raises lots of warnings.
-pytorch-lightning==1.5.9
+pytorch-lightning==1.6.0
 lightning-bolts==0.5.0
 # Requirements for running tests:
 pytest-timeout
