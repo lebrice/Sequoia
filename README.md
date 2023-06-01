@@ -109,6 +109,8 @@ sudo chmod 1777 /tmp/.X11-unix
 sudo chown root /tmp/.X11-unix/
 ```
 
+For mujoco users, we recommand following the steps in [robosuite installation](https://robosuite.ai/docs/installation.html) but replacing the `robosuite` codebase for sequoia's, as well as using python3.8
+
 ## Documentation overview:
 
 
